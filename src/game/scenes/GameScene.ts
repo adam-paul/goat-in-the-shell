@@ -3,7 +3,8 @@ import Phaser from 'phaser';
 // Define a custom event for game state changes
 interface GameStateEvent extends CustomEvent {
   detail: {
-    status: 'win' | 'playing' | 'reset' | 'gameover';
+    status: 'win' | 'playing' | 'reset' | 'gameover' | 'select' | 'placement';
+    deathType?: 'dart' | 'spike';
   }
 }
 
@@ -22,6 +23,17 @@ export default class GameScene extends Phaser.Scene {
   private mainCamera!: Phaser.Cameras.Scene2D.Camera;
   private playerFacingLeft: boolean = false; // Tracks player direction for animations
   private bleatSound!: Phaser.Sound.BaseSound;
+  
+  // New properties for round-based gameplay
+  private currentRound: number = 1;
+  private placedItems: Array<{type: string, x: number, y: number, gameObject: Phaser.GameObjects.GameObject}> = [];
+  private itemPlacementMode: boolean = false;
+  private itemToPlace: string = '';
+  private itemPreview?: Phaser.GameObjects.Rectangle;
+  private roundText!: Phaser.GameObjects.Text;
+  private gameStarted: boolean = false; // Track if the game has started
+  private countdownText?: Phaser.GameObjects.Text; // For countdown display
+  private modalElements: Phaser.GameObjects.GameObject[] = []; // Store modal elements for cleanup
 
   constructor() {
     super('GameScene');
@@ -34,6 +46,9 @@ export default class GameScene extends Phaser.Scene {
     
     // Create dart texture
     this.createDartTexture();
+    
+    // Create spike texture
+    this.createSpikeTexture();
     
     // Create sounds for the game
     this.createBleatSound();
@@ -59,10 +74,30 @@ export default class GameScene extends Phaser.Scene {
     graphics.destroy();
   }
   
+  private createSpikeTexture(): void {
+    const graphics = this.make.graphics({ x: 0, y: 0 });
+    
+    // Create a texture that looks like a platform but with a slightly different color
+    // to indicate danger (subtle red tint)
+    graphics.fillStyle(0x8B4513); // Base brown color
+    graphics.fillRect(0, 0, 100, 20);
+    graphics.fillStyle(0x954321); // Slightly reddish brown for top
+    graphics.fillRect(0, 0, 100, 5);
+    
+    // Add some texture details with a reddish tint
+    graphics.fillStyle(0x7D3027); // Reddish brown for wood grain
+    for (let i: number = 0; i < 5; i++) {
+      graphics.fillRect(10 + (i * 20), 8, 5, 10);
+    }
+
+    graphics.generateTexture('dangerous_platform', 100, 20);
+    graphics.destroy();
+  }
+  
   private createBleatSound(): void {
     try {
       // Create a programmatic audio data for a goat bleat
-      // @ts-ignore - Handle different sound manager implementations
+      // @ts-expect-error - Handle different sound manager implementations
       const audioContext = this.sound.context;
       if (!audioContext) {
         console.warn('Audio context not available for bleat sound');
@@ -110,11 +145,11 @@ export default class GameScene extends Phaser.Scene {
         const bleatSound = this.sound.add('bleat', { volume: 0.3 });
         this.cache.audio.add('bleat', renderedBuffer);
         this.bleatSound = bleatSound;
-      }).catch(err => {
-        console.error('Error creating bleat sound:', err);
+      }).catch(error => {
+        console.warn('Could not create bleat sound:', error);
       });
-    } catch (e) {
-      console.error('Error setting up bleat sound:', e);
+    } catch (error) {
+      console.warn('Could not create bleat sound:', error);
     }
   }
   
@@ -228,9 +263,9 @@ export default class GameScene extends Phaser.Scene {
     // Reset game state
     this.gameWon = false;
     this.gameOver = false;
+    this.gameStarted = false; // Game hasn't started yet
     
-    // Notify that game is now in playing state
-    this.notifyGameState('playing');
+    console.log('GameScene created - initializing game elements');
     
     // Set physics world bounds to be twice the width of the canvas
     this.physics.world.setBounds(0, 0, this.worldWidth, 800);
@@ -311,10 +346,14 @@ export default class GameScene extends Phaser.Scene {
     this.walls.create(2000, 400, 'wall');
     this.walls.create(2200, 300, 'wall');
 
-    // Create start point (bottom left)
-    this.startPoint = this.add.rectangle(80, 700, 50, 50, 0x00ff00);
+    // Create start point (bottom left) - just a position marker, no visible rectangle
+    const startX = 80;
+    const startY = 700;
+    this.startPoint = this.add.rectangle(startX, startY, 1, 1, 0x000000, 0); // Completely invisible
     this.physics.add.existing(this.startPoint, true);
-    this.add.text(80, 660, 'START', {
+    
+    // Add START text above the start position
+    this.add.text(startX, startY - 40, 'START', {
       fontSize: '18px',
       color: '#ffffff',
       fontFamily: 'Arial',
@@ -421,6 +460,7 @@ export default class GameScene extends Phaser.Scene {
       callbackScope: this,
       loop: true
     });
+    console.log('Initial dart timer created');
     
     // Make camera follow the player
     this.mainCamera.startFollow(this.player, true, 0.1, 0.1);
@@ -460,7 +500,47 @@ export default class GameScene extends Phaser.Scene {
       }
     });
 
-    // No instruction text at the top anymore
+    // Add round counter text
+    this.roundText = this.add.text(16, 16, `Round: ${this.currentRound}`, {
+      fontSize: '24px',
+      color: '#ffffff',
+      fontFamily: 'Arial',
+      fontStyle: 'bold',
+      stroke: '#000000',
+      strokeThickness: 4
+    });
+    this.roundText.setScrollFactor(0); // Fix to camera
+    
+    console.log('Setting up event listeners for item placement');
+    
+    // Listen for item placement events from React
+    window.addEventListener('place-item', ((_e: Event) => {
+      console.log('place-item event received');
+      this.handlePlaceItem(_e as CustomEvent);
+    }) as EventListener);
+    
+    window.addEventListener('enter-placement-mode', ((_e: Event) => {
+      console.log('enter-placement-mode event received');
+      this.enterPlacementMode(_e as CustomEvent);
+    }) as EventListener);
+    
+    window.addEventListener('exit-placement-mode', ((_e: Event) => {
+      console.log('exit-placement-mode event received');
+      this.exitPlacementMode();
+    }) as EventListener);
+    
+    // Listen for continue to next round event
+    window.addEventListener('continue-to-next-round', ((_e: Event) => {
+      console.log('continue-to-next-round event received');
+      this.startNextRound();
+    }) as EventListener);
+    
+    // Pause physics until the game starts
+    this.physics.pause();
+    
+    // Start with select state instead of playing
+    console.log('Notifying initial game state: select');
+    this.notifyGameState('select');
   }
 
   private createPlatformTexture(): void {
@@ -511,7 +591,14 @@ export default class GameScene extends Phaser.Scene {
 
   // Shoot darts from the vertical walls
   private shootDarts(): void {
-    if (this.gameWon || this.gameOver) return;
+    if (this.gameWon || this.gameOver || !this.gameStarted) {
+      console.log('Not shooting darts - game state prevents it', {
+        gameWon: this.gameWon,
+        gameOver: this.gameOver,
+        gameStarted: this.gameStarted
+      });
+      return; // Don't shoot darts if game hasn't started
+    }
     
     // Only shoot darts from walls that are visible on screen
     const visibleWalls = this.walls.getChildren().filter(wall => {
@@ -523,6 +610,8 @@ export default class GameScene extends Phaser.Scene {
         wallBounds.left < this.cameras.main.scrollX + this.cameras.main.width
       );
     });
+    
+    console.log(`Shooting darts from ${visibleWalls.length} visible walls`);
     
     // For each visible wall, shoot three darts
     visibleWalls.forEach(wall => {
@@ -584,154 +673,44 @@ export default class GameScene extends Phaser.Scene {
     // Small camera shake effect
     this.cameras.main.shake(500, 0.02);
     
-    // Dispatch game over event
-    this.notifyGameState('gameover');
+    // Dispatch game over event with death type
+    this.notifyGameState('gameover', 'dart');
     
-    // Show a proper game over modal
-    this.showGameOverModal();
+    // No longer show the in-game modal, let React handle it
   }
   
-  // Create a proper game over modal with restart button
-  private showGameOverModal(): void {
-    // Get camera center position for modal positioning
-    const modalX = this.cameras.main.midPoint.x;
-    const modalY = this.cameras.main.midPoint.y;
-    
-    // 1. Add overlay
-    const overlay = this.add.rectangle(
-      modalX, 
-      modalY, 
-      this.cameras.main.width, 
-      this.cameras.main.height, 
-      0x000000, 
-      0.7
-    );
-    
-    // 2. Create modal background
-    const modalBg = this.add.rectangle(
-      modalX,
-      modalY,
-      400,
-      250,
-      0x333333,
-      0.9
-    );
-    
-    // 3. Add border
-    const modalBorder = this.add.rectangle(
-      modalX,
-      modalY,
-      400,
-      250,
-      0xffffff,
-      0
-    );
-    modalBorder.setStrokeStyle(3, 0xffffff, 1);
-    
-    // 4. Create syringe icon
-    this.createSyringeIcon(modalX, modalY - 70);
-    
-    // 5. Display tranquilized message
-    const gameOverText = this.add.text(modalX, modalY - 20, 'TRANQUILIZED!', {
-      fontSize: '32px',
-      color: '#ff0000',
-      fontFamily: 'Arial',
-      fontStyle: 'bold'
-    }).setOrigin(0.5);
-    
-    // 6. Add explanatory text
-    const explanationText = this.add.text(modalX, modalY + 20, 'Your goat was hit by a dart!', {
-      fontSize: '18px',
-      color: '#ffffff',
-      fontFamily: 'Arial'
-    }).setOrigin(0.5);
-    
-    // 7. Add restart button
-    const buttonBg = this.add.rectangle(
-      modalX,
-      modalY + 70,
-      150,
-      40,
-      0x4CAF50 // Green button
-    ).setInteractive();
-    
-    const buttonText = this.add.text(modalX, modalY + 70, 'RESTART', {
-      fontSize: '18px',
-      color: '#ffffff',
-      fontFamily: 'Arial',
-      fontStyle: 'bold'
-    }).setOrigin(0.5);
-    
-    // Button hover effect
-    buttonBg.on('pointerover', () => {
-      buttonBg.setFillStyle(0x66BB6A); // Lighter green
-      this.input.setDefaultCursor('pointer');
-    });
-    
-    buttonBg.on('pointerout', () => {
-      buttonBg.setFillStyle(0x4CAF50); // Back to normal green
-      this.input.setDefaultCursor('default');
-    });
-    
-    // Button click - restart the game
-    buttonBg.on('pointerdown', () => {
-      // Reset cursor
-      this.input.setDefaultCursor('default');
-      
-      // Notify reset state
-      this.notifyGameState('reset');
-      
-      // Restart the scene
-      this.scene.restart();
-    });
-    
-    // Start with low alpha and fade in
-    overlay.setAlpha(0);
-    modalBg.setAlpha(0);
-    modalBorder.setAlpha(0);
-    gameOverText.setAlpha(0);
-    explanationText.setAlpha(0);
-    buttonBg.setAlpha(0);
-    buttonText.setAlpha(0);
-    
-    // Fade in all elements
-    this.tweens.add({
-      targets: [overlay, modalBg, modalBorder, gameOverText, explanationText, buttonBg, buttonText],
-      alpha: 1,
-      duration: 400,
-      ease: 'Power2',
-      delay: function(i: number) { return 100 * i; }
-    });
-  }
-  
-  // Create a simple syringe icon for the game over modal
-  private createSyringeIcon(x: number, y: number): void {
-    // Create syringe body
-    const syringeBody = this.add.rectangle(x, y, 50, 12, 0xf0f0f0);
-    
-    // Create syringe plunger
-    const plunger = this.add.rectangle(x + 20, y, 10, 20, 0xd0d0d0);
-    
-    // Create needle
-    const needle = this.add.rectangle(x - 30, y, 20, 3, 0xc0c0c0);
-    
-    // Create liquid in syringe
-    const liquid = this.add.rectangle(x - 10, y, 30, 8, 0x0000ff); // Blue tranquilizer
-    
-    // Animate the syringe with a slight pulse
-    this.tweens.add({
-      targets: [syringeBody, plunger, needle, liquid],
-      scaleX: 1.1,
-      scaleY: 1.1,
-      duration: 800,
-      yoyo: true,
-      repeat: -1,
-      ease: 'Sine.easeInOut'
-    });
-  }
-
   update(): void {
     if (this.gameWon || this.gameOver) return;
+    
+    // Handle item placement preview movement
+    if (this.itemPlacementMode && this.itemPreview) {
+      const pointer = this.input.activePointer;
+      if (!pointer) return; // Guard against null pointer
+      
+      const worldPoint = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
+      this.itemPreview.setPosition(worldPoint.x, worldPoint.y);
+      
+      // Handle click to place
+      if (pointer.isDown && pointer.getDuration() > 200) { // Add a small delay to prevent accidental clicks
+        console.log(`Confirming placement at (${worldPoint.x}, ${worldPoint.y})`);
+        const event = new CustomEvent('confirm-placement', {
+          detail: { 
+            type: this.itemToPlace,
+            x: worldPoint.x,
+            y: worldPoint.y
+          }
+        });
+        window.dispatchEvent(event);
+        
+        // Prevent multiple clicks
+        this.input.activePointer.reset();
+      }
+      
+      return; // Skip regular update when in placement mode
+    }
+    
+    // Don't process player movement if game hasn't started
+    if (!this.gameStarted) return;
 
     // Handle player movement
     if (this.cursors.left?.isDown) {
@@ -760,10 +739,11 @@ export default class GameScene extends Phaser.Scene {
         // Add a small random pitch variation each time
         const randomPitch = 0.9 + Math.random() * 0.2; // Between 0.9 and 1.1
         try {
-          // @ts-ignore - Some sound implementations may not have setRate
+          // @ts-expect-error - Some sound implementations may not have setRate
           this.bleatSound.setRate(randomPitch);
-        } catch (e) {
+        } catch (error) {
           // Ignore if setRate is not available
+          console.debug('Sound setRate not available:', error);
         }
         this.bleatSound.play();
       }
@@ -911,11 +891,397 @@ export default class GameScene extends Phaser.Scene {
     this.notifyGameState('win');
   }
   
+  // New methods for round-based gameplay
+  private handlePlaceItem(event: CustomEvent): void {
+    const { type, x, y } = event.detail;
+    console.log(`Handling item placement: ${type} at (${x}, ${y})`);
+    this.placeItem(type, x, y);
+    this.exitPlacementMode();
+    this.startRound();
+  }
+  
+  private enterPlacementMode(event: CustomEvent): void {
+    const { type } = event.detail;
+    console.log(`Entering placement mode for item type: ${type}`);
+    this.itemPlacementMode = true;
+    this.itemToPlace = type;
+    
+    // Create a preview of the item
+    this.time.delayedCall(100, () => {
+      this.createItemPreview();
+    });
+    
+    // Only pause physics if they're not already paused and the system exists
+    if (this.physics && this.physics.world && !this.physics.world.isPaused) {
+      this.physics.pause();
+    }
+    
+    // Notify that we're in placement mode
+    this.notifyGameState('placement');
+  }
+  
+  private exitPlacementMode(): void {
+    console.log('Exiting placement mode');
+    this.itemPlacementMode = false;
+    
+    // Remove the preview
+    if (this.itemPreview) {
+      this.itemPreview.destroy();
+      this.itemPreview = undefined;
+    }
+  }
+  
+  private createItemPreview(): void {
+    // Create a preview based on the item type
+    if (this.itemPreview) {
+      this.itemPreview.destroy();
+    }
+    
+    const pointer = this.input.activePointer;
+    if (!pointer) {
+      console.log('No active pointer found');
+      return;
+    }
+    
+    const worldPoint = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
+    
+    console.log(`Creating item preview for ${this.itemToPlace} at (${worldPoint.x}, ${worldPoint.y})`);
+    
+    switch (this.itemToPlace) {
+      case 'platform': {
+        this.itemPreview = this.add.rectangle(worldPoint.x, worldPoint.y, 200, 20, 0x00ff00, 0.5);
+        break;
+      }
+      case 'spike': {
+        this.itemPreview = this.add.rectangle(worldPoint.x, worldPoint.y, 50, 20, 0xff0000, 0.5);
+        break;
+      }
+      case 'moving': {
+        this.itemPreview = this.add.rectangle(worldPoint.x, worldPoint.y, 100, 20, 0x0000ff, 0.5);
+        break;
+      }
+      default: {
+        this.itemPreview = this.add.rectangle(worldPoint.x, worldPoint.y, 50, 50, 0xffff00, 0.5);
+      }
+    }
+  }
+  
+  private placeItem(type: string, x: number, y: number): void {
+    console.log(`Placing item: ${type} at (${x}, ${y})`);
+    let gameObject: Phaser.GameObjects.GameObject;
+    
+    try {
+      switch (type) {
+        case 'platform': {
+          // Create a platform at the specified position
+          gameObject = this.platforms.create(x, y, 'platform');
+          (gameObject as Phaser.Physics.Arcade.Sprite).setScale(1).refreshBody();
+          console.log('Platform created');
+          break;
+        }
+        case 'spike': {
+          // Create a dangerous platform that looks similar to regular platforms
+          try {
+            const dangerousPlatform = this.physics.add.sprite(x, y, 'dangerous_platform');
+            dangerousPlatform.setImmovable(true);
+            dangerousPlatform.body.allowGravity = false;
+            
+            // Add collision with player that causes game over with "Busted goat ankles" message
+            this.physics.add.collider(this.player, dangerousPlatform, this.hitDangerousPlatform, undefined, this);
+            gameObject = dangerousPlatform;
+            console.log('Dangerous platform created');
+          } catch (error) {
+            console.error('Error creating spike:', error);
+            // Fallback to a simple rectangle if sprite creation fails
+            gameObject = this.add.rectangle(x, y, 100, 20, 0xff0000);
+            this.physics.add.existing(gameObject, true);
+            this.physics.add.collider(this.player, gameObject, this.hitDangerousPlatform, undefined, this);
+            console.log('Fallback dangerous platform created');
+          }
+          break;
+        }
+        case 'moving': {
+          // Create a moving platform that stays at the same height
+          try {
+            const movingPlatform = this.physics.add.sprite(x, y, 'platform');
+            movingPlatform.setImmovable(true);
+            movingPlatform.body.allowGravity = false;
+            
+            // Add collision with player
+            this.physics.add.collider(this.player, movingPlatform);
+            
+            // Add movement tween - only move back and forth a bit (100px each direction)
+            this.tweens.add({
+              targets: movingPlatform,
+              x: x + 100, // Move 100px to the right
+              duration: 2000,
+              yoyo: true,
+              repeat: -1,
+              ease: 'Linear'
+            });
+            gameObject = movingPlatform;
+            console.log('Moving platform created');
+          } catch (error) {
+            console.error('Error creating moving platform:', error);
+            // Fallback to a simple rectangle if sprite creation fails
+            gameObject = this.add.rectangle(x, y, 100, 20, 0x0000ff);
+            this.physics.add.existing(gameObject, true);
+            this.physics.add.collider(this.player, gameObject);
+            console.log('Fallback moving platform created');
+          }
+          break;
+        }
+        default: {
+          gameObject = this.add.rectangle(x, y, 50, 50, 0xffff00);
+          console.log('Default item created');
+        }
+      }
+      
+      // Store the placed item
+      this.placedItems.push({ type, x, y, gameObject });
+      console.log(`Total placed items: ${this.placedItems.length}`);
+    } catch (error) {
+      console.error('Error in placeItem:', error);
+      // Create a fallback item if there was an error
+      try {
+        gameObject = this.add.rectangle(x, y, 100, 20, 0xff00ff);
+        this.physics.add.existing(gameObject, true);
+        this.physics.add.collider(this.player, gameObject);
+        this.placedItems.push({ type, x, y, gameObject });
+        console.log('Created fallback item due to error');
+      } catch (fallbackError) {
+        console.error('Failed to create fallback item:', fallbackError);
+      }
+    }
+  }
+  
+  private startRound(): void {
+    console.log(`Starting round ${this.currentRound}`);
+    // Reset player position
+    this.player.setPosition(this.startPoint.x, this.startPoint.y);
+    this.player.setVelocity(0, 0);
+    
+    // Update round text
+    this.roundText.setText(`Round: ${this.currentRound}`);
+    
+    // Make sure any existing countdown text is removed
+    if (this.countdownText) {
+      this.countdownText.destroy();
+      this.countdownText = undefined;
+    }
+    
+    // Create countdown text in the center of the screen
+    this.countdownText = this.add.text(
+      this.cameras.main.width / 2,
+      this.cameras.main.height / 2,
+      '3',
+      {
+        fontSize: '64px',
+        color: '#ffffff',
+        fontFamily: 'Arial',
+        fontStyle: 'bold',
+        stroke: '#000000',
+        strokeThickness: 6
+      }
+    ).setOrigin(0.5).setScrollFactor(0);
+    
+    // Start countdown
+    let countdown = 3;
+    
+    // Create a timer event that fires every second
+    const countdownTimer = this.time.addEvent({
+      delay: 1000,
+      callback: () => {
+        countdown--;
+        if (countdown > 0) {
+          // Update countdown text
+          if (this.countdownText) {
+            this.countdownText.setText(countdown.toString());
+          }
+        } else {
+          // Countdown finished, start the game
+          if (this.countdownText) {
+            this.countdownText.destroy();
+            this.countdownText = undefined;
+          }
+          
+          // Resume physics to start the game
+          this.physics.resume();
+          this.gameStarted = true;
+          
+          // Ensure dart timer is active
+          if (this.dartTimer) {
+            this.dartTimer.remove();
+          }
+          
+          // Create a new dart timer
+          this.dartTimer = this.time.addEvent({
+            delay: 3000,
+            callback: this.shootDarts,
+            callbackScope: this,
+            loop: true
+          });
+          console.log('Dart timer started for this round');
+          
+          // Notify that the game is in playing state
+          this.notifyGameState('playing');
+          
+          // Stop the timer
+          countdownTimer.remove();
+        }
+      },
+      callbackScope: this,
+      repeat: 2
+    });
+  }
+  
+  private startNextRound(): void {
+    // Clean up any modal elements from previous round
+    this.cleanupModalElements();
+    
+    this.currentRound++;
+    console.log(`Starting next round: ${this.currentRound}`);
+    
+    // Reset game state but keep placed items
+    this.gameOver = false;
+    this.gameStarted = false; // Game is paused until next item is placed
+    
+    // Reset player appearance
+    if (this.player && this.player.active) {
+      this.player.clearTint();
+      this.player.setVelocity(0, 0);
+      this.player.setPosition(this.startPoint.x, this.startPoint.y);
+      this.player.body.moves = true; // Re-enable movement
+    } else {
+      // If player is not valid, recreate it
+      this.recreatePlayer();
+    }
+    
+    // Restart the dart timer
+    if (this.dartTimer) {
+      this.dartTimer.remove();
+    }
+    this.dartTimer = this.time.addEvent({
+      delay: 3000,
+      callback: this.shootDarts,
+      callbackScope: this,
+      loop: true
+    });
+    console.log('Dart timer restarted for new round');
+    
+    // Pause physics until next item is placed
+    this.physics.pause();
+    
+    // Notify that we need to select a new item
+    this.notifyGameState('select');
+  }
+  
+  // Helper method to clean up modal elements
+  private cleanupModalElements(): void {
+    console.log(`Cleaning up ${this.modalElements.length} modal elements`);
+    this.modalElements.forEach(element => {
+      if (element && element.active) {
+        element.destroy();
+      }
+    });
+    this.modalElements = [];
+  }
+  
+  // Helper method to recreate player if needed
+  private recreatePlayer(): void {
+    console.log('Recreating player');
+    // Create player (goat) at the start position
+    this.player = this.physics.add.sprite(this.startPoint.x, this.startPoint.y, 'goat_standing');
+    
+    // Set up player physics
+    this.player.setBounce(0.1);
+    this.player.setCollideWorldBounds(true);
+    this.player.body.setGravityY(300);
+    
+    // Scale the goat
+    this.player.setScale(1.2);
+    
+    // Adjust the collision body
+    this.player.setSize(28, 26);
+    this.player.setOffset(10, 14);
+    
+    // Set up collisions again
+    this.physics.add.collider(this.player, this.platforms);
+    this.physics.add.collider(this.player, this.walls);
+    
+    // Recreate collision with darts
+    this.physics.add.overlap(
+      this.player, 
+      this.darts, 
+      this.hitByDart, 
+      (player, dart) => {
+        const playerSprite = player as Phaser.Types.Physics.Arcade.SpriteWithDynamicBody;
+        const dartSprite = dart as Phaser.Physics.Arcade.Sprite;
+        
+        const playerBounds = playerSprite.getBounds();
+        const dartBounds = dartSprite.getBounds();
+        
+        const shrinkX = playerBounds.width * 0.2;
+        const shrinkY = playerBounds.height * 0.2;
+        
+        const smallerPlayerBounds = new Phaser.Geom.Rectangle(
+          playerBounds.x + shrinkX,
+          playerBounds.y + shrinkY,
+          playerBounds.width - (shrinkX * 2),
+          playerBounds.height - (shrinkY * 2)
+        );
+        
+        return Phaser.Geom.Rectangle.Overlaps(smallerPlayerBounds, dartBounds);
+      }, 
+      this
+    );
+    
+    // Recreate collision with end point
+    this.physics.add.overlap(
+      this.player,
+      this.endPoint,
+      () => {
+        if (!this.gameWon) {
+          this.reachEndPoint();
+        }
+      },
+      undefined,
+      this
+    );
+    
+    // Recreate collision with dangerous platforms
+    this.placedItems.forEach(item => {
+      if (item.type === 'spike' && item.gameObject.active) {
+        this.physics.add.collider(this.player, item.gameObject, this.hitDangerousPlatform, undefined, this);
+      }
+    });
+  }
+  
+  // New method for handling collision with dangerous platform
+  private hitDangerousPlatform(
+    _player: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Physics.Arcade.Body | Phaser.Physics.Arcade.StaticBody | Phaser.Tilemaps.Tile,
+    _platform: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Physics.Arcade.Body | Phaser.Physics.Arcade.StaticBody | Phaser.Tilemaps.Tile
+  ): void {
+    console.log('Player hit a dangerous platform');
+    if (this.gameOver) return; // Prevent multiple triggers
+    
+    // Player hit a dangerous platform, game over for this round
+    this.gameOver = true;
+    this.player.setTint(0xff0000);
+    this.player.setVelocity(0, 0);
+    
+    // No longer show the in-game modal, let React handle it
+    
+    // Notify the React component that the game is over with death type
+    this.notifyGameState('gameover', 'spike');
+  }
+  
   // Utility method to communicate with the React component
-  private notifyGameState(status: 'win' | 'playing' | 'reset' | 'gameover'): void {
+  private notifyGameState(status: 'win' | 'playing' | 'reset' | 'gameover' | 'select' | 'placement', deathType?: 'dart' | 'spike'): void {
+    console.log(`Notifying game state change: ${status}${deathType ? `, death type: ${deathType}` : ''}`);
     // Create and dispatch a custom event to notify the React app of game state changes
     const event = new CustomEvent('game-state-update', {
-      detail: { status }
+      detail: { status, deathType }
     }) as GameStateEvent;
     window.dispatchEvent(event);
   }

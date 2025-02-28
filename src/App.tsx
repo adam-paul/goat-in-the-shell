@@ -2,35 +2,133 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import Phaser from 'phaser'
 import './App.css'
 import GameScene from './game/scenes/GameScene'
-import PrompterControls from './components/PrompterControls'
+import ItemSelectionPanel from './components/ItemSelectionPanel'
+import DeathModal from './components/DeathModal'
+
+// Define game status types
+type GameStatus = 'win' | 'playing' | 'reset' | 'gameover' | 'select' | 'placement';
+// Define death types
+type DeathType = 'dart' | 'spike' | null;
+
+// Define item types
+export type ItemType = 'platform' | 'spike' | 'moving';
 
 function App() {
-  const [gameStatus, setGameStatus] = useState<'win' | 'playing' | 'reset' | 'gameover'>('reset');
+  // Start with 'select' state to immediately show item selection
+  const [gameStatus, setGameStatus] = useState<GameStatus>('select');
+  const [selectedItem, setSelectedItem] = useState<ItemType | null>(null);
+  const [placementConfirmed, setPlacementConfirmed] = useState<boolean>(false);
+  const [deathType, setDeathType] = useState<DeathType>(null);
 
-  // This will be implemented later to connect the prompter to the game
-  const handlePlaceObstacle = (type: string, x: number, y: number) => {
-    console.log(`Placing ${type} at position (${x}, ${y})`);
-    // In the future, this will communicate with the Phaser game scene
+  // Handle item selection
+  const handleSelectItem = (itemType: ItemType) => {
+    console.log(`Item selected: ${itemType}`);
+    setSelectedItem(itemType);
+    
+    // Notify the game scene to enter placement mode
+    const event = new CustomEvent('enter-placement-mode', {
+      detail: { type: itemType }
+    });
+    window.dispatchEvent(event);
+    
+    setGameStatus('placement');
+    setPlacementConfirmed(false);
+    console.log(`Game status changed to: placement`);
+  };
+
+  // Handle item placement
+  const handlePlaceItem = (x: number, y: number) => {
+    if (!selectedItem || placementConfirmed) return;
+    
+    console.log(`Placing item: ${selectedItem} at position (${x}, ${y})`);
+    setPlacementConfirmed(true);
+    
+    // Notify the game scene to place the item
+    const event = new CustomEvent('place-item', {
+      detail: { type: selectedItem, x, y }
+    });
+    window.dispatchEvent(event);
+    
+    // Reset selected item
+    setSelectedItem(null);
+  };
+
+  // Cancel item placement
+  const handleCancelPlacement = () => {
+    console.log('Placement cancelled');
+    
+    // Notify the game scene to exit placement mode
+    const event = new CustomEvent('exit-placement-mode', {
+      detail: {}
+    });
+    window.dispatchEvent(event);
+    
+    setSelectedItem(null);
+    setPlacementConfirmed(false);
+    setGameStatus('select');
+    console.log(`Game status changed to: select`);
+  };
+  
+  // Continue to next round after death
+  const handleContinueToNextRound = () => {
+    console.log('Continuing to next round');
+    // Reset death type immediately to hide the modal
+    setDeathType(null);
+    
+    // Notify the game scene to start the next round
+    const event = new CustomEvent('continue-to-next-round', {
+      detail: {}
+    });
+    window.dispatchEvent(event);
+    
+    // Game will transition to 'select' state via game state update event
   };
   
   // Listen for game state changes from the Phaser scene
   useEffect(() => {
     const handleGameStateUpdate = (event: Event) => {
-      const gameEvent = event as CustomEvent<{status: 'win' | 'playing' | 'reset' | 'gameover'}>;
+      const gameEvent = event as CustomEvent<{status: GameStatus, deathType?: 'dart' | 'spike'}>;
+      console.log(`Game state update received: ${gameEvent.detail.status}`);
       setGameStatus(gameEvent.detail.status);
+      
+      // If the status is 'select', reset the selected item
+      if (gameEvent.detail.status === 'select') {
+        setSelectedItem(null);
+        setPlacementConfirmed(false);
+      }
+      
+      // If the status is 'gameover', set the death type
+      if (gameEvent.detail.status === 'gameover' && gameEvent.detail.deathType) {
+        setDeathType(gameEvent.detail.deathType);
+      }
     };
     
     window.addEventListener('game-state-update', handleGameStateUpdate);
     
+    // Listen for placement confirmation from the game scene
+    const handleConfirmPlacement = (event: Event) => {
+      const placementEvent = event as CustomEvent<{type: ItemType, x: number, y: number}>;
+      console.log(`Placement confirmed at (${placementEvent.detail.x}, ${placementEvent.detail.y})`);
+      
+      if (!placementConfirmed) {
+        handlePlaceItem(placementEvent.detail.x, placementEvent.detail.y);
+      }
+    };
+    
+    window.addEventListener('confirm-placement', handleConfirmPlacement);
+    
     return () => {
       window.removeEventListener('game-state-update', handleGameStateUpdate);
+      window.removeEventListener('confirm-placement', handleConfirmPlacement);
     };
-  }, []);
+  }, [selectedItem, placementConfirmed]); // Add dependencies to ensure the event handlers use the latest state
 
   // Use useRef to avoid recreating the function on every render
   const gameInstanceRef = useRef<Phaser.Game | null>(null);
 
   const initGame = useCallback(() => {
+    console.log('Initializing game...');
+    
     // Use the ref to track and clean up the game instance
     if (gameInstanceRef.current) {
       gameInstanceRef.current.destroy(true);
@@ -79,6 +177,15 @@ function App() {
 
     const newGame = new Phaser.Game(config);
     gameInstanceRef.current = newGame;
+    
+    // Force the game to start in select mode after a short delay
+    setTimeout(() => {
+      console.log('Forcing game state to select');
+      setGameStatus('select');
+      setSelectedItem(null);
+      setPlacementConfirmed(false);
+      setDeathType(null);
+    }, 1000);
   }, []); // No dependencies to avoid re-creation
 
   useEffect(() => {
@@ -93,59 +200,141 @@ function App() {
   }, []); // Empty dependency array - only run once on mount
 
   const handleReset = () => {
+    console.log('Game reset requested');
     setGameStatus('reset');
+    setSelectedItem(null);
+    setPlacementConfirmed(false);
+    setDeathType(null);
     initGame();
+    
+    // Force the game to start in select mode after a short delay
+    setTimeout(() => {
+      console.log('Forcing game state to select after reset');
+      setGameStatus('select');
+    }, 1000);
+  };
+
+  // Render different UI based on game status
+  const renderGameUI = () => {
+    console.log(`Rendering UI for game status: ${gameStatus}`);
+    
+    switch (gameStatus) {
+      case 'select':
+        console.log('Rendering item selection panel');
+        return (
+          <div style={{
+            position: 'absolute',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            zIndex: 10,
+            width: '80%',
+            maxWidth: '800px'
+          }}>
+            <ItemSelectionPanel onSelectItem={handleSelectItem} />
+          </div>
+        );
+      case 'placement':
+        return (
+          <div style={{ 
+            position: 'absolute',
+            bottom: '20px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 10,
+            backgroundColor: 'rgba(0, 0, 0, 0.7)',
+            padding: '10px 20px',
+            borderRadius: '8px',
+            color: 'white'
+          }}>
+            <p>Click in the game to place your {selectedItem}.</p>
+            <button 
+              onClick={handleCancelPlacement}
+              style={{
+                padding: '8px 16px',
+                backgroundColor: '#f44336',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '16px',
+                marginTop: '10px'
+              }}
+            >
+              Cancel Placement
+            </button>
+          </div>
+        );
+      case 'gameover':
+        // Show death modal if we have a death type
+        if (deathType) {
+          return <DeathModal deathType={deathType} onContinue={handleContinueToNextRound} />;
+        }
+        return null;
+      case 'win':
+        return (
+          <div style={{ textAlign: 'center', marginTop: '20px' }}>
+            <h2>You Won!</h2>
+            <button 
+              onClick={handleReset}
+              style={{
+                padding: '10px 20px',
+                backgroundColor: '#4CAF50',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '16px',
+                marginTop: '10px'
+              }}
+            >
+              Play Again
+            </button>
+          </div>
+        );
+      default:
+        return null;
+    }
   };
 
   return (
-    <div style={{ maxWidth: '1300px', margin: '0 auto', padding: '20px' }}>
-      <h1 style={{ textAlign: 'center', marginBottom: '20px' }}>Goat in the Shell</h1>
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'center',
-        alignItems: 'center', 
-        margin: '0 auto'
-      }}>
-        <div id="game-container" style={{ 
-          width: '1200px', 
-          height: '800px',
-          backgroundColor: '#333',
-          borderRadius: '8px',
-        }}>
-        </div>
+    <div className="App">
+      <header className="App-header">
+        <h1>Goat In The Shell</h1>
+      </header>
+      
+      <div style={{ position: 'relative' }}>
+        {/* Game container */}
+        <div id="game-container" style={{ width: '100%', height: '600px' }}></div>
+        
+        {/* Overlay UI based on game status */}
+        {renderGameUI()}
       </div>
+      
+      {/* Restart button always visible below the game */}
       <div style={{ textAlign: 'center', marginTop: '20px' }}>
-        {gameStatus === 'gameover' ? (
-          <p style={{ color: '#d9534f', fontWeight: 'bold' }}>
-            Game over! Try again.
-          </p>
-        ) : (
-          <p>Use arrow keys to move and SPACEBAR to jump. Reach the red marker to win!</p>
-        )}
         <button 
           onClick={handleReset}
           style={{
-            padding: '8px 16px',
-            backgroundColor: gameStatus === 'gameover' ? '#d9534f' : '#4CAF50',
+            padding: '10px 20px',
+            backgroundColor: '#2196F3',
             color: 'white',
             border: 'none',
             borderRadius: '4px',
             cursor: 'pointer',
-            fontSize: '16px',
-            marginTop: '10px'
+            fontSize: '16px'
           }}
         >
-          {gameStatus === 'gameover' ? 'Try Again' : 'Reset Game'}
+          Restart Game
         </button>
       </div>
       
-      {/* Prompter Controls - Enabled only when the game is in playing state */}
-      <PrompterControls 
-        onPlaceObstacle={handlePlaceObstacle} 
-        disabled={gameStatus !== 'playing'} // Only enabled during gameplay
-      />
+      <footer style={{ marginTop: '30px', textAlign: 'center', fontSize: '14px', color: '#666' }}>
+        <p>Use arrow keys or WASD to move. Space to jump.</p>
+        <p>Avoid darts and dangerous platforms. Reach the finish line!</p>
+      </footer>
     </div>
-  )
+  );
 }
 
 export default App
