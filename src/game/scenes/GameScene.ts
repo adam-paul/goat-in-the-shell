@@ -389,9 +389,13 @@ export default class GameScene extends Phaser.Scene {
       this.darts, 
       this.hitByDart, 
       (player, dart) => {
+        // Type assertion to ensure we have the correct types
+        const playerSprite = player as Phaser.Types.Physics.Arcade.SpriteWithDynamicBody;
+        const dartSprite = dart as Phaser.Physics.Arcade.Sprite;
+        
         // Create a smaller hitbox for dart collision (~ 60% of the normal hitbox)
-        const playerBounds = player.getBounds();
-        const dartBounds = dart.getBounds();
+        const playerBounds = playerSprite.getBounds();
+        const dartBounds = dartSprite.getBounds();
         
         // Shrink the player bounds for more precise collision
         const shrinkX = playerBounds.width * 0.2;
@@ -511,7 +515,9 @@ export default class GameScene extends Phaser.Scene {
     
     // Only shoot darts from walls that are visible on screen
     const visibleWalls = this.walls.getChildren().filter(wall => {
-      const wallBounds = wall.getBounds();
+      // Type assertion to ensure wall has getBounds method
+      const wallSprite = wall as Phaser.GameObjects.Sprite;
+      const wallBounds = wallSprite.getBounds();
       return (
         wallBounds.right > this.cameras.main.scrollX && 
         wallBounds.left < this.cameras.main.scrollX + this.cameras.main.width
@@ -520,7 +526,9 @@ export default class GameScene extends Phaser.Scene {
     
     // For each visible wall, shoot three darts
     visibleWalls.forEach(wall => {
-      const wallBounds = wall.getBounds();
+      // Type assertion to ensure wall has getBounds method
+      const wallSprite = wall as Phaser.GameObjects.Sprite;
+      const wallBounds = wallSprite.getBounds();
       
       // Vertical spacing for the three darts
       const positions = [
@@ -547,24 +555,31 @@ export default class GameScene extends Phaser.Scene {
   }
   
   // Handle dart collision with player
-  private hitByDart(player: Phaser.Types.Physics.Arcade.SpriteWithDynamicBody, dart: Phaser.Physics.Arcade.Sprite): void {
+  private hitByDart(
+    player: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Physics.Arcade.Body | Phaser.Physics.Arcade.StaticBody | Phaser.Tilemaps.Tile,
+    dart: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Physics.Arcade.Body | Phaser.Physics.Arcade.StaticBody | Phaser.Tilemaps.Tile
+  ): void {
     if (this.gameWon || this.gameOver) return;
     
+    // Type assertion to ensure we have the correct types
+    const playerSprite = player as Phaser.Types.Physics.Arcade.SpriteWithDynamicBody;
+    const dartSprite = dart as Phaser.Physics.Arcade.Sprite;
+    
     // Destroy the dart
-    dart.destroy();
+    dartSprite.destroy();
     
     // Set game over state
     this.gameOver = true;
     
     // Stop player movement and inputs
-    player.setVelocity(0, 0);
-    player.body.moves = false; // Freeze the goat completely
+    playerSprite.setVelocity(0, 0);
+    playerSprite.body.moves = false; // Freeze the goat completely
     
     // Stop the dartTimer
     this.dartTimer.remove();
     
     // Create tranquilized effect - tint the goat blue
-    player.setTint(0x0000ff);
+    playerSprite.setTint(0x0000ff);
     
     // Small camera shake effect
     this.cameras.main.shake(500, 0.02);
