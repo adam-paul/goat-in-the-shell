@@ -2,7 +2,7 @@
 
 This is the FastAPI backend for the "Goat In The Shell" game, handling AI-powered text commands.
 
-## Setup
+## Local Setup
 
 1. Ensure you have Python 3.8+ installed
 2. Set up the virtual environment:
@@ -20,7 +20,7 @@ This is the FastAPI backend for the "Goat In The Shell" game, handling AI-powere
    OPENAI_API_KEY=your_openai_api_key
    ```
 
-## Running the API
+## Running Locally
 
 Start the API server:
 
@@ -32,11 +32,31 @@ python main.py
 
 The API will be available at http://localhost:8000
 
+## Deployment to Railway
+
+### Important Notes for Railway Deployment
+
+1. Make sure to set the `OPENAI_API_KEY` environment variable in Railway's dashboard.
+
+2. When deploying to Railway:
+   - Set the root directory to `/api` in your Railway project settings
+   - Railway will automatically detect the Procfile or nixpacks.toml for build and start commands
+
+3. The deployment should use the following files:
+   - `nixpacks.toml` - Defines the build and start process
+   - `Procfile` - Alternative to nixpacks.toml
+   - `requirements.txt` - Lists all dependencies
+   - `runtime.txt` - Specifies the Python version
+
 ## API Endpoints
 
 ### GET /
 
 Returns a welcome message to confirm the API is running.
+
+### GET /health
+
+Returns a simple status check to verify the API is operational.
 
 ### POST /command
 
@@ -69,7 +89,7 @@ To call the API from your frontend:
 
 ```javascript
 async function sendCommand(command) {
-  const response = await fetch('http://localhost:8000/command', {
+  const response = await fetch('https://your-railway-url/command', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

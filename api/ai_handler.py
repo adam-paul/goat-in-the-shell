@@ -1,12 +1,27 @@
 import os
 from openai import OpenAI
 from dotenv import load_dotenv
+import logging
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
 
-# Initialize OpenAI client
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# Initialize OpenAI client with error handling
+api_key = os.getenv("OPENAI_API_KEY")
+if not api_key:
+    logger.warning("OPENAI_API_KEY environment variable not set or empty!")
+
+try:
+    client = OpenAI(api_key=api_key)
+    logger.info("OpenAI client initialized successfully")
+except Exception as e:
+    logger.error(f"Error initializing OpenAI client: {str(e)}")
+    # Create a dummy client that will be replaced with proper error handling
+    client = None
 
 class AIHandler:
     """Handler for AI-related operations using OpenAI."""
@@ -23,6 +38,13 @@ class AIHandler:
             A dictionary containing the AI response and any structured data
         """
         try:
+            # Check if client is properly initialized
+            if client is None:
+                return {
+                    "response": "AI service is currently unavailable. Please check the server configuration.",
+                    "success": False
+                }
+                
             # Call OpenAI API to process the command
             response = client.chat.completions.create(
                 model="gpt-4o",  # Using GPT-4o for best results
@@ -43,6 +65,7 @@ class AIHandler:
             }
             
         except Exception as e:
+            logger.error(f"Error processing command: {str(e)}")
             return {
                 "response": f"Error processing command: {str(e)}",
                 "success": False
