@@ -99,7 +99,7 @@ function App() {
 
   return (
     <div style={{ maxWidth: '1300px', margin: '0 auto', padding: '20px' }}>
-      <h1 style={{ textAlign: 'center', marginBottom: '20px' }}>Platformer Challenge</h1>
+      <h1 style={{ textAlign: 'center', marginBottom: '20px' }}>Goat in the Shell</h1>
       <div style={{ 
         display: 'flex', 
         justifyContent: 'center',

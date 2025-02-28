@@ -42,17 +42,17 @@ export default class GameScene extends Phaser.Scene {
   private createDartTexture(): void {
     const graphics = this.make.graphics({ x: 0, y: 0 });
     
-    // Draw the dart
+    // Draw the dart facing left by default
     graphics.fillStyle(0x303030); // Dark gray for the dart body
-    graphics.fillRect(0, 2, 14, 2); // Dart body
+    graphics.fillRect(6, 2, 14, 2); // Dart body
     
     // Dart point (triangle)
     graphics.fillStyle(0x505050); // Slightly lighter gray for the point
-    graphics.fillTriangle(14, 0, 14, 6, 20, 3);
+    graphics.fillTriangle(6, 0, 6, 6, 0, 3);
     
     // Dart feathers
     graphics.fillStyle(0xC0C0C0); // Light gray for the feathers
-    graphics.fillRect(0, 0, 3, 6);
+    graphics.fillRect(17, 0, 3, 6);
     
     // Generate the texture
     graphics.generateTexture('dart', 20, 6);
@@ -518,20 +518,30 @@ export default class GameScene extends Phaser.Scene {
       );
     });
     
-    // For each visible wall, shoot a dart
+    // For each visible wall, shoot three darts
     visibleWalls.forEach(wall => {
       const wallBounds = wall.getBounds();
       
-      // Shoot dart from the right side of the wall
-      const dart = this.darts.create(wallBounds.right, wallBounds.centerY, 'dart');
+      // Vertical spacing for the three darts
+      const positions = [
+        wallBounds.centerY - 30, // Top dart
+        wallBounds.centerY,      // Middle dart
+        wallBounds.centerY + 30  // Bottom dart
+      ];
       
-      // Set dart properties
-      dart.setVelocityX(-150); // Moving left
-      dart.body.allowGravity = false; // Darts don't fall
-      
-      // Destroy dart after 2 seconds or when off-screen
-      this.time.delayedCall(2000, () => {
-        if (dart.active) dart.destroy();
+      // Create three darts per wall
+      positions.forEach(yPos => {
+        // Shoot dart from the right side of the wall
+        const dart = this.darts.create(wallBounds.right, yPos, 'dart');
+        
+        // Set dart properties
+        dart.setVelocityX(-300); // Moving left, faster speed to travel further
+        dart.body.allowGravity = false; // Darts don't fall
+        
+        // Destroy dart after 10 seconds (enough time to go off screen)
+        this.time.delayedCall(10000, () => {
+          if (dart.active) dart.destroy();
+        });
       });
     });
   }
@@ -546,35 +556,163 @@ export default class GameScene extends Phaser.Scene {
     // Set game over state
     this.gameOver = true;
     
-    // Stop player movement
+    // Stop player movement and inputs
     player.setVelocity(0, 0);
+    player.body.moves = false; // Freeze the goat completely
+    
+    // Stop the dartTimer
+    this.dartTimer.remove();
     
     // Create tranquilized effect - tint the goat blue
     player.setTint(0x0000ff);
     
-    // Show game over message
-    this.cameras.main.shake(500, 0.02); // Small camera shake effect
+    // Small camera shake effect
+    this.cameras.main.shake(500, 0.02);
     
     // Dispatch game over event
     this.notifyGameState('gameover');
     
-    // Show game over text
-    const x = this.cameras.main.midPoint.x;
-    const y = this.cameras.main.midPoint.y - 50;
+    // Show a proper game over modal
+    this.showGameOverModal();
+  }
+  
+  // Create a proper game over modal with restart button
+  private showGameOverModal(): void {
+    // Get camera center position for modal positioning
+    const modalX = this.cameras.main.midPoint.x;
+    const modalY = this.cameras.main.midPoint.y;
     
-    const gameOverText = this.add.text(x, y, 'TRANQUILIZED!', {
+    // 1. Add overlay
+    const overlay = this.add.rectangle(
+      modalX, 
+      modalY, 
+      this.cameras.main.width, 
+      this.cameras.main.height, 
+      0x000000, 
+      0.7
+    );
+    
+    // 2. Create modal background
+    const modalBg = this.add.rectangle(
+      modalX,
+      modalY,
+      400,
+      250,
+      0x333333,
+      0.9
+    );
+    
+    // 3. Add border
+    const modalBorder = this.add.rectangle(
+      modalX,
+      modalY,
+      400,
+      250,
+      0xffffff,
+      0
+    );
+    modalBorder.setStrokeStyle(3, 0xffffff, 1);
+    
+    // 4. Create syringe icon
+    this.createSyringeIcon(modalX, modalY - 70);
+    
+    // 5. Display tranquilized message
+    const gameOverText = this.add.text(modalX, modalY - 20, 'TRANQUILIZED!', {
       fontSize: '32px',
       color: '#ff0000',
       fontFamily: 'Arial',
       fontStyle: 'bold'
     }).setOrigin(0.5);
     
-    // Add restart message
-    this.add.text(x, y + 50, 'Game Over - Reload to try again', {
-      fontSize: '24px',
+    // 6. Add explanatory text
+    const explanationText = this.add.text(modalX, modalY + 20, 'Your goat was hit by a dart!', {
+      fontSize: '18px',
       color: '#ffffff',
       fontFamily: 'Arial'
     }).setOrigin(0.5);
+    
+    // 7. Add restart button
+    const buttonBg = this.add.rectangle(
+      modalX,
+      modalY + 70,
+      150,
+      40,
+      0x4CAF50 // Green button
+    ).setInteractive();
+    
+    const buttonText = this.add.text(modalX, modalY + 70, 'RESTART', {
+      fontSize: '18px',
+      color: '#ffffff',
+      fontFamily: 'Arial',
+      fontStyle: 'bold'
+    }).setOrigin(0.5);
+    
+    // Button hover effect
+    buttonBg.on('pointerover', () => {
+      buttonBg.setFillStyle(0x66BB6A); // Lighter green
+      this.input.setDefaultCursor('pointer');
+    });
+    
+    buttonBg.on('pointerout', () => {
+      buttonBg.setFillStyle(0x4CAF50); // Back to normal green
+      this.input.setDefaultCursor('default');
+    });
+    
+    // Button click - restart the game
+    buttonBg.on('pointerdown', () => {
+      // Reset cursor
+      this.input.setDefaultCursor('default');
+      
+      // Notify reset state
+      this.notifyGameState('reset');
+      
+      // Restart the scene
+      this.scene.restart();
+    });
+    
+    // Start with low alpha and fade in
+    overlay.setAlpha(0);
+    modalBg.setAlpha(0);
+    modalBorder.setAlpha(0);
+    gameOverText.setAlpha(0);
+    explanationText.setAlpha(0);
+    buttonBg.setAlpha(0);
+    buttonText.setAlpha(0);
+    
+    // Fade in all elements
+    this.tweens.add({
+      targets: [overlay, modalBg, modalBorder, gameOverText, explanationText, buttonBg, buttonText],
+      alpha: 1,
+      duration: 400,
+      ease: 'Power2',
+      delay: function(i: number) { return 100 * i; }
+    });
+  }
+  
+  // Create a simple syringe icon for the game over modal
+  private createSyringeIcon(x: number, y: number): void {
+    // Create syringe body
+    const syringeBody = this.add.rectangle(x, y, 50, 12, 0xf0f0f0);
+    
+    // Create syringe plunger
+    const plunger = this.add.rectangle(x + 20, y, 10, 20, 0xd0d0d0);
+    
+    // Create needle
+    const needle = this.add.rectangle(x - 30, y, 20, 3, 0xc0c0c0);
+    
+    // Create liquid in syringe
+    const liquid = this.add.rectangle(x - 10, y, 30, 8, 0x0000ff); // Blue tranquilizer
+    
+    // Animate the syringe with a slight pulse
+    this.tweens.add({
+      targets: [syringeBody, plunger, needle, liquid],
+      scaleX: 1.1,
+      scaleY: 1.1,
+      duration: 800,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut'
+    });
   }
 
   update(): void {
