@@ -20,37 +20,18 @@ export default class GameScene extends Phaser.Scene {
   private mainCamera!: Phaser.Cameras.Scene2D.Camera;
   private playerFacingLeft: boolean = false; // Tracks player direction for animations
   private bleatSound!: Phaser.Sound.BaseSound;
-  private darts!: Phaser.Physics.Arcade.Group;
-  private dartTimers: Phaser.Time.TimerEvent[] = [];
 
   constructor() {
     super('GameScene');
   }
 
   preload(): void {
-    console.log('[DART DEBUG] preload method started');
     // Create separate textures for standing and running goat
     this.createGoatStandingTexture();
     this.createGoatRunningTexture();
-    this.createDartTexture();
     
     // Create sounds for the game
     this.createBleatSound();
-    console.log('[DART DEBUG] preload method completed');
-  }
-  
-  private createDartTexture(): void {
-    console.log('[DART DEBUG] Creating dart texture');
-    const graphics = this.make.graphics({ x: 0, y: 0 });
-    
-    // Simple red rectangle for the dart
-    graphics.fillStyle(0xFF0000); // Bright red for visibility
-    graphics.fillRect(0, 0, 20, 6);
-    
-    // Generate the texture
-    graphics.generateTexture('dart', 20, 6);
-    graphics.destroy();
-    console.log('[DART DEBUG] Dart texture created');
   }
   
   private createBleatSound(): void {
@@ -219,15 +200,9 @@ export default class GameScene extends Phaser.Scene {
   }
 
   create(): void {
-    console.log('[DART DEBUG] create method started');
-    
     // Reset game state
     this.gameWon = false;
     this.gameOver = false;
-    
-    // Clear any existing dart timers
-    this.dartTimers.forEach(timer => timer.destroy());
-    this.dartTimers = [];
     
     // Notify that game is now in playing state
     this.notifyGameState('playing');
@@ -380,69 +355,6 @@ export default class GameScene extends Phaser.Scene {
     this.physics.add.collider(this.player, this.platforms);
     this.physics.add.collider(this.player, this.walls);
     
-    // Create dart group for tranquilizer darts
-    console.log('[DART DEBUG] Creating dart group');
-    this.darts = this.physics.add.group({
-      classType: Phaser.Physics.Arcade.Image,
-      maxSize: 100,
-      active: false,
-      visible: false,
-      key: 'dart',
-      allowGravity: false
-    });
-    
-    // Setup dart-player collision
-    console.log('[DART DEBUG] Setting up dart-player collision');
-    this.physics.add.overlap(
-      this.player,
-      this.darts,
-      (player, dart) => {
-        // Type assertion to handle the collision callback
-        this.dartHitPlayer(
-          player as Phaser.Physics.Arcade.Sprite,
-          dart as Phaser.Physics.Arcade.Image
-        );
-      },
-      undefined,
-      this
-    );
-    
-    // Setup dart-platform collision
-    console.log('[DART DEBUG] Setting up dart-platform collision');
-    this.physics.add.collider(
-      this.darts,
-      this.platforms,
-      (dart, obstacle) => {
-        // Type assertion to handle the collision callback
-        this.dartHitEnvironment(
-          dart as Phaser.Physics.Arcade.Image,
-          obstacle as Phaser.Physics.Arcade.Sprite
-        );
-      },
-      undefined,
-      this
-    );
-    
-    // Setup dart-wall collision
-    console.log('[DART DEBUG] Setting up dart-wall collision');
-    this.physics.add.collider(
-      this.darts,
-      this.walls,
-      (dart, obstacle) => {
-        // Type assertion to handle the collision callback
-        this.dartHitEnvironment(
-          dart as Phaser.Physics.Arcade.Image,
-          obstacle as Phaser.Physics.Arcade.Sprite
-        );
-      },
-      undefined,
-      this
-    );
-    
-    // Create shooting darts from each wall
-    console.log('[DART DEBUG] About to call setupDartTimers');
-    this.setupDartTimers();
-    
     // Make camera follow the player
     this.mainCamera.startFollow(this.player, true, 0.1, 0.1);
     
@@ -568,146 +480,6 @@ export default class GameScene extends Phaser.Scene {
         this.bleatSound.play();
       }
     }
-    
-    // No need to update dart rotation as darts now travel only horizontally
-  }
-  
-  private setupDartTimers(): void {
-    console.log('[DART DEBUG] setupDartTimers called');
-    console.log(`[DART DEBUG] Number of walls: ${this.walls.getChildren().length}`);
-    
-    // Get the walls and set up timers for each one to shoot darts
-    this.walls.getChildren().forEach((gameObject, index) => {
-      // Cast to the correct type
-      const wall = gameObject as Phaser.Physics.Arcade.Sprite;
-      console.log(`[DART DEBUG] Setting up timer for wall ${index} at position (${wall.x}, ${wall.y})`);
-      
-      // Create a repeated timer with fixed interval for consistent dart firing
-      const timer = this.time.addEvent({
-        delay: 3000, // Fire every 3 seconds
-        callback: this.shootDart,
-        args: [wall],
-        callbackScope: this,
-        loop: true
-      });
-      
-      this.dartTimers.push(timer);
-      console.log(`[DART DEBUG] Timer created for wall ${index}, total timers: ${this.dartTimers.length}`);
-      
-      // Fire one dart immediately
-      console.log(`[DART DEBUG] Attempting to fire initial dart from wall ${index}`);
-      this.shootDart(wall);
-    });
-  }
-  
-  private shootDart(wall: Phaser.Physics.Arcade.Sprite): void {
-    console.log(`[DART DEBUG] shootDart called for wall at (${wall.x}, ${wall.y})`);
-    
-    // Only shoot if game is active
-    if (this.gameWon || this.gameOver) {
-      console.log('[DART DEBUG] Game won or over, not shooting dart');
-      return;
-    }
-    
-    // All darts fire to the left (against the goat's travel direction)
-    const directionX = -1;
-    
-    // Position the dart slightly offset from the wall
-    const offsetX = -15;
-    
-    // Create a new dart at the wall's position
-    console.log(`[DART DEBUG] Attempting to get dart from pool at position (${wall.x + offsetX}, ${wall.y})`);
-    const dart = this.darts.get(wall.x + offsetX, wall.y) as Phaser.Physics.Arcade.Image;
-    
-    // If no dart is available in the pool, exit
-    if (!dart) {
-      console.log('[DART DEBUG] Failed to get dart from pool - no dart available');
-      return;
-    }
-    
-    console.log('[DART DEBUG] Successfully created dart from pool');
-    
-    // Configure the dart
-    dart.setTexture('dart');
-    dart.setActive(true);
-    dart.setVisible(true);
-    
-    // Ensure the body exists before using it
-    if (dart.body) {
-      console.log('[DART DEBUG] Dart body exists, configuring physics');
-      dart.body.enable = true;
-      // Set velocity - darts only travel horizontally to the left
-      const speed = 300;
-      dart.body.velocity.x = directionX * speed;
-      dart.body.velocity.y = 0; // No vertical movement
-      
-      // Set gravity to false (using direct property access with type assertion)
-      (dart.body as Phaser.Physics.Arcade.Body).allowGravity = false;
-    } else {
-      console.log('[DART DEBUG] WARNING: Dart body does not exist!');
-    }
-    
-    dart.setScale(2.0); // Make darts larger for visibility
-    
-    // All darts face left
-    dart.setFlipX(true);
-    
-    console.log('[DART DEBUG] Dart fully configured and launched');
-    
-    // Remove the dart after 5 seconds (if it hasn't hit anything)
-    this.time.delayedCall(5000, () => {
-      if (dart && dart.active) {
-        console.log('[DART DEBUG] Removing dart after 5 seconds');
-        dart.setActive(false);
-        dart.setVisible(false);
-        if (dart.body) {
-          dart.body.enable = false;
-        }
-      }
-    });
-  }
-  
-  private dartHitPlayer(_player: Phaser.Physics.Arcade.Sprite, dart: Phaser.Physics.Arcade.Image): void {
-    console.log('[DART DEBUG] Dart hit player!');
-    
-    // Only process if the game is still active
-    if (this.gameWon || this.gameOver) return;
-    
-    // Disable the dart
-    dart.setActive(false);
-    dart.setVisible(false);
-    if (dart.body) {
-      dart.body.enable = false;
-    }
-    
-    // The goat is tranquilized - trigger game over
-    this.tranquilizeGoat();
-  }
-  
-  private dartHitEnvironment(dart: Phaser.Physics.Arcade.Image, _obstacle: Phaser.Physics.Arcade.Sprite): void {
-    console.log('[DART DEBUG] Dart hit environment');
-    
-    // Disable the dart on collision with environment
-    dart.setActive(false);
-    dart.setVisible(false);
-    if (dart.body) {
-      dart.body.enable = false;
-    }
-  }
-  
-  private tranquilizeGoat(): void {
-    // Set game over state
-    this.gameOver = true;
-    
-    // Stop the player and apply a falling effect
-    this.player.setVelocity(0, 50);
-    this.player.setTint(0x6666CC); // Blue tint to show tranquilized state
-    
-    // Stop following with camera
-    this.cameras.main.stopFollow();
-    
-    // Show game over screen after a short delay
-    this.time.delayedCall(500, this.showGameOverScreen, [], this);
   }
 
   private reachEndPoint(): void {
@@ -847,124 +619,6 @@ export default class GameScene extends Phaser.Scene {
   }
   
   // Utility method to communicate with the React component
-  private showGameOverScreen(): void {
-    // Get camera center position for modal positioning
-    const modalX = this.cameras.main.midPoint.x;
-    const modalY = this.cameras.main.midPoint.y;
-    
-    // Create a game over modal
-    
-    // 1. Add overlay
-    const overlay = this.add.rectangle(
-      modalX, 
-      modalY, 
-      this.cameras.main.width, 
-      this.cameras.main.height, 
-      0x000000, 
-      0.6
-    );
-    
-    // 2. Create modal background
-    const modalBg = this.add.rectangle(
-      modalX,
-      modalY,
-      500,
-      300,
-      0x990000, // Red color for game over
-      0.9
-    );
-    
-    // 3. Add white border
-    const modalBorder = this.add.rectangle(
-      modalX,
-      modalY,
-      500,
-      300,
-      0xffffff,
-      0
-    );
-    modalBorder.setStrokeStyle(4, 0xffffff, 1);
-    
-    // 4. Create tranquilizer icon
-    const dartIcon = this.add.image(modalX, modalY - 75, 'dart')
-      .setScale(4)
-      .setRotation(Math.PI / 4);
-    
-    // 5. Display game over message
-    const gameOverText = this.add.text(modalX, modalY - 15, 'TRANQUILIZED!', {
-      fontSize: '48px',
-      color: '#ffffff',
-      fontFamily: 'Arial',
-      fontStyle: 'bold'
-    }).setOrigin(0.5);
-    
-    // 6. Add description text
-    const descText = this.add.text(modalX, modalY + 50, 'Your goat was hit by a tranquilizer dart!', {
-      fontSize: '24px',
-      color: '#ffffff',
-      fontFamily: 'Arial',
-      align: 'center'
-    }).setOrigin(0.5);
-    
-    // 7. Add retry button
-    const retryButton = this.add.rectangle(
-      modalX,
-      modalY + 120,
-      200,
-      50,
-      0x333333,
-      1
-    );
-    retryButton.setInteractive({ useHandCursor: true });
-    
-    // Add button text
-    const retryText = this.add.text(modalX, modalY + 120, 'TRY AGAIN', {
-      fontSize: '24px',
-      color: '#ffffff',
-      fontFamily: 'Arial',
-      fontStyle: 'bold'
-    }).setOrigin(0.5);
-    
-    // Add button hover effect
-    retryButton.on('pointerover', () => {
-      retryButton.fillColor = 0x555555;
-    });
-    
-    retryButton.on('pointerout', () => {
-      retryButton.fillColor = 0x333333;
-    });
-    
-    // Add button click event
-    retryButton.on('pointerdown', () => {
-      // Reset the game
-      this.notifyGameState('reset');
-      this.scene.restart();
-    });
-    
-    // Animate elements in
-    // Start with elements invisible
-    overlay.setAlpha(0);
-    modalBg.setAlpha(0);
-    modalBorder.setAlpha(0);
-    dartIcon.setAlpha(0);
-    gameOverText.setAlpha(0);
-    descText.setAlpha(0);
-    retryButton.setAlpha(0);
-    retryText.setAlpha(0);
-    
-    // Fade everything in
-    this.tweens.add({
-      targets: [overlay, modalBg, modalBorder, dartIcon, gameOverText, descText, retryButton, retryText],
-      alpha: 1,
-      duration: 500,
-      ease: 'Power2',
-      delay: function(i: number) { return 100 * i; }
-    });
-    
-    // Notify about game over state
-    this.notifyGameState('gameover');
-  }
-  
   private notifyGameState(status: 'win' | 'playing' | 'reset' | 'gameover'): void {
     // Create and dispatch a custom event to notify the React app of game state changes
     const event = new CustomEvent('game-state-update', {

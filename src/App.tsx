@@ -5,7 +5,6 @@ import GameScene from './game/scenes/GameScene'
 import PrompterControls from './components/PrompterControls'
 
 function App() {
-  const [game, setGame] = useState<Phaser.Game | null>(null);
   const [gameStatus, setGameStatus] = useState<'win' | 'playing' | 'reset' | 'gameover'>('reset');
 
   // This will be implemented later to connect the prompter to the game
@@ -80,7 +79,6 @@ function App() {
 
     const newGame = new Phaser.Game(config);
     gameInstanceRef.current = newGame;
-    setGame(newGame);
   }, []); // No dependencies to avoid re-creation
 
   useEffect(() => {
@@ -119,7 +117,7 @@ function App() {
       <div style={{ textAlign: 'center', marginTop: '20px' }}>
         {gameStatus === 'gameover' ? (
           <p style={{ color: '#d9534f', fontWeight: 'bold' }}>
-            Watch out for tranquilizer darts from the walls!
+            Game over! Try again.
           </p>
         ) : (
           <p>Use arrow keys to move and SPACEBAR to jump. Reach the red marker to win!</p>
