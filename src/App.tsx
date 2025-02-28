@@ -1,48 +1,34 @@
-import { useEffect } from 'react'
-import Phaser from 'phaser'
+import { useEffect, useState } from 'react'
 import './App.css'
 
 function App() {
+  const [dots, setDots] = useState('...')
+
   useEffect(() => {
-    const config: Phaser.Types.Core.GameConfig = {
-      type: Phaser.AUTO,
-      width: 800,
-      height: 600,
-      physics: {
-        default: 'arcade',
-        arcade: {
-          gravity: { y: 300, x: 0 },
-          debug: false
-        }
-      },
-      scene: {
-        preload: function() {
-          // Assets will be loaded here
-        },
-        create: function(this: Phaser.Scene) {
-          const text = this.add.text(400, 300, 'Welcome to Ultimate Parrot Shark', {
-            fontSize: '32px',
-            color: '#ffffff',
-            fontFamily: 'Arial'
-          });
-          text.setOrigin(0.5); // This centers the text at its position
-        },
-        update: function() {
-          // Game logic will run here
-        }
-      },
-      parent: 'game-container'
-    }
+    // Animate the dots
+    const interval = setInterval(() => {
+      setDots(prev => prev.length >= 3 ? '.' : prev + '.')
+    }, 500)
 
-    const game = new Phaser.Game(config)
-
-    return () => {
-      game.destroy(true)
-    }
+    return () => clearInterval(interval)
   }, [])
 
   return (
-    <div id="game-container" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+    <div className="app-container">
+      <div className="content-wrapper">
+        <h1 className="game-title">Goat In The Shell</h1>
+        <div className="coming-soon-container">
+          <div className="message-box">
+            <p className="coming-soon-text">
+              Your favorite gamer's favorite game<span className="dots-container">{dots}</span>
+            </p>
+            <p className="coming-soon-label">Coming Soon</p>
+          </div>
+          <div className="goat-animation">
+            <div className="goat">🐐</div>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
