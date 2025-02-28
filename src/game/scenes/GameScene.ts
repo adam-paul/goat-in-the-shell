@@ -1,0 +1,975 @@
+import Phaser from 'phaser';
+
+// Define a custom event for game state changes
+interface GameStateEvent extends CustomEvent {
+  detail: {
+    status: 'win' | 'playing' | 'reset' | 'gameover';
+  }
+}
+
+export default class GameScene extends Phaser.Scene {
+  private player!: Phaser.Types.Physics.Arcade.SpriteWithDynamicBody;
+  private platforms!: Phaser.Physics.Arcade.StaticGroup;
+  private walls!: Phaser.Physics.Arcade.StaticGroup;
+  private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
+  private startPoint!: Phaser.GameObjects.Rectangle;
+  private endPoint!: Phaser.GameObjects.Rectangle;
+  private gameWon: boolean = false;
+  private gameOver: boolean = false;
+  private worldWidth: number = 2400; // Double the canvas width
+  private mainCamera!: Phaser.Cameras.Scene2D.Camera;
+  private playerFacingLeft: boolean = false; // Tracks player direction for animations
+  private bleatSound!: Phaser.Sound.BaseSound;
+  private darts!: Phaser.Physics.Arcade.Group;
+  private dartTimers: Phaser.Time.TimerEvent[] = [];
+
+  constructor() {
+    super('GameScene');
+  }
+
+  preload(): void {
+    console.log('[DART DEBUG] preload method started');
+    // Create separate textures for standing and running goat
+    this.createGoatStandingTexture();
+    this.createGoatRunningTexture();
+    this.createDartTexture();
+    
+    // Create sounds for the game
+    this.createBleatSound();
+    console.log('[DART DEBUG] preload method completed');
+  }
+  
+  private createDartTexture(): void {
+    console.log('[DART DEBUG] Creating dart texture');
+    const graphics = this.make.graphics({ x: 0, y: 0 });
+    
+    // Simple red rectangle for the dart
+    graphics.fillStyle(0xFF0000); // Bright red for visibility
+    graphics.fillRect(0, 0, 20, 6);
+    
+    // Generate the texture
+    graphics.generateTexture('dart', 20, 6);
+    graphics.destroy();
+    console.log('[DART DEBUG] Dart texture created');
+  }
+  
+  private createBleatSound(): void {
+    try {
+      // Create a programmatic audio data for a goat bleat
+      // @ts-ignore - Handle different sound manager implementations
+      const audioContext = this.sound.context;
+      if (!audioContext) {
+        console.warn('Audio context not available for bleat sound');
+        return;
+      }
+      
+      // Create an offline context for generating the sound
+      const sampleRate = audioContext.sampleRate;
+      const offlineCtx = new OfflineAudioContext(1, sampleRate * 0.5, sampleRate);
+      
+      // Create oscillator for the bleat
+      const oscillator = offlineCtx.createOscillator();
+      oscillator.type = 'sawtooth';
+      
+      // Create a gain node for volume control
+      const gainNode = offlineCtx.createGain();
+      
+      // Connect nodes
+      oscillator.connect(gainNode);
+      gainNode.connect(offlineCtx.destination);
+      
+      // Set up a simple bleating effect with frequency modulation
+      const startTime = 0;
+      const duration = 0.3;
+      
+      // Start with a high pitch and reduce quickly
+      oscillator.frequency.setValueAtTime(600, startTime);
+      oscillator.frequency.linearRampToValueAtTime(400, startTime + 0.1);
+      oscillator.frequency.linearRampToValueAtTime(500, startTime + 0.2);
+      oscillator.frequency.linearRampToValueAtTime(300, startTime + duration);
+      
+      // Control volume envelope
+      gainNode.gain.setValueAtTime(0, startTime);
+      gainNode.gain.linearRampToValueAtTime(0.3, startTime + 0.05);
+      gainNode.gain.setValueAtTime(0.3, startTime + 0.15);
+      gainNode.gain.linearRampToValueAtTime(0, startTime + duration);
+      
+      // Start and stop the oscillator
+      oscillator.start(startTime);
+      oscillator.stop(startTime + duration);
+      
+      // Render the sound
+      offlineCtx.startRendering().then((renderedBuffer) => {
+        // Create a new sound with the rendered buffer
+        const bleatSound = this.sound.add('bleat', { volume: 0.3 });
+        this.cache.audio.add('bleat', renderedBuffer);
+        this.bleatSound = bleatSound;
+      }).catch(err => {
+        console.error('Error creating bleat sound:', err);
+      });
+    } catch (e) {
+      console.error('Error setting up bleat sound:', e);
+    }
+  }
+  
+  private createGoatStandingTexture(): void {
+    const graphics = this.make.graphics({ x: 0, y: 0 });
+    
+    // Body
+    graphics.fillStyle(0xF0F0F0); // Off-white
+    graphics.fillRect(10, 14, 28, 16);
+    
+    // Head
+    graphics.fillStyle(0xF0F0F0);
+    graphics.fillRect(32, 6, 10, 12);
+    
+    // Snout
+    graphics.fillStyle(0xE8E8E8);
+    graphics.fillRect(42, 9, 6, 6);
+    
+    // Legs - standing position
+    graphics.fillStyle(0xE0E0E0);
+    graphics.fillRect(12, 30, 4, 12); // Left front
+    graphics.fillRect(22, 30, 4, 12); // Right front
+    graphics.fillRect(32, 30, 4, 12); // Left back
+    graphics.fillRect(42, 30, 4, 12); // Right back
+    
+    // Horns
+    graphics.fillStyle(0xD8D8D8);
+    graphics.fillRect(32, 2, 2, 5); // Left horn
+    graphics.fillRect(35, 1, 2, 2);
+    graphics.fillRect(38, 0, 2, 2);
+    
+    graphics.fillRect(39, 2, 2, 5); // Right horn
+    graphics.fillRect(42, 1, 2, 2);
+    graphics.fillRect(45, 0, 2, 2);
+    
+    // Eye
+    graphics.fillStyle(0x000000);
+    graphics.fillRect(38, 9, 3, 3);
+    
+    // Tail - normal position
+    graphics.fillStyle(0xE8E8E8);
+    graphics.fillRect(8, 18, 4, 4);
+    
+    // Back definition
+    graphics.lineStyle(1, 0xD0D0D0);
+    graphics.lineBetween(10, 14, 38, 14);
+    
+    // Body shading
+    graphics.fillStyle(0xE8E8E8);
+    graphics.fillRect(10, 14, 28, 4);
+    
+    // Generate the texture
+    graphics.generateTexture('goat_standing', 50, 42);
+    graphics.destroy();
+  }
+  
+  private createGoatRunningTexture(): void {
+    const graphics = this.make.graphics({ x: 0, y: 0 });
+    
+    // Body
+    graphics.fillStyle(0xF0F0F0); // Off-white
+    graphics.fillRect(10, 14, 28, 16);
+    
+    // Head
+    graphics.fillStyle(0xF0F0F0);
+    graphics.fillRect(32, 6, 10, 12);
+    
+    // Snout
+    graphics.fillStyle(0xE8E8E8);
+    graphics.fillRect(42, 9, 6, 6);
+    
+    // Legs - running position
+    graphics.fillStyle(0xE0E0E0);
+    graphics.fillRect(12, 30, 4, 10); // Left front - slightly raised
+    graphics.fillRect(22, 33, 4, 9); // Right front - extended
+    graphics.fillRect(32, 33, 4, 9); // Left back - extended
+    graphics.fillRect(42, 30, 4, 10); // Right back - slightly raised
+    
+    // Horns
+    graphics.fillStyle(0xD8D8D8);
+    graphics.fillRect(32, 2, 2, 5); // Left horn
+    graphics.fillRect(35, 1, 2, 2);
+    graphics.fillRect(38, 0, 2, 2);
+    
+    graphics.fillRect(39, 2, 2, 5); // Right horn
+    graphics.fillRect(42, 1, 2, 2);
+    graphics.fillRect(45, 0, 2, 2);
+    
+    // Eye
+    graphics.fillStyle(0x000000);
+    graphics.fillRect(38, 9, 3, 3);
+    
+    // Tail - raised position
+    graphics.fillStyle(0xE8E8E8);
+    graphics.fillRect(8, 16, 4, 4);
+    
+    // Back definition
+    graphics.lineStyle(1, 0xD0D0D0);
+    graphics.lineBetween(10, 14, 38, 14);
+    
+    // Body shading
+    graphics.fillStyle(0xE8E8E8);
+    graphics.fillRect(10, 14, 28, 4);
+    
+    // Generate the texture
+    graphics.generateTexture('goat_running', 50, 42);
+    graphics.destroy();
+  }
+
+  create(): void {
+    console.log('[DART DEBUG] create method started');
+    
+    // Reset game state
+    this.gameWon = false;
+    this.gameOver = false;
+    
+    // Clear any existing dart timers
+    this.dartTimers.forEach(timer => timer.destroy());
+    this.dartTimers = [];
+    
+    // Notify that game is now in playing state
+    this.notifyGameState('playing');
+    
+    // Set physics world bounds to be twice the width of the canvas
+    this.physics.world.setBounds(0, 0, this.worldWidth, 800);
+    
+    // Create a blue sky background that extends across the whole level
+    this.add.rectangle(this.worldWidth / 2, 400, this.worldWidth, 800, 0x87CEEB);
+    
+    // Setup camera to follow the player
+    this.mainCamera = this.cameras.main;
+    this.mainCamera.setBounds(0, 0, this.worldWidth, 800);
+    
+    // Create platforms group
+    this.platforms = this.physics.add.staticGroup();
+    this.walls = this.physics.add.staticGroup();
+
+    // Generate textures programmatically
+    this.createPlatformTexture();
+    this.createWallTexture();
+
+    // Create ground that spans the entire level
+    const ground = this.platforms.create(this.worldWidth / 2, 768, 'platform') as Phaser.Physics.Arcade.Sprite;
+    ground.setScale(this.worldWidth / 50, 1).refreshBody(); // Scale to match world width
+    
+    // Left section - initial platforms
+    // Lower level platforms
+    this.platforms.create(200, 650, 'platform');
+    this.platforms.create(400, 550, 'platform');
+    this.platforms.create(600, 600, 'platform');
+    this.platforms.create(800, 500, 'platform');
+    
+    // Middle level platforms
+    this.platforms.create(150, 450, 'platform');
+    this.platforms.create(350, 350, 'platform');
+    this.platforms.create(550, 400, 'platform');
+    this.platforms.create(750, 300, 'platform');
+    this.platforms.create(950, 350, 'platform');
+    
+    // Upper level platforms
+    this.platforms.create(300, 200, 'platform');
+    this.platforms.create(500, 150, 'platform');
+    this.platforms.create(700, 200, 'platform');
+    this.platforms.create(900, 150, 'platform');
+    this.platforms.create(1100, 200, 'platform');
+    
+    // Create vertical walls as obstacles in left section
+    this.walls.create(400, 700, 'wall');
+    this.walls.create(600, 500, 'wall');
+    this.walls.create(800, 650, 'wall');
+    this.walls.create(300, 350, 'wall');
+    this.walls.create(900, 450, 'wall');
+    
+    // Right section - extending platforms (from 1200 to 2400)
+    // Lower level platforms
+    this.platforms.create(1300, 650, 'platform');
+    this.platforms.create(1500, 550, 'platform');
+    this.platforms.create(1700, 600, 'platform');
+    this.platforms.create(1900, 500, 'platform');
+    this.platforms.create(2100, 550, 'platform');
+    
+    // Middle level platforms
+    this.platforms.create(1350, 450, 'platform');
+    this.platforms.create(1550, 350, 'platform');
+    this.platforms.create(1750, 400, 'platform');
+    this.platforms.create(1950, 300, 'platform');
+    this.platforms.create(2150, 400, 'platform');
+    
+    // Upper level platforms leading to finish
+    this.platforms.create(1400, 250, 'platform');
+    this.platforms.create(1600, 200, 'platform');
+    this.platforms.create(1800, 150, 'platform');
+    this.platforms.create(2000, 180, 'platform');
+    this.platforms.create(2200, 150, 'platform');
+    
+    // Create vertical walls as obstacles in right section
+    this.walls.create(1400, 600, 'wall');
+    this.walls.create(1600, 650, 'wall');
+    this.walls.create(1800, 500, 'wall');
+    this.walls.create(2000, 400, 'wall');
+    this.walls.create(2200, 300, 'wall');
+
+    // Create start point (bottom left)
+    this.startPoint = this.add.rectangle(80, 700, 50, 50, 0x00ff00);
+    this.physics.add.existing(this.startPoint, true);
+    this.add.text(80, 660, 'START', {
+      fontSize: '18px',
+      color: '#ffffff',
+      fontFamily: 'Arial',
+      fontStyle: 'bold'
+    }).setOrigin(0.5);
+
+    // Create end point (far top right)
+    this.endPoint = this.add.rectangle(2320, 120, 50, 50, 0xff0000);
+    this.physics.add.existing(this.endPoint, true);
+    
+    // Add FINISH text above the red box without the background
+    this.add.text(2320, 80, 'FINISH', {
+      fontSize: '22px',
+      color: '#ffffff',
+      fontFamily: 'Arial',
+      fontStyle: 'bold'
+    }).setOrigin(0.5);
+
+    // Create player (goat) at the start position
+    this.player = this.physics.add.sprite(80, 650, 'goat_standing');
+    
+    // Set up player physics
+    this.player.setBounce(0.1);
+    this.player.setCollideWorldBounds(true);
+    this.player.body.setGravityY(300); // Make sure gravity affects the player
+    
+    // We now have two separate textures for the goat
+    // Create animations using these textures
+    this.anims.create({
+      key: 'left',
+      frames: [
+        { key: 'goat_standing' },
+        { key: 'goat_running' }
+      ],
+      frameRate: 8,
+      repeat: -1
+    });
+    
+    this.anims.create({
+      key: 'turn',
+      frames: [{ key: 'goat_standing' }],
+      frameRate: 10
+    });
+    
+    this.anims.create({
+      key: 'right',
+      frames: [
+        { key: 'goat_standing' },
+        { key: 'goat_running' }
+      ],
+      frameRate: 8,
+      repeat: -1
+    });
+    
+    // Scale the goat just a bit
+    this.player.setScale(1.2);
+    
+    // Adjust the collision body to better match the goat shape - smaller and more precise
+    this.player.setSize(28, 26); // Smaller hitbox that matches the visual goat body better
+    this.player.setOffset(10, 14); // Offset to align with the visible goat body
+
+    // Set up collisions
+    this.physics.add.collider(this.player, this.platforms);
+    this.physics.add.collider(this.player, this.walls);
+    
+    // Create dart group for tranquilizer darts
+    console.log('[DART DEBUG] Creating dart group');
+    this.darts = this.physics.add.group({
+      classType: Phaser.Physics.Arcade.Image,
+      maxSize: 100,
+      active: false,
+      visible: false,
+      key: 'dart',
+      allowGravity: false
+    });
+    
+    // Setup dart-player collision
+    console.log('[DART DEBUG] Setting up dart-player collision');
+    this.physics.add.overlap(
+      this.player,
+      this.darts,
+      (player, dart) => {
+        // Type assertion to handle the collision callback
+        this.dartHitPlayer(
+          player as Phaser.Physics.Arcade.Sprite,
+          dart as Phaser.Physics.Arcade.Image
+        );
+      },
+      undefined,
+      this
+    );
+    
+    // Setup dart-platform collision
+    console.log('[DART DEBUG] Setting up dart-platform collision');
+    this.physics.add.collider(
+      this.darts,
+      this.platforms,
+      (dart, obstacle) => {
+        // Type assertion to handle the collision callback
+        this.dartHitEnvironment(
+          dart as Phaser.Physics.Arcade.Image,
+          obstacle as Phaser.Physics.Arcade.Sprite
+        );
+      },
+      undefined,
+      this
+    );
+    
+    // Setup dart-wall collision
+    console.log('[DART DEBUG] Setting up dart-wall collision');
+    this.physics.add.collider(
+      this.darts,
+      this.walls,
+      (dart, obstacle) => {
+        // Type assertion to handle the collision callback
+        this.dartHitEnvironment(
+          dart as Phaser.Physics.Arcade.Image,
+          obstacle as Phaser.Physics.Arcade.Sprite
+        );
+      },
+      undefined,
+      this
+    );
+    
+    // Create shooting darts from each wall
+    console.log('[DART DEBUG] About to call setupDartTimers');
+    this.setupDartTimers();
+    
+    // Make camera follow the player
+    this.mainCamera.startFollow(this.player, true, 0.1, 0.1);
+    
+    // Add a transition effect
+    this.cameras.main.fadeIn(1000, 0, 0, 0);
+    // Create a more reliable collision detection for the end point
+    this.physics.add.overlap(
+      this.player,
+      this.endPoint,
+      () => {
+        // Only call reachEndPoint if game is not already won
+        if (!this.gameWon) {
+          this.reachEndPoint();
+        }
+      },
+      undefined,
+      this
+    );
+
+    // Set up keyboard controls
+    this.cursors = this.input.keyboard?.createCursorKeys() || {} as Phaser.Types.Input.Keyboard.CursorKeys;
+
+    // Add direct keyboard handling for space and arrow keys
+    // Capture the spacebar to prevent it from scrolling the page
+    this.input.keyboard?.addCapture('SPACE');
+    
+    this.input.keyboard?.on('keydown-SPACE', () => {
+      if ((this.player.body.touching.down || this.player.body.blocked.down) && !this.gameWon) {
+        this.player.setVelocityY(-470);
+      }
+    });
+    
+    this.input.keyboard?.on('keydown-UP', () => {
+      if ((this.player.body.touching.down || this.player.body.blocked.down) && !this.gameWon) {
+        this.player.setVelocityY(-470);
+      }
+    });
+
+    // No instruction text at the top anymore
+  }
+
+  private createPlatformTexture(): void {
+    const graphics = this.make.graphics({ x: 0, y: 0 });
+    
+    // Draw a simple platform texture
+    graphics.fillStyle(0x654321); // Brown color
+    graphics.fillRect(0, 0, 100, 20);
+    graphics.fillStyle(0x8B4513); // Darker brown for top
+    graphics.fillRect(0, 0, 100, 5);
+    
+    // Add some texture details
+    graphics.fillStyle(0x5D4037); // Slightly different brown for wood grain
+    for (let i: number = 0; i < 5; i++) {
+      graphics.fillRect(10 + (i * 20), 8, 5, 10);
+    }
+
+    graphics.generateTexture('platform', 100, 20);
+    graphics.destroy();
+  }
+  
+  private createWallTexture(): void {
+    const graphics = this.make.graphics({ x: 0, y: 0 });
+    
+    // Draw a vertical wall texture
+    graphics.fillStyle(0x808080); // Gray color
+    graphics.fillRect(0, 0, 20, 100);
+    
+    // Add texture details (brick pattern)
+    graphics.lineStyle(1, 0x606060);
+    
+    // Horizontal lines
+    for (let y: number = 0; y < 100; y += 20) {
+      graphics.moveTo(0, y);
+      graphics.lineTo(20, y);
+    }
+    
+    // Vertical lines with offset for brick pattern
+    for (let x: number = 0; x < 20; x += 10) {
+      graphics.moveTo(x, 0);
+      graphics.lineTo(x, 100);
+    }
+
+    graphics.generateTexture('wall', 20, 100);
+    graphics.destroy();
+  }
+
+
+  update(): void {
+    if (this.gameWon || this.gameOver) return;
+
+    // Handle player movement
+    if (this.cursors.left?.isDown) {
+      this.player.setVelocityX(-200); // Slightly faster for better gameplay
+      this.player.anims.play('left', true);
+      this.playerFacingLeft = true; // Track that player is facing left
+    } else if (this.cursors.right?.isDown) {
+      this.player.setVelocityX(200); // Slightly faster for better gameplay
+      this.player.anims.play('right', true);
+      this.playerFacingLeft = false; // Track that player is facing right
+    } else {
+      this.player.setVelocityX(0);
+      this.player.anims.play('turn');
+    }
+
+    // Update the sprite flip based on player direction
+    this.player.setFlipX(this.playerFacingLeft);
+
+    // Jump when spacebar or up is pressed and player is on the ground
+    if ((this.cursors.space?.isDown || this.cursors.up?.isDown) && 
+        (this.player.body.touching.down || this.player.body.blocked.down)) {
+      this.player.setVelocityY(-500); // Slightly higher jump for the larger level
+      
+      // Play the bleat sound if it exists
+      if (this.bleatSound && this.sound.locked === false) {
+        // Add a small random pitch variation each time
+        const randomPitch = 0.9 + Math.random() * 0.2; // Between 0.9 and 1.1
+        try {
+          // @ts-ignore - Some sound implementations may not have setRate
+          this.bleatSound.setRate(randomPitch);
+        } catch (e) {
+          // Ignore if setRate is not available
+        }
+        this.bleatSound.play();
+      }
+    }
+    
+    // No need to update dart rotation as darts now travel only horizontally
+  }
+  
+  private setupDartTimers(): void {
+    console.log('[DART DEBUG] setupDartTimers called');
+    console.log(`[DART DEBUG] Number of walls: ${this.walls.getChildren().length}`);
+    
+    // Get the walls and set up timers for each one to shoot darts
+    this.walls.getChildren().forEach((gameObject, index) => {
+      // Cast to the correct type
+      const wall = gameObject as Phaser.Physics.Arcade.Sprite;
+      console.log(`[DART DEBUG] Setting up timer for wall ${index} at position (${wall.x}, ${wall.y})`);
+      
+      // Create a repeated timer with fixed interval for consistent dart firing
+      const timer = this.time.addEvent({
+        delay: 3000, // Fire every 3 seconds
+        callback: this.shootDart,
+        args: [wall],
+        callbackScope: this,
+        loop: true
+      });
+      
+      this.dartTimers.push(timer);
+      console.log(`[DART DEBUG] Timer created for wall ${index}, total timers: ${this.dartTimers.length}`);
+      
+      // Fire one dart immediately
+      console.log(`[DART DEBUG] Attempting to fire initial dart from wall ${index}`);
+      this.shootDart(wall);
+    });
+  }
+  
+  private shootDart(wall: Phaser.Physics.Arcade.Sprite): void {
+    console.log(`[DART DEBUG] shootDart called for wall at (${wall.x}, ${wall.y})`);
+    
+    // Only shoot if game is active
+    if (this.gameWon || this.gameOver) {
+      console.log('[DART DEBUG] Game won or over, not shooting dart');
+      return;
+    }
+    
+    // All darts fire to the left (against the goat's travel direction)
+    const directionX = -1;
+    
+    // Position the dart slightly offset from the wall
+    const offsetX = -15;
+    
+    // Create a new dart at the wall's position
+    console.log(`[DART DEBUG] Attempting to get dart from pool at position (${wall.x + offsetX}, ${wall.y})`);
+    const dart = this.darts.get(wall.x + offsetX, wall.y) as Phaser.Physics.Arcade.Image;
+    
+    // If no dart is available in the pool, exit
+    if (!dart) {
+      console.log('[DART DEBUG] Failed to get dart from pool - no dart available');
+      return;
+    }
+    
+    console.log('[DART DEBUG] Successfully created dart from pool');
+    
+    // Configure the dart
+    dart.setTexture('dart');
+    dart.setActive(true);
+    dart.setVisible(true);
+    
+    // Ensure the body exists before using it
+    if (dart.body) {
+      console.log('[DART DEBUG] Dart body exists, configuring physics');
+      dart.body.enable = true;
+      // Set velocity - darts only travel horizontally to the left
+      const speed = 300;
+      dart.body.velocity.x = directionX * speed;
+      dart.body.velocity.y = 0; // No vertical movement
+      
+      // Set gravity to false (using direct property access with type assertion)
+      (dart.body as Phaser.Physics.Arcade.Body).allowGravity = false;
+    } else {
+      console.log('[DART DEBUG] WARNING: Dart body does not exist!');
+    }
+    
+    dart.setScale(2.0); // Make darts larger for visibility
+    
+    // All darts face left
+    dart.setFlipX(true);
+    
+    console.log('[DART DEBUG] Dart fully configured and launched');
+    
+    // Remove the dart after 5 seconds (if it hasn't hit anything)
+    this.time.delayedCall(5000, () => {
+      if (dart && dart.active) {
+        console.log('[DART DEBUG] Removing dart after 5 seconds');
+        dart.setActive(false);
+        dart.setVisible(false);
+        if (dart.body) {
+          dart.body.enable = false;
+        }
+      }
+    });
+  }
+  
+  private dartHitPlayer(_player: Phaser.Physics.Arcade.Sprite, dart: Phaser.Physics.Arcade.Image): void {
+    console.log('[DART DEBUG] Dart hit player!');
+    
+    // Only process if the game is still active
+    if (this.gameWon || this.gameOver) return;
+    
+    // Disable the dart
+    dart.setActive(false);
+    dart.setVisible(false);
+    if (dart.body) {
+      dart.body.enable = false;
+    }
+    
+    // The goat is tranquilized - trigger game over
+    this.tranquilizeGoat();
+  }
+  
+  private dartHitEnvironment(dart: Phaser.Physics.Arcade.Image, _obstacle: Phaser.Physics.Arcade.Sprite): void {
+    console.log('[DART DEBUG] Dart hit environment');
+    
+    // Disable the dart on collision with environment
+    dart.setActive(false);
+    dart.setVisible(false);
+    if (dart.body) {
+      dart.body.enable = false;
+    }
+  }
+  
+  private tranquilizeGoat(): void {
+    // Set game over state
+    this.gameOver = true;
+    
+    // Stop the player and apply a falling effect
+    this.player.setVelocity(0, 50);
+    this.player.setTint(0x6666CC); // Blue tint to show tranquilized state
+    
+    // Stop following with camera
+    this.cameras.main.stopFollow();
+    
+    // Show game over screen after a short delay
+    this.time.delayedCall(500, this.showGameOverScreen, [], this);
+  }
+
+  private reachEndPoint(): void {
+    // Set game state to won and stop player movement
+    this.gameWon = true;
+    this.player.setVelocity(0, 0);
+    
+    
+    // Stop camera following
+    this.cameras.main.stopFollow();
+    
+    // Get camera center position for modal positioning
+    const modalX = this.cameras.main.midPoint.x;
+    const modalY = this.cameras.main.midPoint.y;
+    
+    // Create a simple win modal
+    
+    // 1. Add overlay
+    const overlay = this.add.rectangle(
+      modalX, 
+      modalY, 
+      this.cameras.main.width, 
+      this.cameras.main.height, 
+      0x000000, 
+      0.5
+    );
+    
+    // 2. Create blue modal background
+    const modalBg = this.add.rectangle(
+      modalX,
+      modalY,
+      500,
+      300,
+      0x3498db,
+      0.9
+    );
+    
+    // 3. Add white border
+    const modalBorder = this.add.rectangle(
+      modalX,
+      modalY,
+      500,
+      300,
+      0xffffff,
+      0
+    );
+    modalBorder.setStrokeStyle(4, 0xffffff, 1);
+    
+    // 4. Create simple trophy icon
+    const trophy = this.add.rectangle(
+      modalX,
+      modalY - 75,
+      40,
+      60,
+      0xffd700
+    );
+    
+    // 5. Display win message
+    const winText = this.add.text(modalX, modalY - 15, 'YOU WIN!', {
+      fontSize: '64px',
+      color: '#ffffff',
+      fontFamily: 'Arial',
+      fontStyle: 'bold'
+    }).setOrigin(0.5);
+    
+    // 6. Add congratulatory text
+    const congratsText = this.add.text(modalX, modalY + 70, 'Congratulations!\nYou completed the challenge!', {
+      fontSize: '28px',
+      color: '#ffffff',
+      fontFamily: 'Arial',
+      align: 'center'
+    }).setOrigin(0.5);
+    
+    // Add simple animations to make the modal more attractive
+    
+    // Pulse the win text
+    this.tweens.add({
+      targets: winText,
+      scale: 1.1,
+      duration: 800,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut'
+    });
+    
+    // Pulse the trophy
+    this.tweens.add({
+      targets: trophy,
+      scaleX: 1.2,
+      scaleY: 1.2,
+      duration: 1000,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut' 
+    });
+    
+    // Add a simple particle effect for celebration
+    const particles = this.add.particles(modalX, modalY - 150, 'goat_standing', {
+      speed: 100,
+      scale: { start: 0.1, end: 0 },
+      blendMode: 'ADD',
+      lifespan: 1000,
+      gravityY: 200
+    });
+    
+    // Explode particles
+    particles.explode(50, 0, 0);
+    
+    // Add delayed particles for continued celebration
+    this.time.delayedCall(500, () => {
+      particles.explode(30, -100, 0);
+    });
+    
+    this.time.delayedCall(1000, () => {
+      particles.explode(30, 100, 0);
+    });
+    
+    // Start with low alpha and fade in
+    overlay.setAlpha(0);
+    modalBg.setAlpha(0);
+    modalBorder.setAlpha(0);
+    trophy.setAlpha(0);
+    winText.setAlpha(0);
+    congratsText.setAlpha(0);
+    
+    // Fade in all elements
+    this.tweens.add({
+      targets: [overlay, modalBg, modalBorder, trophy, winText, congratsText],
+      alpha: 1,
+      duration: 500,
+      ease: 'Power2',
+      delay: function(i: number) { return 100 * i; }
+    });
+    
+    // Notify the React component that the game is won
+    this.notifyGameState('win');
+  }
+  
+  // Utility method to communicate with the React component
+  private showGameOverScreen(): void {
+    // Get camera center position for modal positioning
+    const modalX = this.cameras.main.midPoint.x;
+    const modalY = this.cameras.main.midPoint.y;
+    
+    // Create a game over modal
+    
+    // 1. Add overlay
+    const overlay = this.add.rectangle(
+      modalX, 
+      modalY, 
+      this.cameras.main.width, 
+      this.cameras.main.height, 
+      0x000000, 
+      0.6
+    );
+    
+    // 2. Create modal background
+    const modalBg = this.add.rectangle(
+      modalX,
+      modalY,
+      500,
+      300,
+      0x990000, // Red color for game over
+      0.9
+    );
+    
+    // 3. Add white border
+    const modalBorder = this.add.rectangle(
+      modalX,
+      modalY,
+      500,
+      300,
+      0xffffff,
+      0
+    );
+    modalBorder.setStrokeStyle(4, 0xffffff, 1);
+    
+    // 4. Create tranquilizer icon
+    const dartIcon = this.add.image(modalX, modalY - 75, 'dart')
+      .setScale(4)
+      .setRotation(Math.PI / 4);
+    
+    // 5. Display game over message
+    const gameOverText = this.add.text(modalX, modalY - 15, 'TRANQUILIZED!', {
+      fontSize: '48px',
+      color: '#ffffff',
+      fontFamily: 'Arial',
+      fontStyle: 'bold'
+    }).setOrigin(0.5);
+    
+    // 6. Add description text
+    const descText = this.add.text(modalX, modalY + 50, 'Your goat was hit by a tranquilizer dart!', {
+      fontSize: '24px',
+      color: '#ffffff',
+      fontFamily: 'Arial',
+      align: 'center'
+    }).setOrigin(0.5);
+    
+    // 7. Add retry button
+    const retryButton = this.add.rectangle(
+      modalX,
+      modalY + 120,
+      200,
+      50,
+      0x333333,
+      1
+    );
+    retryButton.setInteractive({ useHandCursor: true });
+    
+    // Add button text
+    const retryText = this.add.text(modalX, modalY + 120, 'TRY AGAIN', {
+      fontSize: '24px',
+      color: '#ffffff',
+      fontFamily: 'Arial',
+      fontStyle: 'bold'
+    }).setOrigin(0.5);
+    
+    // Add button hover effect
+    retryButton.on('pointerover', () => {
+      retryButton.fillColor = 0x555555;
+    });
+    
+    retryButton.on('pointerout', () => {
+      retryButton.fillColor = 0x333333;
+    });
+    
+    // Add button click event
+    retryButton.on('pointerdown', () => {
+      // Reset the game
+      this.notifyGameState('reset');
+      this.scene.restart();
+    });
+    
+    // Animate elements in
+    // Start with elements invisible
+    overlay.setAlpha(0);
+    modalBg.setAlpha(0);
+    modalBorder.setAlpha(0);
+    dartIcon.setAlpha(0);
+    gameOverText.setAlpha(0);
+    descText.setAlpha(0);
+    retryButton.setAlpha(0);
+    retryText.setAlpha(0);
+    
+    // Fade everything in
+    this.tweens.add({
+      targets: [overlay, modalBg, modalBorder, dartIcon, gameOverText, descText, retryButton, retryText],
+      alpha: 1,
+      duration: 500,
+      ease: 'Power2',
+      delay: function(i: number) { return 100 * i; }
+    });
+    
+    // Notify about game over state
+    this.notifyGameState('gameover');
+  }
+  
+  private notifyGameState(status: 'win' | 'playing' | 'reset' | 'gameover'): void {
+    // Create and dispatch a custom event to notify the React app of game state changes
+    const event = new CustomEvent('game-state-update', {
+      detail: { status }
+    }) as GameStateEvent;
+    window.dispatchEvent(event);
+  }
+}
