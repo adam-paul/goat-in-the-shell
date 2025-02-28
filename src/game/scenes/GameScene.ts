@@ -11,6 +11,8 @@ export default class GameScene extends Phaser.Scene {
   private player!: Phaser.Types.Physics.Arcade.SpriteWithDynamicBody;
   private platforms!: Phaser.Physics.Arcade.StaticGroup;
   private walls!: Phaser.Physics.Arcade.StaticGroup;
+  private darts!: Phaser.Physics.Arcade.Group;
+  private dartTimer!: Phaser.Time.TimerEvent;
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private startPoint!: Phaser.GameObjects.Rectangle;
   private endPoint!: Phaser.GameObjects.Rectangle;
@@ -30,8 +32,31 @@ export default class GameScene extends Phaser.Scene {
     this.createGoatStandingTexture();
     this.createGoatRunningTexture();
     
+    // Create dart texture
+    this.createDartTexture();
+    
     // Create sounds for the game
     this.createBleatSound();
+  }
+  
+  private createDartTexture(): void {
+    const graphics = this.make.graphics({ x: 0, y: 0 });
+    
+    // Draw the dart
+    graphics.fillStyle(0x303030); // Dark gray for the dart body
+    graphics.fillRect(0, 2, 14, 2); // Dart body
+    
+    // Dart point (triangle)
+    graphics.fillStyle(0x505050); // Slightly lighter gray for the point
+    graphics.fillTriangle(14, 0, 14, 6, 20, 3);
+    
+    // Dart feathers
+    graphics.fillStyle(0xC0C0C0); // Light gray for the feathers
+    graphics.fillRect(0, 0, 3, 6);
+    
+    // Generate the texture
+    graphics.generateTexture('dart', 20, 6);
+    graphics.destroy();
   }
   
   private createBleatSound(): void {
@@ -351,9 +376,47 @@ export default class GameScene extends Phaser.Scene {
     this.player.setSize(28, 26); // Smaller hitbox that matches the visual goat body better
     this.player.setOffset(10, 14); // Offset to align with the visible goat body
 
+    // Create darts group
+    this.darts = this.physics.add.group();
+    
     // Set up collisions
     this.physics.add.collider(this.player, this.platforms);
     this.physics.add.collider(this.player, this.walls);
+    
+    // Create collision between darts and player (goat) with a smaller hitbox for darts
+    this.physics.add.overlap(
+      this.player, 
+      this.darts, 
+      this.hitByDart, 
+      (player, dart) => {
+        // Create a smaller hitbox for dart collision (~ 60% of the normal hitbox)
+        const playerBounds = player.getBounds();
+        const dartBounds = dart.getBounds();
+        
+        // Shrink the player bounds for more precise collision
+        const shrinkX = playerBounds.width * 0.2;
+        const shrinkY = playerBounds.height * 0.2;
+        
+        const smallerPlayerBounds = new Phaser.Geom.Rectangle(
+          playerBounds.x + shrinkX,
+          playerBounds.y + shrinkY,
+          playerBounds.width - (shrinkX * 2),
+          playerBounds.height - (shrinkY * 2)
+        );
+        
+        // Return true if the dart intersects with the smaller player bounds
+        return Phaser.Geom.Rectangle.Overlaps(smallerPlayerBounds, dartBounds);
+      }, 
+      this
+    );
+    
+    // Start dart shooting timer (every 3 seconds)
+    this.dartTimer = this.time.addEvent({
+      delay: 3000,
+      callback: this.shootDarts,
+      callbackScope: this,
+      loop: true
+    });
     
     // Make camera follow the player
     this.mainCamera.startFollow(this.player, true, 0.1, 0.1);
@@ -442,6 +505,78 @@ export default class GameScene extends Phaser.Scene {
   }
 
 
+  // Shoot darts from the vertical walls
+  private shootDarts(): void {
+    if (this.gameWon || this.gameOver) return;
+    
+    // Only shoot darts from walls that are visible on screen
+    const visibleWalls = this.walls.getChildren().filter(wall => {
+      const wallBounds = wall.getBounds();
+      return (
+        wallBounds.right > this.cameras.main.scrollX && 
+        wallBounds.left < this.cameras.main.scrollX + this.cameras.main.width
+      );
+    });
+    
+    // For each visible wall, shoot a dart
+    visibleWalls.forEach(wall => {
+      const wallBounds = wall.getBounds();
+      
+      // Shoot dart from the right side of the wall
+      const dart = this.darts.create(wallBounds.right, wallBounds.centerY, 'dart');
+      
+      // Set dart properties
+      dart.setVelocityX(-150); // Moving left
+      dart.body.allowGravity = false; // Darts don't fall
+      
+      // Destroy dart after 2 seconds or when off-screen
+      this.time.delayedCall(2000, () => {
+        if (dart.active) dart.destroy();
+      });
+    });
+  }
+  
+  // Handle dart collision with player
+  private hitByDart(player: Phaser.Types.Physics.Arcade.SpriteWithDynamicBody, dart: Phaser.Physics.Arcade.Sprite): void {
+    if (this.gameWon || this.gameOver) return;
+    
+    // Destroy the dart
+    dart.destroy();
+    
+    // Set game over state
+    this.gameOver = true;
+    
+    // Stop player movement
+    player.setVelocity(0, 0);
+    
+    // Create tranquilized effect - tint the goat blue
+    player.setTint(0x0000ff);
+    
+    // Show game over message
+    this.cameras.main.shake(500, 0.02); // Small camera shake effect
+    
+    // Dispatch game over event
+    this.notifyGameState('gameover');
+    
+    // Show game over text
+    const x = this.cameras.main.midPoint.x;
+    const y = this.cameras.main.midPoint.y - 50;
+    
+    const gameOverText = this.add.text(x, y, 'TRANQUILIZED!', {
+      fontSize: '32px',
+      color: '#ff0000',
+      fontFamily: 'Arial',
+      fontStyle: 'bold'
+    }).setOrigin(0.5);
+    
+    // Add restart message
+    this.add.text(x, y + 50, 'Game Over - Reload to try again', {
+      fontSize: '24px',
+      color: '#ffffff',
+      fontFamily: 'Arial'
+    }).setOrigin(0.5);
+  }
+
   update(): void {
     if (this.gameWon || this.gameOver) return;
 
@@ -487,6 +622,11 @@ export default class GameScene extends Phaser.Scene {
     this.gameWon = true;
     this.player.setVelocity(0, 0);
     
+    // Clear all darts
+    this.darts.clear(true, true);
+    
+    // Stop dart timer
+    this.dartTimer.remove();
     
     // Stop camera following
     this.cameras.main.stopFollow();
