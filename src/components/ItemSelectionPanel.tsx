@@ -35,6 +35,12 @@ const ItemSelectionPanel: React.FC<ItemSelectionPanelProps> = ({ onSelectItem })
       name: 'Moving Platform',
       description: 'A platform that moves back and forth',
       color: '#2196F3' // Blue
+    },
+    {
+      type: 'shield',
+      name: 'Shield Block',
+      description: 'A small block that can block arrows',
+      color: '#FF9800' // Orange
     }
   ];
 

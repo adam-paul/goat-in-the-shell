@@ -13,7 +13,7 @@ type GameStatus = 'tutorial' | 'win' | 'playing' | 'reset' | 'gameover' | 'selec
 type DeathType = 'dart' | 'spike' | null;
 
 // Define item types
-export type ItemType = 'platform' | 'spike' | 'moving';
+export type ItemType = 'platform' | 'spike' | 'moving' | 'shield';
 
 function App() {
   // Start with 'tutorial' state to show the tutorial modal first
