@@ -1,5 +1,16 @@
 import Phaser from 'phaser';
 
+// Extend the Window interface to include playerPosition
+declare global {
+  interface Window {
+    playerPosition?: {
+      x: number;
+      y: number;
+      isOnGround?: boolean;
+    };
+  }
+}
+
 // Define a custom event for game state changes
 interface GameStateEvent extends CustomEvent {
   detail: {
@@ -405,6 +416,9 @@ export default class GameScene extends Phaser.Scene {
     this.player.setCollideWorldBounds(false);
     this.player.body.setGravityY(300); // Make sure gravity affects the player
     
+    // Immediately pause physics to prevent any movement during tutorial
+    this.physics.pause();
+    
     // Add custom colliders for the world bounds (left, right, and top only)
     this.player.body.onWorldBounds = true;
     
@@ -566,7 +580,7 @@ export default class GameScene extends Phaser.Scene {
     
     console.log('Setting up event listeners for item placement');
     
-    // Listen for item placement events from React
+    // Listen for events from the React UI
     window.addEventListener('place-item', ((_e: Event) => {
       console.log('place-item event received');
       this.handlePlaceItem(_e as CustomEvent);
@@ -582,16 +596,17 @@ export default class GameScene extends Phaser.Scene {
       this.exitPlacementMode();
     }) as EventListener);
     
-    // Listen for continue to next round event
     window.addEventListener('continue-to-next-round', ((_e: Event) => {
       console.log('continue-to-next-round event received');
       this.startNextRound();
     }) as EventListener);
     
-    // Pause physics until the game starts
-    this.physics.pause();
+    // Add a new event listener for live item placement
+    window.addEventListener('place-live-item', ((_e: Event) => {
+      console.log('place-live-item event received');
+      this.handleLivePlaceItem(_e as CustomEvent);
+    }) as EventListener);
     
-    // Start with select state instead of playing
     console.log('Notifying initial game state: select');
     this.notifyGameState('select');
   }
@@ -789,6 +804,15 @@ export default class GameScene extends Phaser.Scene {
         }
         this.bleatSound.play();
       }
+    }
+
+    // Update player position in window object for external access
+    if (this.player && this.player.active) {
+      window.playerPosition = {
+        x: this.player.x,
+        y: this.player.y,
+        isOnGround: this.player.body.touching.down || this.player.body.blocked.down
+      };
     }
   }
 
@@ -1034,12 +1058,17 @@ export default class GameScene extends Phaser.Scene {
         this.itemPreview = this.add.rectangle(worldPoint.x, worldPoint.y, 50, 20, 0xff0000, 0.5);
         break;
       }
-      case 'moving': {
+      case 'moving':
+      case 'oscillator': {
         this.itemPreview = this.add.rectangle(worldPoint.x, worldPoint.y, 100, 20, 0x0000ff, 0.5);
         break;
       }
       case 'shield': {
         this.itemPreview = this.add.rectangle(worldPoint.x, worldPoint.y, 40, 40, 0xFF9800, 0.5);
+        break;
+      }
+      case 'dart_wall': {
+        this.itemPreview = this.add.rectangle(worldPoint.x, worldPoint.y, 50, 200, 0xff0000, 0.5);
         break;
       }
       default: {
@@ -1082,7 +1111,8 @@ export default class GameScene extends Phaser.Scene {
           }
           break;
         }
-        case 'moving': {
+        case 'moving':
+        case 'oscillator': {
           // Create a moving platform that stays at the same height
           try {
             const movingPlatform = this.physics.add.sprite(x, y, 'platform');
@@ -1160,6 +1190,93 @@ export default class GameScene extends Phaser.Scene {
           }
           break;
         }
+        case 'dart_wall': {
+          // Create a dart wall at the specified position
+          try {
+            // Create a wall sprite
+            const dartWall = this.walls.create(x, y, 'wall');
+            dartWall.setScale(1).refreshBody();
+            
+            // Immediately shoot darts from this wall
+            this.time.delayedCall(500, () => {
+              // Get the wall bounds
+              const wallBounds = dartWall.getBounds();
+              
+              // Vertical spacing for the three darts
+              const positions = [
+                wallBounds.centerY - 30, // Top dart
+                wallBounds.centerY,      // Middle dart
+                wallBounds.centerY + 30  // Bottom dart
+              ];
+              
+              // Create three darts per wall
+              positions.forEach(yPos => {
+                // Shoot dart from the right side of the wall
+                const dart = this.darts.create(wallBounds.right, yPos, 'dart');
+                
+                // Set dart properties
+                dart.setVelocityX(-300); // Moving left, faster speed to travel further
+                dart.body.allowGravity = false; // Darts don't fall
+                
+                // Destroy dart after 10 seconds (enough time to go off screen)
+                this.time.delayedCall(10000, () => {
+                  if (dart.active) dart.destroy();
+                });
+              });
+            });
+            
+            // Make this wall shoot darts periodically
+            this.time.addEvent({
+              delay: 3000, // Shoot every 3 seconds
+              callback: () => {
+                if (!dartWall.active) return; // Skip if wall is destroyed
+                
+                // Get the wall bounds
+                const wallBounds = dartWall.getBounds();
+                
+                // Only shoot if wall is on screen
+                if (
+                  wallBounds.right > this.cameras.main.scrollX && 
+                  wallBounds.left < this.cameras.main.scrollX + this.cameras.main.width
+                ) {
+                  // Vertical spacing for the three darts
+                  const positions = [
+                    wallBounds.centerY - 30, // Top dart
+                    wallBounds.centerY,      // Middle dart
+                    wallBounds.centerY + 30  // Bottom dart
+                  ];
+                  
+                  // Create three darts per wall
+                  positions.forEach(yPos => {
+                    // Shoot dart from the right side of the wall
+                    const dart = this.darts.create(wallBounds.right, yPos, 'dart');
+                    
+                    // Set dart properties
+                    dart.setVelocityX(-300); // Moving left, faster speed to travel further
+                    dart.body.allowGravity = false; // Darts don't fall
+                    
+                    // Destroy dart after 10 seconds (enough time to go off screen)
+                    this.time.delayedCall(10000, () => {
+                      if (dart.active) dart.destroy();
+                    });
+                  });
+                }
+              },
+              callbackScope: this,
+              loop: true
+            });
+            
+            gameObject = dartWall;
+            console.log('Dart wall created');
+          } catch (error) {
+            console.error('Error creating dart wall:', error);
+            // Fallback to a simple rectangle if sprite creation fails
+            gameObject = this.add.rectangle(x, y, 50, 200, 0xff0000);
+            this.physics.add.existing(gameObject, true);
+            console.log('Fallback dart wall created');
+          }
+          break;
+        }
         default: {
           gameObject = this.add.rectangle(x, y, 50, 50, 0xffff00);
           console.log('Default item created');
@@ -1189,6 +1306,10 @@ export default class GameScene extends Phaser.Scene {
     // Reset player position and velocity using our constants
     this.player.setPosition(this.PLAYER_START_X, this.PLAYER_START_Y);
     this.player.setVelocity(0, 0);
+    this.player.setAlpha(1); // Ensure player is fully visible
+    
+    // Make sure physics are paused during countdown
+    this.physics.pause();
     
     // Update round text
     this.roundText.setText(`Round: ${this.currentRound}`);
@@ -1282,6 +1403,11 @@ export default class GameScene extends Phaser.Scene {
       this.player.setVelocity(0, 0);
       this.player.setPosition(this.PLAYER_START_X, this.PLAYER_START_Y);
       this.player.body.moves = true; // Re-enable movement
+      
+      // Ensure the goat is facing right when respawning
+      this.playerFacingLeft = false; // Set direction to right
+      this.player.setFlipX(false); // Ensure sprite is not flipped
+      this.player.anims.play('right', true); // Play right-facing animation
     } else {
       // If player is not valid, recreate it
       this.recreatePlayer();
@@ -1328,6 +1454,10 @@ export default class GameScene extends Phaser.Scene {
     this.player.setCollideWorldBounds(false); // Allow falling through the bottom
     this.player.body.setGravityY(300);
     this.player.setAlpha(1); // Reset alpha in case it was faded out
+    
+    // Ensure the goat is facing right
+    this.playerFacingLeft = false; // Set direction to right
+    this.player.setFlipX(false); // Ensure sprite is not flipped
     
     // Add custom colliders for the world bounds (left, right, and top only)
     this.player.body.onWorldBounds = true;
@@ -1546,5 +1676,12 @@ export default class GameScene extends Phaser.Scene {
     
     // Dispatch game over event with death type
     this.notifyGameState('gameover', 'fall');
+  }
+
+  // Add a new method to handle live item placement without restarting the level
+  private handleLivePlaceItem(event: CustomEvent): void {
+    const { type, x, y } = event.detail;
+    console.log(`Handling live item placement: ${type} at (${x}, ${y})`);
+    this.placeItem(type, x, y);
   }
 }

@@ -6,6 +6,7 @@ import GameScene from './game/scenes/GameScene'
 import ItemSelectionPanel from './components/ItemSelectionPanel'
 import DeathModal from './components/DeathModal'
 import TutorialModal from './components/TutorialModal'
+import PrompterControls from './components/PrompterControls'
 
 // Define game status types
 type GameStatus = 'tutorial' | 'win' | 'playing' | 'reset' | 'gameover' | 'select' | 'placement';
@@ -33,6 +34,7 @@ function App() {
   const [selectedItem, setSelectedItem] = useState<ItemType | null>(null);
   const [placementConfirmed, setPlacementConfirmed] = useState<boolean>(false);
   const [deathType, setDeathType] = useState<DeathType>(null);
+  const [showPrompter, setShowPrompter] = useState<boolean>(false);
 
   // Handle tutorial completion
   const handleTutorialComplete = () => {
@@ -238,6 +240,22 @@ function App() {
     }, 1000);
   };
 
+  // Handle placing obstacles from the prompter
+  const handlePlaceObstacle = (type: string, x: number, y: number) => {
+    console.log(`Placing obstacle from prompter: ${type} at position (${x}, ${y})`);
+    
+    // Notify the game scene to place the item without restarting the level
+    const event = new CustomEvent('place-live-item', {
+      detail: { type, x, y }
+    });
+    window.dispatchEvent(event);
+  };
+
+  // Toggle the prompter visibility
+  const togglePrompter = () => {
+    setShowPrompter(prev => !prev);
+  };
+
   // Render different UI based on game status
   const renderGameUI = () => {
     console.log(`Rendering UI for game status: ${gameStatus}`);
@@ -415,27 +433,119 @@ function App() {
       {/* Placement modal in normal document flow */}
       {gameStatus === 'placement' && renderGameUI()}
       
-      {/* Restart button always visible below the game */}
-      <div style={{ textAlign: 'center', marginTop: '20px' }}>
+      {/* Prompter controls - only show when playing and when toggled on */}
+      {gameStatus === 'playing' && showPrompter && (
+        <PrompterControls 
+          onPlaceObstacle={handlePlaceObstacle} 
+          disabled={gameStatus !== 'playing'} 
+        />
+      )}
+      
+      {/* Restart button and prompter toggle always visible below the game */}
+      <div style={{ textAlign: 'center', marginTop: '20px', display: 'flex', justifyContent: 'center', gap: '20px' }}>
         <button 
           onClick={handleReset}
           style={{
             padding: '10px 20px',
-            backgroundColor: '#2196F3',
+            backgroundColor: 'rgba(33, 150, 243, 0.2)',
             color: 'white',
-            border: 'none',
-            borderRadius: '4px',
+            border: '2px solid #2196F3',
+            borderRadius: '8px',
             cursor: 'pointer',
-            fontSize: '16px'
+            fontSize: '14px',
+            fontFamily: "'Press Start 2P', cursive, sans-serif",
+            boxShadow: '0 0 15px rgba(33, 150, 243, 0.5)',
+            transition: 'all 0.3s ease',
+            textShadow: '0 0 5px rgba(33, 150, 243, 0.7)',
+            position: 'relative',
+            overflow: 'hidden'
+          }}
+          onMouseOver={(e) => {
+            e.currentTarget.style.backgroundColor = 'rgba(33, 150, 243, 0.4)';
+            e.currentTarget.style.transform = 'translateY(-3px)';
+            e.currentTarget.style.boxShadow = '0 7px 20px rgba(33, 150, 243, 0.6)';
+          }}
+          onMouseOut={(e) => {
+            e.currentTarget.style.backgroundColor = 'rgba(33, 150, 243, 0.2)';
+            e.currentTarget.style.transform = 'translateY(0)';
+            e.currentTarget.style.boxShadow = '0 0 15px rgba(33, 150, 243, 0.5)';
           }}
         >
+          <div style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundImage: `
+              linear-gradient(90deg, rgba(33, 150, 243, 0.1) 1px, transparent 1px),
+              linear-gradient(rgba(33, 150, 243, 0.1) 1px, transparent 1px)
+            `,
+            backgroundSize: '20px 20px',
+            zIndex: -1
+          }} />
           Restart Game
+        </button>
+        
+        <button 
+          onClick={togglePrompter}
+          style={{
+            padding: '10px 20px',
+            backgroundColor: gameStatus === 'playing' ? 'rgba(233, 69, 96, 0.2)' : 'rgba(102, 102, 102, 0.2)',
+            color: 'white',
+            border: `2px solid ${gameStatus === 'playing' ? '#e94560' : '#666'}`,
+            borderRadius: '8px',
+            cursor: gameStatus === 'playing' ? 'pointer' : 'not-allowed',
+            fontSize: '14px',
+            fontFamily: "'Press Start 2P', cursive, sans-serif",
+            boxShadow: `0 0 15px rgba(${gameStatus === 'playing' ? '233, 69, 96' : '102, 102, 102'}, 0.5)`,
+            transition: 'all 0.3s ease',
+            textShadow: `0 0 5px rgba(${gameStatus === 'playing' ? '233, 69, 96' : '102, 102, 102'}, 0.7)`,
+            position: 'relative',
+            overflow: 'hidden'
+          }}
+          disabled={gameStatus !== 'playing'}
+          onMouseOver={(e) => {
+            if (gameStatus === 'playing') {
+              e.currentTarget.style.backgroundColor = 'rgba(233, 69, 96, 0.4)';
+              e.currentTarget.style.transform = 'translateY(-3px)';
+              e.currentTarget.style.boxShadow = '0 7px 20px rgba(233, 69, 96, 0.6)';
+            }
+          }}
+          onMouseOut={(e) => {
+            if (gameStatus === 'playing') {
+              e.currentTarget.style.backgroundColor = 'rgba(233, 69, 96, 0.2)';
+              e.currentTarget.style.transform = 'translateY(0)';
+              e.currentTarget.style.boxShadow = '0 0 15px rgba(233, 69, 96, 0.5)';
+            }
+          }}
+        >
+          <div style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundImage: gameStatus === 'playing' ? `
+              linear-gradient(90deg, rgba(233, 69, 96, 0.1) 1px, transparent 1px),
+              linear-gradient(rgba(233, 69, 96, 0.1) 1px, transparent 1px)
+            ` : `
+              linear-gradient(90deg, rgba(102, 102, 102, 0.1) 1px, transparent 1px),
+              linear-gradient(rgba(102, 102, 102, 0.1) 1px, transparent 1px)
+            `,
+            backgroundSize: '20px 20px',
+            zIndex: -1
+          }} />
+          {showPrompter ? 'Hide Command Terminal' : 'Show Command Terminal'}
         </button>
       </div>
       
       <footer style={{ marginTop: '30px', textAlign: 'center', fontSize: '14px', color: '#666' }}>
         <p>Use arrow keys or WASD to move. Space to jump.</p>
         <p>Avoid darts and dangerous platforms. Reach the finish line!</p>
+        {gameStatus === 'playing' && (
+          <p>Try the command terminal to add obstacles in real-time!</p>
+        )}
       </footer>
     </div>
   );
