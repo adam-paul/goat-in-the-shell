@@ -2,11 +2,13 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import Phaser from 'phaser'
 import './App.css'
 import GameScene from './game/scenes/GameScene'
+// @ts-expect-error - Module resolution issue with ItemSelectionPanel component
 import ItemSelectionPanel from './components/ItemSelectionPanel'
 import DeathModal from './components/DeathModal'
+import TutorialModal from './components/TutorialModal'
 
 // Define game status types
-type GameStatus = 'win' | 'playing' | 'reset' | 'gameover' | 'select' | 'placement';
+type GameStatus = 'tutorial' | 'win' | 'playing' | 'reset' | 'gameover' | 'select' | 'placement';
 // Define death types
 type DeathType = 'dart' | 'spike' | null;
 
@@ -14,11 +16,17 @@ type DeathType = 'dart' | 'spike' | null;
 export type ItemType = 'platform' | 'spike' | 'moving';
 
 function App() {
-  // Start with 'select' state to immediately show item selection
-  const [gameStatus, setGameStatus] = useState<GameStatus>('select');
+  // Start with 'tutorial' state to show the tutorial modal first
+  const [gameStatus, setGameStatus] = useState<GameStatus>('tutorial');
   const [selectedItem, setSelectedItem] = useState<ItemType | null>(null);
   const [placementConfirmed, setPlacementConfirmed] = useState<boolean>(false);
   const [deathType, setDeathType] = useState<DeathType>(null);
+
+  // Handle tutorial completion
+  const handleTutorialComplete = () => {
+    console.log('Tutorial completed, moving to item selection');
+    setGameStatus('select');
+  };
 
   // Handle item selection
   const handleSelectItem = (itemType: ItemType) => {
@@ -51,6 +59,10 @@ function App() {
     
     // Reset selected item
     setSelectedItem(null);
+    
+    // Change game status to 'playing' to hide the placement modal during countdown
+    setGameStatus('playing');
+    console.log('Game status changed to: playing');
   };
 
   // Cancel item placement
@@ -89,6 +101,13 @@ function App() {
     const handleGameStateUpdate = (event: Event) => {
       const gameEvent = event as CustomEvent<{status: GameStatus, deathType?: 'dart' | 'spike'}>;
       console.log(`Game state update received: ${gameEvent.detail.status}`);
+      
+      // Don't override the tutorial state with 'select' on initial load
+      if (gameStatus === 'tutorial' && gameEvent.detail.status === 'select') {
+        console.log('Ignoring initial select state during tutorial');
+        return;
+      }
+      
       setGameStatus(gameEvent.detail.status);
       
       // If the status is 'select', reset the selected item
@@ -121,7 +140,7 @@ function App() {
       window.removeEventListener('game-state-update', handleGameStateUpdate);
       window.removeEventListener('confirm-placement', handleConfirmPlacement);
     };
-  }, [selectedItem, placementConfirmed]); // Add dependencies to ensure the event handlers use the latest state
+  }, [gameStatus, selectedItem, placementConfirmed]); // Add dependencies to ensure the event handlers use the latest state
 
   // Use useRef to avoid recreating the function on every render
   const gameInstanceRef = useRef<Phaser.Game | null>(null);
@@ -178,14 +197,7 @@ function App() {
     const newGame = new Phaser.Game(config);
     gameInstanceRef.current = newGame;
     
-    // Force the game to start in select mode after a short delay
-    setTimeout(() => {
-      console.log('Forcing game state to select');
-      setGameStatus('select');
-      setSelectedItem(null);
-      setPlacementConfirmed(false);
-      setDeathType(null);
-    }, 1000);
+    // We'll start with the tutorial now, so we don't need to force select mode
   }, []); // No dependencies to avoid re-creation
 
   useEffect(() => {
@@ -207,10 +219,10 @@ function App() {
     setDeathType(null);
     initGame();
     
-    // Force the game to start in select mode after a short delay
+    // Start with the tutorial again after reset
     setTimeout(() => {
-      console.log('Forcing game state to select after reset');
-      setGameStatus('select');
+      console.log('Showing tutorial after reset');
+      setGameStatus('tutorial');
     }, 1000);
   };
 
@@ -219,6 +231,8 @@ function App() {
     console.log(`Rendering UI for game status: ${gameStatus}`);
     
     switch (gameStatus) {
+      case 'tutorial':
+        return <TutorialModal onStart={handleTutorialComplete} />;
       case 'select':
         console.log('Rendering item selection panel');
         return (
