@@ -1,3 +1,4 @@
+import { createClient } from '@supabase/supabase-js'
 import { useEffect, useState, useCallback, useRef } from 'react'
 import Phaser from 'phaser'
 import './App.css'
@@ -12,6 +13,17 @@ type DeathType = 'dart' | 'spike' | null;
 
 // Define item types
 export type ItemType = 'platform' | 'spike' | 'moving';
+
+// Initialize Supabase client
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || process.env.REACT_APP_SUPABASE_URL
+const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || process.env.REACT_APP_SUPABASE_ANON_KEY
+
+// Validate environment variables
+if (!supabaseUrl || !supabaseKey) {
+  console.error('Missing Supabase environment variables. Please check your .env file.')
+}
+
+const supabase = createClient(supabaseUrl as string, supabaseKey as string)
 
 function App() {
   // Start with 'select' state to immediately show item selection

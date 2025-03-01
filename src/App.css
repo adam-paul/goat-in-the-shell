@@ -4,57 +4,303 @@
   box-sizing: border-box;
 }
 
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
 body {
-  background-color: #242424;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  color: white;
+  overflow-x: hidden;
 }
 
-#game-container {
-  width: 100%;
-  height: 100vh;
+.app-container {
   display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 2rem;
+  position: relative;
+}
+
+.content-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+
+.game-title {
+  font-family: 'Press Start 2P', cursive, sans-serif;
+  color: #e94560;
+  font-size: 3rem;
+  margin-bottom: 2rem;
+  text-align: center;
+  text-shadow: 0 0 10px rgba(233, 69, 96, 0.7), 
+               0 0 20px rgba(233, 69, 96, 0.5),
+               0 0 30px rgba(233, 69, 96, 0.3);
+  animation: pulse 2s infinite;
+}
+
+.coming-soon-container {
+  width: 80%;
+  max-width: 800px;
+  height: 400px;
+  background-color: #000;
+  border-radius: 15px;
+  display: flex;
+  flex-direction: column;
   justify-content: center;
   align-items: center;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 0 30px rgba(233, 69, 96, 0.5);
+  border: 3px solid #e94560;
 }
 
-#root {
-  max-width: 1280px;
-  margin: 0 auto;
+.message-box {
+  background-color: rgba(0, 0, 0, 0.7);
   padding: 2rem;
+  border-radius: 10px;
+  text-align: center;
+  z-index: 10;
+  width: 90%;
+  max-width: 600px;
+}
+
+.coming-soon-text {
+  font-size: 1.8rem;
+  margin-bottom: 1rem;
+  color: #fff;
+  white-space: nowrap;
+}
+
+.dots-container {
+  display: inline-block;
+  width: 3ch;
+  text-align: left;
+}
+
+.coming-soon-label {
+  font-family: 'Press Start 2P', cursive, sans-serif;
+  font-size: 2.5rem;
+  color: #e94560;
+  text-shadow: 0 0 10px rgba(233, 69, 96, 0.7);
+  animation: blink 1.5s infinite;
+}
+
+.goat-animation {
+  position: absolute;
+  bottom: 20px;
+  animation: float 5s infinite;
+}
+
+.goat {
+  font-size: 5rem;
+  animation: spin 10s linear infinite;
+}
+
+/* Grid background */
+.coming-soon-container::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: 
+    linear-gradient(90deg, rgba(16, 185, 129, 0.1) 1px, transparent 1px),
+    linear-gradient(rgba(16, 185, 129, 0.1) 1px, transparent 1px);
+  background-size: 20px 20px;
+  animation: grid 15s linear infinite;
+}
+
+/* Animations */
+@keyframes pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-20px); }
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes grid {
+  0% { background-position: 0 0; }
+  100% { background-position: 40px 40px; }
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .game-title {
+    font-size: 2rem;
+  }
+  
+  .coming-soon-text {
+    font-size: 1.2rem;
+  }
+  
+  .coming-soon-label {
+    font-size: 1.8rem;
+  }
+  
+  .goat {
+    font-size: 3rem;
+  }
+}
+
+/* Subscribe section */
+.subscribe-container {
+  width: 80%;
+  max-width: 600px;
+  margin-top: 3rem;
+  padding: 2rem;
+  background: rgba(0, 0, 0, 0.7);
+  border-radius: 15px;
+  border: 2px solid #e94560;
+  box-shadow: 0 0 20px rgba(233, 69, 96, 0.3);
   text-align: center;
 }
 
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
+.subscribe-title {
+  font-family: 'Press Start 2P', cursive, sans-serif;
+  color: #e94560;
+  font-size: 1.5rem;
+  margin-bottom: 1rem;
+  text-shadow: 0 0 5px rgba(233, 69, 96, 0.5);
 }
 
-@keyframes logo-spin {
-  from {
-    transform: rotate(0deg);
+.subscribe-text {
+  color: #fff;
+  margin-bottom: 1.5rem;
+  font-size: 1rem;
+}
+
+.subscribe-form {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.form-group {
+  display: flex;
+  width: 100%;
+  max-width: 500px;
+  margin-bottom: 1rem;
+}
+
+.email-input {
+  flex: 1;
+  padding: 0.8rem 1rem;
+  border: none;
+  border-radius: 5px 0 0 5px;
+  font-size: 1rem;
+  background-color: rgba(255, 255, 255, 0.9);
+  color: #333;
+  transition: all 0.3s ease;
+}
+
+.email-input:focus {
+  outline: none;
+  background-color: #fff;
+  box-shadow: 0 0 0 2px rgba(233, 69, 96, 0.5);
+}
+
+.email-input:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.subscribe-button {
+  padding: 0.8rem 1.5rem;
+  border: none;
+  border-radius: 0 5px 5px 0;
+  background-color: #e94560;
+  color: white;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-family: 'Press Start 2P', cursive, sans-serif;
+  font-size: 0.8rem;
+}
+
+.subscribe-button:hover:not(:disabled) {
+  background-color: #d63a54;
+  transform: translateY(-2px);
+  box-shadow: 0 5px 15px rgba(233, 69, 96, 0.4);
+}
+
+.subscribe-button:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: 0 2px 5px rgba(233, 69, 96, 0.4);
+}
+
+.subscribe-button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.status-message {
+  margin-top: 1rem;
+  padding: 0.8rem;
+  border-radius: 5px;
+  width: 100%;
+  max-width: 500px;
+  animation: fadeIn 0.5s ease;
+}
+
+.status-message.success {
+  background-color: rgba(39, 174, 96, 0.2);
+  border: 1px solid #27ae60;
+  color: #2ecc71;
+}
+
+.status-message.error {
+  background-color: rgba(231, 76, 60, 0.2);
+  border: 1px solid #e74c3c;
+  color: #e74c3c;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Responsive adjustments for the subscription form */
+@media (max-width: 768px) {
+  .subscribe-container {
+    padding: 1.5rem;
   }
-  to {
-    transform: rotate(360deg);
+  
+  .subscribe-title {
+    font-size: 1.2rem;
   }
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
-    animation: logo-spin infinite 20s linear;
+  
+  .form-group {
+    flex-direction: column;
   }
-}
-
-.card {
-  padding: 2em;
-}
-
-.read-the-docs {
-  color: #888;
+  
+  .email-input {
+    border-radius: 5px;
+    margin-bottom: 0.5rem;
+  }
+  
+  .subscribe-button {
+    border-radius: 5px;
+    width: 100%;
+    font-size: 0.7rem;
+  }
 }
