@@ -1,5 +1,8 @@
 import os
 import json
+import random
+import asyncio
+import time
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 from openai import OpenAI
@@ -30,6 +33,10 @@ except Exception as e:
 class ParameterModification(BaseModel):
     parameter: str
     normalized_value: float
+
+# Obstacle placement schema
+class ObstaclePlacement(BaseModel):
+    obstacle_type: str
 
 # Define game parameters context for the system prompt
 PARAMETER_CONTEXT = """
@@ -87,6 +94,26 @@ The game features:
 Players use a terminal to enter commands, which you interpret to control the game. Be helpful, concise, and creative.
 """
 
+# Additional prompt for AI single player mode
+AI_SINGLE_PLAYER_PROMPT = f"""
+You are the AI prompter for 'Goat In The Shell' single player mode. Your job is to generate challenging commands that will make the gameplay more interesting for the player who is controlling the goat.
+
+Generate a command that will either:
+1. Place an obstacle (platform, dart wall, spike, oscillator, or shield)
+2. Modify game parameters to change the difficulty
+
+Be creative and unpredictable. Mix obstacle placement with parameter changes to provide variety. Your objective is to make the game challenging but not impossible.
+
+{PARAMETER_CONTEXT}
+
+In addition to parameter modifications, you can place these obstacles:
+- "platform" - A stable platform for the goat to jump on
+- "dart_wall" - A wall that shoots darts that can tranquilize the goat
+- "spike" - A dangerous platform that causes game over on contact
+- "oscillator" - A moving platform that oscillates horizontally
+- "shield" - A block that can protect the goat from darts
+"""
+
 # Function definition for OpenAI's function calling
 PARAMETER_MODIFICATION_FUNCTION = {
     "name": "modify_parameters",
@@ -128,6 +155,107 @@ PARAMETER_MODIFICATION_FUNCTION = {
         "required": ["response", "parameter_modifications"]
     }
 }
+
+# Function definition for obstacle placement
+OBSTACLE_PLACEMENT_FUNCTION = {
+    "name": "place_obstacle",
+    "description": "Place an obstacle in the game",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "response": {
+                "type": "string",
+                "description": "A natural language explanation of the obstacle being placed"
+            },
+            "obstacle_type": {
+                "type": "string",
+                "description": "The type of obstacle to place",
+                "enum": ["platform", "dart_wall", "spike", "oscillator", "shield"]
+            },
+            "parameter_modifications": {
+                "type": "array",
+                "description": "Optional parameter modifications to apply along with the obstacle",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "parameter": {
+                            "type": "string",
+                            "description": "The parameter to modify",
+                            "enum": [
+                                "gravity", "dart_speed", "dart_frequency", "dart_wall_height",
+                                "platform_height", "platform_width", "spike_height", "spike_width",
+                                "oscillator_height", "oscillator_width", "shield_height", "shield_width",
+                                "gap_width", "tilt"
+                            ]
+                        },
+                        "normalized_value": {
+                            "type": "number",
+                            "description": "The normalized value between -1 and 1 to set the parameter to",
+                            "minimum": -1,
+                            "maximum": 1
+                        }
+                    },
+                    "required": ["parameter", "normalized_value"]
+                }
+            }
+        },
+        "required": ["response", "obstacle_type"]
+    }
+}
+
+# Cache for single player AI commands to avoid repeated calls in a short time
+class CommandCache:
+    """Simple cache for AI-generated commands in single player mode."""
+    
+    def __init__(self, capacity=20):
+        self.capacity = capacity
+        self.cache = []
+        self.last_accessed = {}
+    
+    def add(self, command):
+        """Add a command to the cache."""
+        if command in self.cache:
+            return
+        
+        if len(self.cache) >= self.capacity:
+            # Remove least recently used command
+            lru_command = min(self.last_accessed.keys(), key=lambda k: self.last_accessed[k])
+            self.cache.remove(lru_command)
+            del self.last_accessed[lru_command]
+        
+        self.cache.append(command)
+        self.last_accessed[command] = time.time()
+    
+    def get_random(self):
+        """Get a random command from the cache."""
+        if not self.cache:
+            return None
+        
+        command = random.choice(self.cache)
+        self.last_accessed[command] = time.time()
+        return command
+
+# Initialize command cache
+command_cache = CommandCache()
+
+# Predefined single player commands for fallback
+FALLBACK_COMMANDS = [
+    "place a platform ahead of the player",
+    "add a dart wall",
+    "create a spike platform",
+    "add an oscillating platform",
+    "place a shield block",
+    "increase gravity by 20%",
+    "make darts faster",
+    "slow down dart frequency",
+    "make platforms narrower",
+    "tilt platforms to the right",
+    "make spikes taller",
+    "increase gap width",
+    "create obstacles ahead of the player",
+    "place multiple dart walls",
+    "make the level more challenging"
+]
 
 class AIHandler:
     """Handler for AI-related operations using OpenAI."""
@@ -216,5 +344,191 @@ class AIHandler:
             return {
                 "response": f"Error processing command: {str(e)}",
                 "success": False,
+                "parameter_modifications": []
+            }
+    
+    @staticmethod
+    async def generate_single_player_command() -> dict:
+        """
+        Generate a random command for single player AI mode.
+        
+        Returns:
+            A dictionary containing the command, response, success flag, and parameter modifications or obstacle info
+        """
+        try:
+            # Check if there's a cached command we can use
+            cached_command = command_cache.get_random()
+            if cached_command and random.random() < 0.7:  # 70% chance to use cache
+                logger.info(f"Using cached command: {cached_command}")
+                return await AIHandler.process_command(cached_command)
+            
+            # Check if client is properly initialized
+            if client is None:
+                # Use a fallback command if AI is unavailable
+                fallback = random.choice(FALLBACK_COMMANDS)
+                logger.warning(f"AI unavailable, using fallback command: {fallback}")
+                
+                # For fallback commands, we create a simple response
+                if "platform" in fallback:
+                    return {
+                        "response": "Creating a platform for the goat to jump on.",
+                        "success": True,
+                        "obstacle_type": "platform",
+                        "parameter_modifications": []
+                    }
+                elif "dart" in fallback:
+                    return {
+                        "response": "Adding a dart wall to increase the challenge.",
+                        "success": True,
+                        "obstacle_type": "dart_wall",
+                        "parameter_modifications": []
+                    }
+                elif "spike" in fallback:
+                    return {
+                        "response": "Placing a dangerous spike platform.",
+                        "success": True,
+                        "obstacle_type": "spike",
+                        "parameter_modifications": []
+                    }
+                elif "oscillat" in fallback:
+                    return {
+                        "response": "Creating a moving oscillator platform.",
+                        "success": True,
+                        "obstacle_type": "oscillator",
+                        "parameter_modifications": []
+                    }
+                elif "shield" in fallback:
+                    return {
+                        "response": "Adding a shield block to protect from darts.",
+                        "success": True,
+                        "obstacle_type": "shield",
+                        "parameter_modifications": []
+                    }
+                else:
+                    # For parameter modifications, randomly adjust one parameter
+                    param = random.choice([
+                        "gravity", "dart_speed", "dart_frequency", "platform_width", "tilt"
+                    ])
+                    value = random.uniform(-0.5, 0.5)  # Random value between -0.5 and 0.5
+                    return {
+                        "response": f"Adjusting {param} to change the difficulty.",
+                        "success": True,
+                        "parameter_modifications": [{
+                            "parameter": param,
+                            "normalized_value": value
+                        }]
+                    }
+            
+            # Decide whether to place an obstacle or modify parameters
+            if random.random() < 0.7:  # 70% chance to place an obstacle
+                # Generate a random obstacle placement command
+                tools = [{"type": "function", "function": OBSTACLE_PLACEMENT_FUNCTION}]
+                tool_choice = {"type": "function", "function": {"name": "place_obstacle"}}
+            else:
+                # Generate a random parameter modification command
+                tools = [{"type": "function", "function": PARAMETER_MODIFICATION_FUNCTION}]
+                tool_choice = {"type": "function", "function": {"name": "modify_parameters"}}
+            
+            # Call OpenAI API to generate a random command
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": AI_SINGLE_PLAYER_PROMPT},
+                    {"role": "user", "content": "Generate a random command to make the game more challenging."}
+                ],
+                tools=tools,
+                tool_choice=tool_choice,
+                max_tokens=200,
+                temperature=0.9,  # Higher temperature for more variety
+            )
+            
+            # Extract the response and process it
+            message = response.choices[0].message
+            
+            if message.tool_calls:
+                for tool_call in message.tool_calls:
+                    try:
+                        args = json.loads(tool_call.function.arguments)
+                        
+                        if tool_call.function.name == "place_obstacle":
+                            # Process obstacle placement
+                            obstacle_type = args.get("obstacle_type", "platform")
+                            ai_response = args.get("response", f"Placing a {obstacle_type}")
+                            parameter_mods = args.get("parameter_modifications", [])
+                            
+                            # Add the command to the cache if it's good
+                            command_to_cache = f"place a {obstacle_type}"
+                            command_cache.add(command_to_cache)
+                            
+                            # Validate parameter modifications if any
+                            validated_mods = []
+                            for mod in parameter_mods:
+                                if not isinstance(mod, dict):
+                                    continue
+                                
+                                param = mod.get("parameter")
+                                value = mod.get("normalized_value")
+                                
+                                if param and isinstance(value, (int, float)):
+                                    normalized_value = max(-1.0, min(1.0, float(value)))
+                                    validated_mods.append({
+                                        "parameter": param,
+                                        "normalized_value": normalized_value
+                                    })
+                            
+                            return {
+                                "response": ai_response,
+                                "success": True,
+                                "obstacle_type": obstacle_type,
+                                "parameter_modifications": validated_mods
+                            }
+                            
+                        elif tool_call.function.name == "modify_parameters":
+                            # Process parameter modification
+                            ai_response = args.get("response", "Modifying game parameters")
+                            parameter_mods = args.get("parameter_modifications", [])
+                            
+                            # Add the response to the cache
+                            if ai_response and len(ai_response) < 100:
+                                command_cache.add(ai_response)
+                            
+                            # Validate parameter modifications
+                            validated_mods = []
+                            for mod in parameter_mods:
+                                if not isinstance(mod, dict):
+                                    continue
+                                
+                                param = mod.get("parameter")
+                                value = mod.get("normalized_value")
+                                
+                                if param and isinstance(value, (int, float)):
+                                    normalized_value = max(-1.0, min(1.0, float(value)))
+                                    validated_mods.append({
+                                        "parameter": param,
+                                        "normalized_value": normalized_value
+                                    })
+                            
+                            return {
+                                "response": ai_response,
+                                "success": True,
+                                "parameter_modifications": validated_mods
+                            }
+                    except json.JSONDecodeError:
+                        logger.error(f"Failed to parse function arguments: {tool_call.function.arguments}")
+            
+            # Fallback if no valid tool call was processed
+            fallback = random.choice(FALLBACK_COMMANDS)
+            logger.warning(f"No valid tool call generated, using fallback: {fallback}")
+            return await AIHandler.process_command(fallback)
+            
+        except Exception as e:
+            logger.error(f"Error generating AI command: {str(e)}")
+            # Use a simple fallback in case of error
+            obstacle_types = ["platform", "dart_wall", "spike", "oscillator", "shield"]
+            obstacle_type = random.choice(obstacle_types)
+            return {
+                "response": f"Placing a {obstacle_type} to challenge the player.",
+                "success": True,
+                "obstacle_type": obstacle_type,
                 "parameter_modifications": []
             } 
