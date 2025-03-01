@@ -17,7 +17,6 @@ interface PrompterControlsProps {
 }
 
 const PrompterControls: React.FC<PrompterControlsProps> = ({ onPlaceObstacle, disabled }) => {
-  const [obstacleType, setObstacleType] = useState<string>('platform');
   const [promptText, setPromptText] = useState<string>('');
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState<number>(-1);
