@@ -31,3 +31,8 @@ dist-ssr
 *.env.test.local
 *.env.production.local
 
+# python
+**/__pycache__
+
+# Docs
+MULTIP_PLAN.md
