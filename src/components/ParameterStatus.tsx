@@ -2,8 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   GameParameter, 
   GAME_PARAMETERS, 
-  ParameterManager,
-  dispatchParameterChangeEvent
+  ParameterManager
 } from '../game/parameters';
 
 /**
@@ -33,7 +32,7 @@ const ParameterStatus: React.FC = () => {
     
     // Add global listener for parameter changes
     const handleParameterChange = (
-      newValue: number, 
+      _newValue: number, 
       normalizedValue: number, 
       parameter: GameParameter
     ) => {

@@ -3,7 +3,6 @@
  * Handles communication of parameter changes between React and Phaser
  */
 
-import { GameParameter } from './ParameterMap';
 import { ParameterManager } from './ParameterManager';
 
 /**

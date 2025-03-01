@@ -1,4 +1,6 @@
 import Phaser from 'phaser';
+import { ParameterManager } from '../parameters/ParameterManager';
+import { initParameterEvents } from '../parameters/ParameterEvents';
 
 // Extend the Window interface to include playerPosition
 declare global {
@@ -34,6 +36,7 @@ export default class GameScene extends Phaser.Scene {
   private mainCamera!: Phaser.Cameras.Scene2D.Camera;
   private playerFacingLeft: boolean = false; // Tracks player direction for animations
   private bleatSound!: Phaser.Sound.BaseSound;
+  private isCommandInputFocused: boolean = false; // Tracks if the command input is focused
   
   // Define constants for player starting position
   private readonly PLAYER_START_X: number = 80;
@@ -50,6 +53,11 @@ export default class GameScene extends Phaser.Scene {
   private countdownText?: Phaser.GameObjects.Text; // For countdown display
   private modalElements: Phaser.GameObjects.GameObject[] = []; // Store modal elements for cleanup
   private placementClickHandler: ((pointer: Phaser.Input.Pointer) => void) | null = null; // Store the placement click handler
+  
+  // Parameter-related properties
+  private dartFrequency: number = 3000; // Default dart firing frequency
+  private dartSpeed: number = 300; // Default dart speed
+  private currentGravity: number = 300; // Default gravity
 
   constructor() {
     super('GameScene');
@@ -283,9 +291,23 @@ export default class GameScene extends Phaser.Scene {
     
     console.log('GameScene created - initializing game elements');
     
+    // Initialize parameter events system
+    initParameterEvents();
+    
+    // Setup parameter change listeners
+    this.setupParameterListeners();
+    
+    // Get initial parameter values
+    this.currentGravity = ParameterManager.getParameter('gravity').currentValue;
+    this.dartSpeed = ParameterManager.getParameter('dart_speed').currentValue;
+    this.dartFrequency = ParameterManager.getParameter('dart_frequency').currentValue;
+    
     // Set physics world bounds to be twice the width of the canvas but don't constrain the bottom
     // The last 4 parameters are: left, right, top, bottom (true means collide, false means don't)
     this.physics.world.setBounds(0, 0, this.worldWidth, 800, true, true, true, false);
+    
+    // Apply initial gravity value
+    this.physics.world.gravity.set(0, this.currentGravity);
     
     // Create a blue sky background that extends across the whole level
     this.add.rectangle(this.worldWidth / 2, 400, this.worldWidth, 800, 0x87CEEB);
@@ -410,11 +432,11 @@ export default class GameScene extends Phaser.Scene {
     // Create player (goat) at the start position
     this.player = this.physics.add.sprite(this.PLAYER_START_X, this.PLAYER_START_Y, 'goat_standing');
     
-    // Set up player physics
+    // Set up player physics with current gravity setting
     this.player.setBounce(0.1);
     // Allow player to fall through the bottom of the world
     this.player.setCollideWorldBounds(false);
-    this.player.body.setGravityY(300); // Make sure gravity affects the player
+    this.player.body.setGravityY(this.currentGravity); // Apply current gravity parameter
     
     // Immediately pause physics to prevent any movement during tutorial
     this.physics.pause();
@@ -520,14 +542,14 @@ export default class GameScene extends Phaser.Scene {
       this
     );
     
-    // Start dart shooting timer (every 3 seconds)
+    // Start dart shooting timer with parameter-defined frequency
     this.dartTimer = this.time.addEvent({
-      delay: 3000,
+      delay: this.dartFrequency,
       callback: this.shootDarts,
       callbackScope: this,
       loop: true
     });
-    console.log('Initial dart timer created');
+    console.log(`Initial dart timer created with frequency ${this.dartFrequency}ms`);
     
     // Make camera follow the player
     this.mainCamera.startFollow(this.player, true, 0.1, 0.1);
@@ -552,16 +574,19 @@ export default class GameScene extends Phaser.Scene {
     this.cursors = this.input.keyboard?.createCursorKeys() || {} as Phaser.Types.Input.Keyboard.CursorKeys;
 
     // Add direct keyboard handling for space and arrow keys
-    // Capture the spacebar to prevent it from scrolling the page
+    // Initially capture spacebar to prevent page scrolling
+    // This will be toggled based on command input focus
     this.input.keyboard?.addCapture('SPACE');
     
     this.input.keyboard?.on('keydown-SPACE', () => {
-      if ((this.player.body.touching.down || this.player.body.blocked.down) && !this.gameWon) {
+      // Only jump if command input is not focused and player is on ground
+      if (!this.isCommandInputFocused && (this.player.body.touching.down || this.player.body.blocked.down) && !this.gameWon) {
         this.player.setVelocityY(-470);
       }
     });
     
     this.input.keyboard?.on('keydown-UP', () => {
+      // Up arrow can always make the player jump (not affected by input focus)
       if ((this.player.body.touching.down || this.player.body.blocked.down) && !this.gameWon) {
         this.player.setVelocityY(-470);
       }
@@ -605,6 +630,22 @@ export default class GameScene extends Phaser.Scene {
     window.addEventListener('place-live-item', ((_e: Event) => {
       console.log('place-live-item event received');
       this.handleLivePlaceItem(_e as CustomEvent);
+    }) as EventListener);
+    
+    // Listen for command input focus changes
+    window.addEventListener('command-input-focus', ((_e: Event) => {
+      const event = _e as CustomEvent;
+      this.isCommandInputFocused = event.detail?.focused || false;
+      console.log(`Command input focus changed: ${this.isCommandInputFocused}`);
+      
+      // Dynamically add/remove spacebar capture based on input focus
+      if (this.isCommandInputFocused) {
+        // Remove spacebar capture when input is focused (to allow typing spaces)
+        this.input.keyboard?.clearCaptures();
+      } else {
+        // Re-add spacebar capture when input loses focus (to prevent page scrolling)
+        this.input.keyboard?.addCapture('SPACE');
+      }
     }) as EventListener);
     
     console.log('Notifying initial game state: select');
@@ -679,7 +720,7 @@ export default class GameScene extends Phaser.Scene {
       );
     });
     
-    console.log(`Shooting darts from ${visibleWalls.length} visible walls`);
+    console.log(`Shooting darts from ${visibleWalls.length} visible walls with speed ${this.dartSpeed}`);
     
     // For each visible wall, shoot three darts
     visibleWalls.forEach(wall => {
@@ -699,8 +740,8 @@ export default class GameScene extends Phaser.Scene {
         // Shoot dart from the right side of the wall
         const dart = this.darts.create(wallBounds.right, yPos, 'dart');
         
-        // Set dart properties
-        dart.setVelocityX(-300); // Moving left, faster speed to travel further
+        // Set dart properties - use current dartSpeed from parameter
+        dart.setVelocityX(-this.dartSpeed); // Moving left, using parameter-defined speed
         dart.body.allowGravity = false; // Darts don't fall
         
         // Destroy dart after 10 seconds (enough time to go off screen)
@@ -786,8 +827,11 @@ export default class GameScene extends Phaser.Scene {
     // Update the sprite flip based on player direction
     this.player.setFlipX(this.playerFacingLeft);
 
-    // Jump when spacebar or up is pressed and player is on the ground
-    if ((this.cursors.space?.isDown || this.cursors.up?.isDown) && 
+    // Jump when spacebar (if input not focused) or up is pressed and player is on the ground
+    const spacePressed = this.cursors.space?.isDown && !this.isCommandInputFocused;
+    const upPressed = this.cursors.up?.isDown;
+    
+    if ((spacePressed || upPressed) && 
         (this.player.body.touching.down || this.player.body.blocked.down)) {
       this.player.setVelocityY(-500); // Slightly higher jump for the larger level
       
@@ -1051,24 +1095,69 @@ export default class GameScene extends Phaser.Scene {
     
     switch (this.itemToPlace) {
       case 'platform': {
-        this.itemPreview = this.add.rectangle(worldPoint.x, worldPoint.y, 200, 20, 0x00ff00, 0.5);
+        // Get platform parameters
+        const platformWidth = ParameterManager.getParameter('platform_width').currentValue;
+        const platformHeight = ParameterManager.getParameter('platform_height').currentValue;
+        
+        this.itemPreview = this.add.rectangle(worldPoint.x, worldPoint.y, platformWidth, platformHeight, 0x00ff00, 0.5);
+        
+        // Apply current tilt
+        const tilt = ParameterManager.getParameter('tilt').currentValue;
+        if (tilt !== 0) {
+          this.itemPreview.setRotation(Phaser.Math.DegToRad(tilt));
+        }
+        
+        console.log(`Created platform preview with width=${platformWidth}, height=${platformHeight}, tilt=${tilt}`);
         break;
       }
       case 'spike': {
-        this.itemPreview = this.add.rectangle(worldPoint.x, worldPoint.y, 50, 20, 0xff0000, 0.5);
+        // Get spike parameters
+        const spikeWidth = ParameterManager.getParameter('spike_width').currentValue;
+        const spikeHeight = ParameterManager.getParameter('spike_height').currentValue;
+        
+        this.itemPreview = this.add.rectangle(worldPoint.x, worldPoint.y, spikeWidth, spikeHeight, 0xff0000, 0.5);
+        
+        // Apply current tilt
+        const tilt = ParameterManager.getParameter('tilt').currentValue;
+        if (tilt !== 0) {
+          this.itemPreview.setRotation(Phaser.Math.DegToRad(tilt));
+        }
+        
+        console.log(`Created spike preview with width=${spikeWidth}, height=${spikeHeight}, tilt=${tilt}`);
         break;
       }
       case 'moving':
       case 'oscillator': {
-        this.itemPreview = this.add.rectangle(worldPoint.x, worldPoint.y, 100, 20, 0x0000ff, 0.5);
+        // Get oscillator parameters
+        const oscillatorWidth = ParameterManager.getParameter('oscillator_width').currentValue;
+        const oscillatorHeight = ParameterManager.getParameter('oscillator_height').currentValue;
+        
+        this.itemPreview = this.add.rectangle(worldPoint.x, worldPoint.y, oscillatorWidth, oscillatorHeight, 0x0000ff, 0.5);
+        
+        // Apply current tilt
+        const tilt = ParameterManager.getParameter('tilt').currentValue;
+        if (tilt !== 0) {
+          this.itemPreview.setRotation(Phaser.Math.DegToRad(tilt));
+        }
+        
+        console.log(`Created oscillator preview with width=${oscillatorWidth}, height=${oscillatorHeight}, tilt=${tilt}`);
         break;
       }
       case 'shield': {
-        this.itemPreview = this.add.rectangle(worldPoint.x, worldPoint.y, 40, 40, 0xFF9800, 0.5);
+        // Get shield parameters
+        const shieldWidth = ParameterManager.getParameter('shield_width').currentValue;
+        const shieldHeight = ParameterManager.getParameter('shield_height').currentValue;
+        
+        this.itemPreview = this.add.rectangle(worldPoint.x, worldPoint.y, shieldWidth, shieldHeight, 0xFF9800, 0.5);
+        console.log(`Created shield preview with width=${shieldWidth}, height=${shieldHeight}`);
         break;
       }
       case 'dart_wall': {
-        this.itemPreview = this.add.rectangle(worldPoint.x, worldPoint.y, 50, 200, 0xff0000, 0.5);
+        // Get dart wall height parameter
+        const dartWallHeight = ParameterManager.getParameter('dart_wall_height').currentValue;
+        
+        this.itemPreview = this.add.rectangle(worldPoint.x, worldPoint.y, 20, dartWallHeight, 0xff0000, 0.5);
+        console.log(`Created dart wall preview with height=${dartWallHeight}`);
         break;
       }
       default: {
@@ -1084,27 +1173,59 @@ export default class GameScene extends Phaser.Scene {
     try {
       switch (type) {
         case 'platform': {
+          // Get platform parameters
+          const platformWidth = ParameterManager.getParameter('platform_width').currentValue;
+          const platformHeight = ParameterManager.getParameter('platform_height').currentValue;
+          const tilt = ParameterManager.getParameter('tilt').currentValue;
+          
           // Create a platform at the specified position
           gameObject = this.platforms.create(x, y, 'platform');
-          (gameObject as Phaser.Physics.Arcade.Sprite).setScale(1).refreshBody();
-          console.log('Platform created');
+          
+          // Scale platform according to parameters
+          const widthScale = platformWidth / 100; // Default texture width is 100
+          const heightScale = platformHeight / 20; // Default texture height is 20
+          (gameObject as Phaser.Physics.Arcade.Sprite).setScale(widthScale, heightScale).refreshBody();
+          
+          // Apply current tilt
+          if (tilt !== 0) {
+            (gameObject as Phaser.Physics.Arcade.Sprite).setRotation(Phaser.Math.DegToRad(tilt));
+            (gameObject as Phaser.Physics.Arcade.Sprite).refreshBody();
+          }
+          
+          console.log(`Platform created with width=${platformWidth}, height=${platformHeight}, tilt=${tilt}`);
           break;
         }
         case 'spike': {
+          // Get spike parameters
+          const spikeWidth = ParameterManager.getParameter('spike_width').currentValue;
+          const spikeHeight = ParameterManager.getParameter('spike_height').currentValue;
+          const tilt = ParameterManager.getParameter('tilt').currentValue;
+          
           // Create a dangerous platform that looks similar to regular platforms
           try {
             const dangerousPlatform = this.physics.add.sprite(x, y, 'dangerous_platform');
             dangerousPlatform.setImmovable(true);
             dangerousPlatform.body.allowGravity = false;
             
+            // Scale according to parameters
+            const widthScale = spikeWidth / 100; // Default texture width is 100
+            const heightScale = spikeHeight / 20; // Default texture height is 20
+            dangerousPlatform.setScale(widthScale, heightScale).refreshBody();
+            
+            // Apply current tilt
+            if (tilt !== 0) {
+              dangerousPlatform.setRotation(Phaser.Math.DegToRad(tilt));
+              dangerousPlatform.refreshBody();
+            }
+            
             // Add collision with player that causes game over with "Busted goat ankles" message
             this.physics.add.collider(this.player, dangerousPlatform, this.hitDangerousPlatform, undefined, this);
             gameObject = dangerousPlatform;
-            console.log('Dangerous platform created');
+            console.log(`Dangerous platform created with width=${spikeWidth}, height=${spikeHeight}, tilt=${tilt}`);
           } catch (error) {
             console.error('Error creating spike:', error);
             // Fallback to a simple rectangle if sprite creation fails
-            gameObject = this.add.rectangle(x, y, 100, 20, 0xff0000);
+            gameObject = this.add.rectangle(x, y, spikeWidth, spikeHeight, 0xff0000);
             this.physics.add.existing(gameObject, true);
             this.physics.add.collider(this.player, gameObject, this.hitDangerousPlatform, undefined, this);
             console.log('Fallback dangerous platform created');
@@ -1113,30 +1234,46 @@ export default class GameScene extends Phaser.Scene {
         }
         case 'moving':
         case 'oscillator': {
+          // Get oscillator parameters
+          const oscillatorWidth = ParameterManager.getParameter('oscillator_width').currentValue;
+          const oscillatorHeight = ParameterManager.getParameter('oscillator_height').currentValue;
+          const tilt = ParameterManager.getParameter('tilt').currentValue;
+          
           // Create a moving platform that stays at the same height
           try {
             const movingPlatform = this.physics.add.sprite(x, y, 'platform');
             movingPlatform.setImmovable(true);
             movingPlatform.body.allowGravity = false;
             
+            // Scale according to parameters
+            const widthScale = oscillatorWidth / 100; // Default texture width is 100
+            const heightScale = oscillatorHeight / 20; // Default texture height is 20
+            movingPlatform.setScale(widthScale, heightScale).refreshBody();
+            
+            // Apply current tilt
+            if (tilt !== 0) {
+              movingPlatform.setRotation(Phaser.Math.DegToRad(tilt));
+              movingPlatform.refreshBody();
+            }
+            
             // Add collision with player
             this.physics.add.collider(this.player, movingPlatform);
             
-            // Add movement tween - only move back and forth a bit (100px each direction)
+            // Add movement tween - only move back and forth a bit (oscillatorWidth each direction)
             this.tweens.add({
               targets: movingPlatform,
-              x: x + 100, // Move 100px to the right
+              x: x + oscillatorWidth, // Move oscillatorWidth to the right
               duration: 2000,
               yoyo: true,
               repeat: -1,
               ease: 'Linear'
             });
             gameObject = movingPlatform;
-            console.log('Moving platform created');
+            console.log(`Moving platform created with width=${oscillatorWidth}, height=${oscillatorHeight}, tilt=${tilt}`);
           } catch (error) {
             console.error('Error creating moving platform:', error);
             // Fallback to a simple rectangle if sprite creation fails
-            gameObject = this.add.rectangle(x, y, 100, 20, 0x0000ff);
+            gameObject = this.add.rectangle(x, y, oscillatorWidth, oscillatorHeight, 0x0000ff);
             this.physics.add.existing(gameObject, true);
             this.physics.add.collider(this.player, gameObject);
             console.log('Fallback moving platform created');
@@ -1144,11 +1281,15 @@ export default class GameScene extends Phaser.Scene {
           break;
         }
         case 'shield': {
+          // Get shield parameters
+          const shieldWidth = ParameterManager.getParameter('shield_width').currentValue;
+          const shieldHeight = ParameterManager.getParameter('shield_height').currentValue;
+          
           // Create a shield block that can block darts
           try {
             // Create a small orange block
             const shieldBlock = this.physics.add.sprite(x, y, 'platform');
-            shieldBlock.setDisplaySize(40, 40); // Make it square and small
+            shieldBlock.setDisplaySize(shieldWidth, shieldHeight); // Set size based on parameters
             shieldBlock.setTint(0xFF9800); // Orange color
             shieldBlock.setImmovable(true);
             shieldBlock.body.allowGravity = false;
@@ -1171,11 +1312,11 @@ export default class GameScene extends Phaser.Scene {
             }, undefined, this);
             
             gameObject = shieldBlock;
-            console.log('Shield block created');
+            console.log(`Shield block created with width=${shieldWidth}, height=${shieldHeight}`);
           } catch (error) {
             console.error('Error creating shield block:', error);
             // Fallback to a simple rectangle if sprite creation fails
-            gameObject = this.add.rectangle(x, y, 40, 40, 0xFF9800);
+            gameObject = this.add.rectangle(x, y, shieldWidth, shieldHeight, 0xFF9800);
             this.physics.add.existing(gameObject, true);
             this.physics.add.collider(this.player, gameObject);
             
@@ -1191,11 +1332,17 @@ export default class GameScene extends Phaser.Scene {
           break;
         }
         case 'dart_wall': {
+          // Get dart wall height parameter
+          const dartWallHeight = ParameterManager.getParameter('dart_wall_height').currentValue;
+          
           // Create a dart wall at the specified position
           try {
             // Create a wall sprite
             const dartWall = this.walls.create(x, y, 'wall');
-            dartWall.setScale(1).refreshBody();
+            
+            // Scale based on parameters - default texture height is 100
+            const heightScale = dartWallHeight / 100;
+            dartWall.setScale(1, heightScale).refreshBody();
             
             // Immediately shoot darts from this wall
             this.time.delayedCall(500, () => {
@@ -1214,8 +1361,8 @@ export default class GameScene extends Phaser.Scene {
                 // Shoot dart from the right side of the wall
                 const dart = this.darts.create(wallBounds.right, yPos, 'dart');
                 
-                // Set dart properties
-                dart.setVelocityX(-300); // Moving left, faster speed to travel further
+                // Set dart properties - use current dartSpeed from parameter
+                dart.setVelocityX(-this.dartSpeed);
                 dart.body.allowGravity = false; // Darts don't fall
                 
                 // Destroy dart after 10 seconds (enough time to go off screen)
@@ -1227,7 +1374,7 @@ export default class GameScene extends Phaser.Scene {
             
             // Make this wall shoot darts periodically
             this.time.addEvent({
-              delay: 3000, // Shoot every 3 seconds
+              delay: this.dartFrequency, // Use current dartFrequency from parameter
               callback: () => {
                 if (!dartWall.active) return; // Skip if wall is destroyed
                 
@@ -1251,8 +1398,8 @@ export default class GameScene extends Phaser.Scene {
                     // Shoot dart from the right side of the wall
                     const dart = this.darts.create(wallBounds.right, yPos, 'dart');
                     
-                    // Set dart properties
-                    dart.setVelocityX(-300); // Moving left, faster speed to travel further
+                    // Set dart properties - use current dartSpeed from parameter
+                    dart.setVelocityX(-this.dartSpeed);
                     dart.body.allowGravity = false; // Darts don't fall
                     
                     // Destroy dart after 10 seconds (enough time to go off screen)
@@ -1267,11 +1414,11 @@ export default class GameScene extends Phaser.Scene {
             });
             
             gameObject = dartWall;
-            console.log('Dart wall created');
+            console.log(`Dart wall created with height=${dartWallHeight}`);
           } catch (error) {
             console.error('Error creating dart wall:', error);
             // Fallback to a simple rectangle if sprite creation fails
-            gameObject = this.add.rectangle(x, y, 50, 200, 0xff0000);
+            gameObject = this.add.rectangle(x, y, 50, dartWallHeight, 0xff0000);
             this.physics.add.existing(gameObject, true);
             console.log('Fallback dart wall created');
           }
@@ -1364,14 +1511,14 @@ export default class GameScene extends Phaser.Scene {
             this.dartTimer.remove();
           }
           
-          // Create a new dart timer
+          // Create a new dart timer with parameter-defined frequency
           this.dartTimer = this.time.addEvent({
-            delay: 3000,
+            delay: this.dartFrequency,
             callback: this.shootDarts,
             callbackScope: this,
             loop: true
           });
-          console.log('Dart timer started for this round');
+          console.log(`Dart timer started for this round with frequency ${this.dartFrequency}ms`);
           
           // Notify that the game is in playing state
           this.notifyGameState('playing');
@@ -1413,17 +1560,17 @@ export default class GameScene extends Phaser.Scene {
       this.recreatePlayer();
     }
     
-    // Restart the dart timer
+    // Restart the dart timer with parameter-defined frequency
     if (this.dartTimer) {
       this.dartTimer.remove();
     }
     this.dartTimer = this.time.addEvent({
-      delay: 3000,
+      delay: this.dartFrequency,
       callback: this.shootDarts,
       callbackScope: this,
       loop: true
     });
-    console.log('Dart timer restarted for new round');
+    console.log(`Dart timer restarted for new round with frequency ${this.dartFrequency}ms`);
     
     // Pause physics until next item is placed
     this.physics.pause();
@@ -1449,10 +1596,10 @@ export default class GameScene extends Phaser.Scene {
     // Create player (goat) at the start position
     this.player = this.physics.add.sprite(this.PLAYER_START_X, this.PLAYER_START_Y, 'goat_standing');
     
-    // Set up player physics
+    // Set up player physics with current gravity setting
     this.player.setBounce(0.1);
     this.player.setCollideWorldBounds(false); // Allow falling through the bottom
-    this.player.body.setGravityY(300);
+    this.player.body.setGravityY(this.currentGravity);
     this.player.setAlpha(1); // Reset alpha in case it was faded out
     
     // Ensure the goat is facing right
@@ -1636,7 +1783,90 @@ export default class GameScene extends Phaser.Scene {
       });
     }
   }
+  
+  /**
+   * Setup listeners for parameter changes
+   */
+  private setupParameterListeners(): void {
+    // Gravity parameter - affects physics world gravity
+    ParameterManager.onParameterChanged('gravity', (newValue) => {
+      console.log(`Updating gravity to ${newValue}`);
+      this.currentGravity = newValue;
+      this.physics.world.gravity.set(0, newValue);
+      
+      // Update player gravity if it exists
+      if (this.player && this.player.body) {
+        this.player.body.setGravityY(newValue);
+      }
+    });
+    
+    // Dart speed parameter - affects velocity of newly fired darts
+    ParameterManager.onParameterChanged('dart_speed', (newValue) => {
+      console.log(`Updating dart speed to ${newValue}`);
+      this.dartSpeed = newValue;
+      
+      // Existing darts will maintain their current speed
+      // New darts will use the updated speed (in shootDarts method)
+    });
+    
+    // Dart frequency parameter - affects dart firing interval
+    ParameterManager.onParameterChanged('dart_frequency', (newValue) => {
+      console.log(`Updating dart frequency to ${newValue}`);
+      this.dartFrequency = newValue;
+      
+      // Update dart timer if it exists
+      if (this.dartTimer && this.dartTimer.delay !== newValue) {
+        // Remove existing timer
+        this.dartTimer.remove();
+        
+        // Create new timer with updated frequency
+        this.dartTimer = this.time.addEvent({
+          delay: newValue,
+          callback: this.shootDarts,
+          callbackScope: this,
+          loop: true
+        });
+        
+        console.log(`Dart timer updated with new frequency: ${newValue}ms`);
+      }
+    });
+    
+    // Platform tilt parameter - applies to all platforms
+    ParameterManager.onParameterChanged('tilt', (newValue) => {
+      console.log(`Updating platform tilt to ${newValue}`);
+      this.updatePlatformTilt(newValue);
+    });
+    
+    // Gap width parameter - only affects new ground segments
+    // This would require recreating the ground, which is complex
+    // We'll implement this for new levels only
+    
+    // Other parameters (widths and heights) will be used when creating new objects
+  }
 
+  /**
+   * Apply tilt to all platforms
+   * @param tiltDegrees Tilt angle in degrees
+   */
+  private updatePlatformTilt(tiltDegrees: number): void {
+    // Convert degrees to radians for Phaser
+    const tiltRadians = Phaser.Math.DegToRad(tiltDegrees);
+    
+    // Apply to all platforms
+    this.platforms.getChildren().forEach(platform => {
+      // Type assertion to ensure we have the correct type with setRotation method
+      const platformSprite = platform as Phaser.Physics.Arcade.Sprite;
+      platformSprite.setRotation(tiltRadians);
+      
+      // For static bodies with physics, we need to refresh the physics body after rotation
+      if (platformSprite.body) {
+        platformSprite.refreshBody();
+      }
+    });
+    
+    console.log(`Applied tilt of ${tiltDegrees} degrees (${tiltRadians} radians) to all platforms`);
+  }
+  
   // Handle player falling through a gap
   private fallThroughGap(
     _player: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Physics.Arcade.Body | Phaser.Physics.Arcade.StaticBody | Phaser.Tilemaps.Tile,

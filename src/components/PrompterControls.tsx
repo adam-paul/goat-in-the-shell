@@ -23,6 +23,7 @@ const PrompterControls: React.FC<PrompterControlsProps> = ({ onPlaceObstacle, di
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState<number>(-1);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isFocused, setIsFocused] = useState<boolean>(false);
   const inputRef = useRef<HTMLInputElement>(null);
   
   // Focus the input field when the component mounts
@@ -31,6 +32,25 @@ const PrompterControls: React.FC<PrompterControlsProps> = ({ onPlaceObstacle, di
       inputRef.current.focus();
     }
   }, []);
+  
+  // Notify Phaser game when input focus changes
+  useEffect(() => {
+    // Dispatch events to notify the game about input focus state
+    const notifyFocusState = (focused: boolean) => {
+      window.dispatchEvent(new CustomEvent('command-input-focus', {
+        detail: { focused }
+      }));
+    };
+    
+    // Initial notification
+    notifyFocusState(isFocused);
+    
+    // Effect cleanup
+    return () => {
+      // Make sure to notify that input is not focused when component unmounts
+      notifyFocusState(false);
+    };
+  }, [isFocused]);
   
   // Process known obstacle commands locally
   const processLocalCommand = (command: string): { handled: boolean; response?: string } => {
@@ -302,13 +322,15 @@ const PrompterControls: React.FC<PrompterControlsProps> = ({ onPlaceObstacle, di
           value={promptText}
           onChange={(e) => setPromptText(e.target.value)}
           onKeyDown={handleKeyDown}
+          onFocus={() => setIsFocused(true)}
+          onBlur={() => setIsFocused(false)}
           disabled={disabled || isLoading}
           placeholder={isLoading ? "Processing..." : "Type a command..."}
           style={{
             flex: 1,
             backgroundColor: 'rgba(0, 0, 0, 0.5)',
             color: '#fff',
-            border: '1px solid #444',
+            border: `1px solid ${isFocused ? '#e94560' : '#444'}`, // Highlight border when focused
             padding: '8px',
             borderRadius: '5px',
             fontFamily: "'Courier New', monospace",
