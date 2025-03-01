@@ -13,7 +13,7 @@ type GameStatus = 'tutorial' | 'win' | 'playing' | 'reset' | 'gameover' | 'selec
 type DeathType = 'dart' | 'spike' | null;
 
 // Define item types
-export type ItemType = 'platform' | 'spike' | 'moving';
+export type ItemType = 'platform' | 'spike' | 'moving' | 'shield';
 
 // Initialize Supabase client
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || process.env.REACT_APP_SUPABASE_URL

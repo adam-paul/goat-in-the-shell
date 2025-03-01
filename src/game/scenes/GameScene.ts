@@ -960,6 +960,10 @@ export default class GameScene extends Phaser.Scene {
         this.itemPreview = this.add.rectangle(worldPoint.x, worldPoint.y, 100, 20, 0x0000ff, 0.5);
         break;
       }
+      case 'shield': {
+        this.itemPreview = this.add.rectangle(worldPoint.x, worldPoint.y, 40, 40, 0xFF9800, 0.5);
+        break;
+      }
       default: {
         this.itemPreview = this.add.rectangle(worldPoint.x, worldPoint.y, 50, 50, 0xffff00, 0.5);
       }
@@ -1028,6 +1032,53 @@ export default class GameScene extends Phaser.Scene {
             this.physics.add.existing(gameObject, true);
             this.physics.add.collider(this.player, gameObject);
             console.log('Fallback moving platform created');
+          }
+          break;
+        }
+        case 'shield': {
+          // Create a shield block that can block darts
+          try {
+            // Create a small orange block
+            const shieldBlock = this.physics.add.sprite(x, y, 'platform');
+            shieldBlock.setDisplaySize(40, 40); // Make it square and small
+            shieldBlock.setTint(0xFF9800); // Orange color
+            shieldBlock.setImmovable(true);
+            shieldBlock.body.allowGravity = false;
+            
+            // Add collision with player
+            this.physics.add.collider(this.player, shieldBlock);
+            
+            // Add collision with darts - destroy darts when they hit the shield
+            this.physics.add.overlap(shieldBlock, this.darts, (shield, dart) => {
+              // Type assertion to ensure we have the correct types
+              const dartSprite = dart as Phaser.Physics.Arcade.Sprite;
+              
+              // Create a small particle effect to show the dart being blocked
+              this.createDartBlockEffect(dartSprite.x, dartSprite.y);
+              
+              // Destroy the dart
+              dartSprite.destroy();
+              
+              console.log('Dart blocked by shield!');
+            }, undefined, this);
+            
+            gameObject = shieldBlock;
+            console.log('Shield block created');
+          } catch (error) {
+            console.error('Error creating shield block:', error);
+            // Fallback to a simple rectangle if sprite creation fails
+            gameObject = this.add.rectangle(x, y, 40, 40, 0xFF9800);
+            this.physics.add.existing(gameObject, true);
+            this.physics.add.collider(this.player, gameObject);
+            
+            // Add collision with darts for the fallback shield
+            this.physics.add.overlap(gameObject, this.darts, (shield, dart) => {
+              const dartSprite = dart as Phaser.Physics.Arcade.Sprite;
+              this.createDartBlockEffect(dartSprite.x, dartSprite.y);
+              dartSprite.destroy();
+            }, undefined, this);
+            
+            console.log('Fallback shield block created');
           }
           break;
         }
@@ -1284,5 +1335,41 @@ export default class GameScene extends Phaser.Scene {
       detail: { status, deathType }
     }) as GameStateEvent;
     window.dispatchEvent(event);
+  }
+
+  // Create a particle effect when a dart is blocked by a shield
+  private createDartBlockEffect(x: number, y: number): void {
+    // Create a simple visual effect using rectangles
+    for (let i = 0; i < 8; i++) {
+      // Create small particles
+      const particle = this.add.rectangle(
+        x, 
+        y, 
+        4, 
+        4, 
+        0xFF9800 // Orange color
+      );
+      
+      // Random direction
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 50 + Math.random() * 50;
+      
+      // Set velocity
+      const vx = Math.cos(angle) * speed;
+      const vy = Math.sin(angle) * speed;
+      
+      // Animate the particle
+      this.tweens.add({
+        targets: particle,
+        x: x + vx,
+        y: y + vy,
+        alpha: 0,
+        scale: 0.5,
+        duration: 300,
+        onComplete: () => {
+          particle.destroy();
+        }
+      });
+    }
   }
 }
