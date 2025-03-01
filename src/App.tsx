@@ -1,9 +1,8 @@
-import { createClient } from '@supabase/supabase-js'
+// import { createClient } from '@supabase/supabase-js'
 import { useEffect, useState, useCallback, useRef } from 'react'
 import Phaser from 'phaser'
 import './App.css'
 import GameScene from './game/scenes/GameScene'
-// @ts-expect-error - Module resolution issue with ItemSelectionPanel component
 import ItemSelectionPanel from './components/ItemSelectionPanel'
 import DeathModal from './components/DeathModal'
 import TutorialModal from './components/TutorialModal'
@@ -25,7 +24,8 @@ if (!supabaseUrl || !supabaseKey) {
   console.error('Missing Supabase environment variables. Please check your .env file.')
 }
 
-const supabase = createClient(supabaseUrl as string, supabaseKey as string)
+// Create Supabase client but don't use it yet - will be used in future features
+// const supabase = createClient(supabaseUrl as string, supabaseKey as string)
 
 function App() {
   // Start with 'tutorial' state to show the tutorial modal first
