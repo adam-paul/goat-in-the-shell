@@ -231,10 +231,10 @@ function App() {
     setDeathType(null);
     initGame();
     
-    // Start with the tutorial again after reset
+    // Skip tutorial and go directly to item selection after reset
     setTimeout(() => {
-      console.log('Showing tutorial after reset');
-      setGameStatus('tutorial');
+      console.log('Going directly to item selection after reset');
+      setGameStatus('select');
     }, 1000);
   };
 
@@ -261,30 +261,105 @@ function App() {
           </div>
         );
       case 'placement':
+        // Define item-specific instructions
+        let placementInstructions = '';
+        let displayName = 'Item';
+        
+        switch(selectedItem) {
+          case 'platform':
+            placementInstructions = 'Place your platform under gaps or in hard-to-reach areas.';
+            displayName = 'Platform';
+            break;
+          case 'spike':
+            placementInstructions = 'Place spikes to create challenging obstacles for your goat.';
+            displayName = 'Spike';
+            break;
+          case 'moving':
+            placementInstructions = 'Place an oscillator to help cross large gaps.';
+            displayName = 'Oscillator';
+            break;
+          case 'shield':
+            placementInstructions = 'Place a shield to block incoming darts.';
+            displayName = 'Shield';
+            break;
+          default:
+            placementInstructions = 'Click in the game to place your item.';
+        }
+        
         return (
           <div style={{ 
-            position: 'absolute',
-            bottom: '20px',
-            left: '50%',
-            transform: 'translateX(-50%)',
+            position: 'relative',
+            margin: '20px auto',
             zIndex: 10,
             backgroundColor: 'rgba(0, 0, 0, 0.7)',
-            padding: '10px 20px',
-            borderRadius: '8px',
-            color: 'white'
+            padding: '20px 30px',
+            borderRadius: '15px',
+            color: 'white',
+            boxShadow: '0 0 30px rgba(233, 69, 96, 0.5)',
+            border: '2px solid #e94560',
+            textAlign: 'center',
+            width: 'auto',
+            maxWidth: '600px',
+            overflow: 'hidden'
           }}>
-            <p>Click in the game to place your {selectedItem}.</p>
+            {/* Grid background */}
+            <div style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundImage: `
+                linear-gradient(90deg, rgba(16, 185, 129, 0.1) 1px, transparent 1px),
+                linear-gradient(rgba(16, 185, 129, 0.1) 1px, transparent 1px)
+              `,
+              backgroundSize: '20px 20px',
+              animation: 'grid 15s linear infinite',
+              zIndex: -1
+            }} />
+            
+            <h3 style={{
+              fontFamily: "'Press Start 2P', cursive, sans-serif",
+              fontSize: '16px',
+              color: '#e94560',
+              textShadow: '0 0 10px rgba(233, 69, 96, 0.7)',
+              marginBottom: '15px'
+            }}>
+              Placing: {displayName}
+            </h3>
+            
+            <p style={{
+              fontFamily: "'Courier New', Courier, monospace",
+              fontSize: '14px',
+              marginBottom: '15px'
+            }}>
+              {placementInstructions}
+            </p>
+            
             <button 
               onClick={handleCancelPlacement}
               style={{
-                padding: '8px 16px',
-                backgroundColor: '#f44336',
+                padding: '10px 20px',
+                backgroundColor: 'rgba(233, 69, 96, 0.2)',
                 color: 'white',
-                border: 'none',
-                borderRadius: '4px',
+                border: '2px solid #e94560',
+                borderRadius: '8px',
                 cursor: 'pointer',
-                fontSize: '16px',
-                marginTop: '10px'
+                fontSize: '14px',
+                fontFamily: "'Press Start 2P', cursive, sans-serif",
+                boxShadow: '0 0 15px rgba(233, 69, 96, 0.5)',
+                transition: 'all 0.3s ease',
+                textShadow: '0 0 5px rgba(233, 69, 96, 0.7)'
+              }}
+              onMouseOver={(e) => {
+                e.currentTarget.style.backgroundColor = 'rgba(233, 69, 96, 0.4)';
+                e.currentTarget.style.transform = 'translateY(-3px)';
+                e.currentTarget.style.boxShadow = '0 7px 20px rgba(233, 69, 96, 0.6)';
+              }}
+              onMouseOut={(e) => {
+                e.currentTarget.style.backgroundColor = 'rgba(233, 69, 96, 0.2)';
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = '0 0 15px rgba(233, 69, 96, 0.5)';
               }}
             >
               Cancel Placement
@@ -326,7 +401,7 @@ function App() {
   return (
     <div className="App">
       <header className="App-header">
-        <h1>Goat In The Shell</h1>
+        <h1 className="game-title">Goat In The Shell</h1>
       </header>
       
       <div style={{ position: 'relative' }}>
@@ -334,8 +409,11 @@ function App() {
         <div id="game-container" style={{ width: '100%', height: '600px' }}></div>
         
         {/* Overlay UI based on game status */}
-        {renderGameUI()}
+        {gameStatus === 'tutorial' || gameStatus === 'select' || gameStatus === 'gameover' || gameStatus === 'win' ? renderGameUI() : null}
       </div>
+      
+      {/* Placement modal in normal document flow */}
+      {gameStatus === 'placement' && renderGameUI()}
       
       {/* Restart button always visible below the game */}
       <div style={{ textAlign: 'center', marginTop: '20px' }}>
