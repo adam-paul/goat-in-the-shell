@@ -1,6 +1,18 @@
-import { useEffect, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
+import { useEffect, useState, useCallback, useRef } from 'react'
+import Phaser from 'phaser'
 import './App.css'
+import GameScene from './game/scenes/GameScene'
+import ItemSelectionPanel from './components/ItemSelectionPanel'
+import DeathModal from './components/DeathModal'
+
+// Define game status types
+type GameStatus = 'win' | 'playing' | 'reset' | 'gameover' | 'select' | 'placement';
+// Define death types
+type DeathType = 'dart' | 'spike' | null;
+
+// Define item types
+export type ItemType = 'platform' | 'spike' | 'moving';
 
 // Initialize Supabase client
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || process.env.REACT_APP_SUPABASE_URL
@@ -14,132 +26,327 @@ if (!supabaseUrl || !supabaseKey) {
 const supabase = createClient(supabaseUrl as string, supabaseKey as string)
 
 function App() {
-  const [dots, setDots] = useState('...')
-  const [email, setEmail] = useState('')
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [subscriptionStatus, setSubscriptionStatus] = useState<'idle' | 'success' | 'error'>('idle')
-  const [errorMessage, setErrorMessage] = useState('')
+  // Start with 'select' state to immediately show item selection
+  const [gameStatus, setGameStatus] = useState<GameStatus>('select');
+  const [selectedItem, setSelectedItem] = useState<ItemType | null>(null);
+  const [placementConfirmed, setPlacementConfirmed] = useState<boolean>(false);
+  const [deathType, setDeathType] = useState<DeathType>(null);
+
+  // Handle item selection
+  const handleSelectItem = (itemType: ItemType) => {
+    console.log(`Item selected: ${itemType}`);
+    setSelectedItem(itemType);
+    
+    // Notify the game scene to enter placement mode
+    const event = new CustomEvent('enter-placement-mode', {
+      detail: { type: itemType }
+    });
+    window.dispatchEvent(event);
+    
+    setGameStatus('placement');
+    setPlacementConfirmed(false);
+    console.log(`Game status changed to: placement`);
+  };
+
+  // Handle item placement
+  const handlePlaceItem = (x: number, y: number) => {
+    if (!selectedItem || placementConfirmed) return;
+    
+    console.log(`Placing item: ${selectedItem} at position (${x}, ${y})`);
+    setPlacementConfirmed(true);
+    
+    // Notify the game scene to place the item
+    const event = new CustomEvent('place-item', {
+      detail: { type: selectedItem, x, y }
+    });
+    window.dispatchEvent(event);
+    
+    // Reset selected item
+    setSelectedItem(null);
+  };
+
+  // Cancel item placement
+  const handleCancelPlacement = () => {
+    console.log('Placement cancelled');
+    
+    // Notify the game scene to exit placement mode
+    const event = new CustomEvent('exit-placement-mode', {
+      detail: {}
+    });
+    window.dispatchEvent(event);
+    
+    setSelectedItem(null);
+    setPlacementConfirmed(false);
+    setGameStatus('select');
+    console.log(`Game status changed to: select`);
+  };
+  
+  // Continue to next round after death
+  const handleContinueToNextRound = () => {
+    console.log('Continuing to next round');
+    // Reset death type immediately to hide the modal
+    setDeathType(null);
+    
+    // Notify the game scene to start the next round
+    const event = new CustomEvent('continue-to-next-round', {
+      detail: {}
+    });
+    window.dispatchEvent(event);
+    
+    // Game will transition to 'select' state via game state update event
+  };
+  
+  // Listen for game state changes from the Phaser scene
+  useEffect(() => {
+    const handleGameStateUpdate = (event: Event) => {
+      const gameEvent = event as CustomEvent<{status: GameStatus, deathType?: 'dart' | 'spike'}>;
+      console.log(`Game state update received: ${gameEvent.detail.status}`);
+      setGameStatus(gameEvent.detail.status);
+      
+      // If the status is 'select', reset the selected item
+      if (gameEvent.detail.status === 'select') {
+        setSelectedItem(null);
+        setPlacementConfirmed(false);
+      }
+      
+      // If the status is 'gameover', set the death type
+      if (gameEvent.detail.status === 'gameover' && gameEvent.detail.deathType) {
+        setDeathType(gameEvent.detail.deathType);
+      }
+    };
+    
+    window.addEventListener('game-state-update', handleGameStateUpdate);
+    
+    // Listen for placement confirmation from the game scene
+    const handleConfirmPlacement = (event: Event) => {
+      const placementEvent = event as CustomEvent<{type: ItemType, x: number, y: number}>;
+      console.log(`Placement confirmed at (${placementEvent.detail.x}, ${placementEvent.detail.y})`);
+      
+      if (!placementConfirmed) {
+        handlePlaceItem(placementEvent.detail.x, placementEvent.detail.y);
+      }
+    };
+    
+    window.addEventListener('confirm-placement', handleConfirmPlacement);
+    
+    return () => {
+      window.removeEventListener('game-state-update', handleGameStateUpdate);
+      window.removeEventListener('confirm-placement', handleConfirmPlacement);
+    };
+  }, [selectedItem, placementConfirmed]); // Add dependencies to ensure the event handlers use the latest state
+
+  // Use useRef to avoid recreating the function on every render
+  const gameInstanceRef = useRef<Phaser.Game | null>(null);
+
+  const initGame = useCallback(() => {
+    console.log('Initializing game...');
+    
+    // Use the ref to track and clean up the game instance
+    if (gameInstanceRef.current) {
+      gameInstanceRef.current.destroy(true);
+    }
+    
+    // Clear the container first to prevent duplicate canvases
+    const container = document.getElementById('game-container');
+    if (container) {
+      container.innerHTML = '';
+    }
+    
+    const config: Phaser.Types.Core.GameConfig = {
+      type: Phaser.CANVAS,
+      width: 1200,
+      height: 800,
+      physics: {
+        default: 'arcade',
+        arcade: {
+          gravity: { y: 300, x: 0 },
+          debug: false // Disable debug mode
+        }
+      },
+      // Enable the camera to follow the player
+      scale: {
+        mode: Phaser.Scale.FIT,
+        autoCenter: Phaser.Scale.CENTER_BOTH
+      },
+      scene: [GameScene],
+      parent: 'game-container',
+      // Make sure we have proper rendering
+      canvas: document.createElement('canvas'),
+      // Define explicit render type
+      render: {
+        pixelArt: true,
+        antialias: false,
+        antialiasGL: false
+      },
+      // Make sure keyboard input is enabled
+      input: {
+        keyboard: true,
+        gamepad: false,
+        mouse: true,
+        touch: true
+      }
+    }
+
+    const newGame = new Phaser.Game(config);
+    gameInstanceRef.current = newGame;
+    
+    // Force the game to start in select mode after a short delay
+    setTimeout(() => {
+      console.log('Forcing game state to select');
+      setGameStatus('select');
+      setSelectedItem(null);
+      setPlacementConfirmed(false);
+      setDeathType(null);
+    }, 1000);
+  }, []); // No dependencies to avoid re-creation
 
   useEffect(() => {
-    // Animate the dots
-    const interval = setInterval(() => {
-      setDots(prev => prev.length >= 3 ? '.' : prev + '.')
-    }, 500)
+    initGame();
 
-    return () => clearInterval(interval)
-  }, [])
-
-  const handleEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setEmail(e.target.value)
-    // Reset status when user starts typing again
-    if (subscriptionStatus !== 'idle') {
-      setSubscriptionStatus('idle')
-      setErrorMessage('')
-    }
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    
-    // Basic email validation
-    if (!email || !email.includes('@') || !email.includes('.')) {
-      setSubscriptionStatus('error')
-      setErrorMessage('Please enter a valid email address')
-      return
-    }
-    
-    setIsSubmitting(true)
-    
-    try {
-      // Insert the email into the Supabase table
-      const { error } = await supabase
-        .from('email-subscribe')
-        .insert([{ email }])
-      
-      if (error) {
-        console.error('Error subscribing:', error)
-        
-        if (error.code === '23505') { // Unique violation
-          setSubscriptionStatus('error')
-          setErrorMessage('This email is already subscribed')
-        } else if (error.code === '42501' || error.message.includes('security policy')) {
-          // Row-level security policy violation
-          setSubscriptionStatus('error')
-          setErrorMessage('Subscription service is temporarily unavailable. Please try again later.')
-          console.error('RLS policy error. Please run the SQL commands in supabase-rls-commands.sql')
-        } else {
-          setSubscriptionStatus('error')
-          setErrorMessage('Failed to subscribe. Please try again later.')
-        }
-      } else {
-        setSubscriptionStatus('success')
-        setEmail('') // Clear the input on success
+    return () => {
+      if (gameInstanceRef.current) {
+        gameInstanceRef.current.destroy(true);
+        gameInstanceRef.current = null;
       }
-    } catch (err) {
-      console.error('Unexpected error:', err)
-      setSubscriptionStatus('error')
-      setErrorMessage('An unexpected error occurred')
-    } finally {
-      setIsSubmitting(false)
+    };
+  }, []); // Empty dependency array - only run once on mount
+
+  const handleReset = () => {
+    console.log('Game reset requested');
+    setGameStatus('reset');
+    setSelectedItem(null);
+    setPlacementConfirmed(false);
+    setDeathType(null);
+    initGame();
+    
+    // Force the game to start in select mode after a short delay
+    setTimeout(() => {
+      console.log('Forcing game state to select after reset');
+      setGameStatus('select');
+    }, 1000);
+  };
+
+  // Render different UI based on game status
+  const renderGameUI = () => {
+    console.log(`Rendering UI for game status: ${gameStatus}`);
+    
+    switch (gameStatus) {
+      case 'select':
+        console.log('Rendering item selection panel');
+        return (
+          <div style={{
+            position: 'absolute',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            zIndex: 10,
+            width: '80%',
+            maxWidth: '800px'
+          }}>
+            <ItemSelectionPanel onSelectItem={handleSelectItem} />
+          </div>
+        );
+      case 'placement':
+        return (
+          <div style={{ 
+            position: 'absolute',
+            bottom: '20px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 10,
+            backgroundColor: 'rgba(0, 0, 0, 0.7)',
+            padding: '10px 20px',
+            borderRadius: '8px',
+            color: 'white'
+          }}>
+            <p>Click in the game to place your {selectedItem}.</p>
+            <button 
+              onClick={handleCancelPlacement}
+              style={{
+                padding: '8px 16px',
+                backgroundColor: '#f44336',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '16px',
+                marginTop: '10px'
+              }}
+            >
+              Cancel Placement
+            </button>
+          </div>
+        );
+      case 'gameover':
+        // Show death modal if we have a death type
+        if (deathType) {
+          return <DeathModal deathType={deathType} onContinue={handleContinueToNextRound} />;
+        }
+        return null;
+      case 'win':
+        return (
+          <div style={{ textAlign: 'center', marginTop: '20px' }}>
+            <h2>You Won!</h2>
+            <button 
+              onClick={handleReset}
+              style={{
+                padding: '10px 20px',
+                backgroundColor: '#4CAF50',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '16px',
+                marginTop: '10px'
+              }}
+            >
+              Play Again
+            </button>
+          </div>
+        );
+      default:
+        return null;
     }
-  }
+  };
 
   return (
-    <div className="app-container">
-      <div className="content-wrapper">
-        <h1 className="game-title">Goat In The Shell</h1>
-        <div className="coming-soon-container">
-          <div className="message-box">
-            <p className="coming-soon-text">
-              Your favorite gamer's favorite game<span className="dots-container">{dots}</span>
-            </p>
-            <p className="coming-soon-label">Coming Soon</p>
-          </div>
-          <div className="goat-animation">
-            <div className="goat">🐐</div>
-          </div>
-        </div>
+    <div className="App">
+      <header className="App-header">
+        <h1>Goat In The Shell</h1>
+      </header>
+      
+      <div style={{ position: 'relative' }}>
+        {/* Game container */}
+        <div id="game-container" style={{ width: '100%', height: '600px' }}></div>
         
-        <div className="subscribe-container">
-          <h2 className="subscribe-title">Stay Updated</h2>
-          <p className="subscribe-text">Sign up to receive updates and be the first to know when we launch!</p>
-          
-          <form onSubmit={handleSubmit} className="subscribe-form">
-            <div className="form-group">
-              <input
-                type="email"
-                placeholder="Enter your email"
-                value={email}
-                onChange={handleEmailChange}
-                disabled={isSubmitting}
-                className="email-input"
-                aria-label="Email address"
-              />
-              <button 
-                type="submit" 
-                disabled={isSubmitting} 
-                className="subscribe-button"
-              >
-                {isSubmitting ? 'Subscribing...' : 'Subscribe'}
-              </button>
-            </div>
-            
-            {subscriptionStatus === 'success' && (
-              <div className="status-message success">
-                Thanks for subscribing! We'll keep you updated.
-              </div>
-            )}
-            
-            {subscriptionStatus === 'error' && (
-              <div className="status-message error">
-                {errorMessage}
-              </div>
-            )}
-          </form>
-        </div>
+        {/* Overlay UI based on game status */}
+        {renderGameUI()}
       </div>
+      
+      {/* Restart button always visible below the game */}
+      <div style={{ textAlign: 'center', marginTop: '20px' }}>
+        <button 
+          onClick={handleReset}
+          style={{
+            padding: '10px 20px',
+            backgroundColor: '#2196F3',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            fontSize: '16px'
+          }}
+        >
+          Restart Game
+        </button>
+      </div>
+      
+      <footer style={{ marginTop: '30px', textAlign: 'center', fontSize: '14px', color: '#666' }}>
+        <p>Use arrow keys or WASD to move. Space to jump.</p>
+        <p>Avoid darts and dangerous platforms. Reach the finish line!</p>
+      </footer>
     </div>
-  )
+  );
 }
 
 export default App
