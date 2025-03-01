@@ -13,6 +13,19 @@ body {
   overflow-x: hidden;
 }
 
+.App {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.App-header {
+  width: 100%;
+  text-align: center;
+  padding: 2rem 0;
+}
+
 .app-container {
   display: flex;
   flex-direction: column;

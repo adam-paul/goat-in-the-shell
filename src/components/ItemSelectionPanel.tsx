@@ -32,13 +32,13 @@ const ItemSelectionPanel: React.FC<ItemSelectionPanelProps> = ({ onSelectItem })
     },
     {
       type: 'moving',
-      name: 'Moving Platform',
+      name: 'Oscillator',
       description: 'A platform that moves back and forth',
       color: '#2196F3' // Blue
     },
     {
       type: 'shield',
-      name: 'Shield Block',
+      name: 'Shield',
       description: 'A small block that can block arrows',
       color: '#FF9800' // Orange
     }
@@ -46,13 +46,42 @@ const ItemSelectionPanel: React.FC<ItemSelectionPanelProps> = ({ onSelectItem })
 
   return (
     <div style={{
-      padding: '20px',
-      backgroundColor: 'rgba(245, 245, 245, 0.9)',
-      borderRadius: '8px',
+      padding: '30px',
+      backgroundColor: 'rgba(0, 0, 0, 0.7)',
+      borderRadius: '15px',
       margin: '0 auto',
-      boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+      boxShadow: '0 0 30px rgba(233, 69, 96, 0.5)',
+      border: '2px solid #e94560',
+      color: 'white',
+      position: 'relative',
+      overflow: 'hidden'
     }}>
-      <h2 style={{ textAlign: 'center', marginBottom: '20px' }}>Select an Item to Place</h2>
+      {/* Grid background similar to TutorialModal */}
+      <div style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundImage: `
+          linear-gradient(90deg, rgba(16, 185, 129, 0.1) 1px, transparent 1px),
+          linear-gradient(rgba(16, 185, 129, 0.1) 1px, transparent 1px)
+        `,
+        backgroundSize: '20px 20px',
+        animation: 'grid 15s linear infinite',
+        zIndex: -1
+      }} />
+      
+      <h2 style={{ 
+        textAlign: 'center', 
+        marginBottom: '20px',
+        fontFamily: "'Press Start 2P', cursive, sans-serif",
+        fontSize: '24px',
+        color: '#e94560',
+        textShadow: '0 0 10px rgba(233, 69, 96, 0.7)'
+      }}>
+        Select an Item to Place
+      </h2>
       
       <div style={{ 
         display: 'flex', 
@@ -69,26 +98,43 @@ const ItemSelectionPanel: React.FC<ItemSelectionPanelProps> = ({ onSelectItem })
             style={{
               width: '200px',
               padding: '15px',
-              backgroundColor: 'white',
+              backgroundColor: 'rgba(0, 0, 0, 0.7)',
               borderRadius: '8px',
               cursor: 'pointer',
+              border: `2px solid ${item.color}`,
               boxShadow: hoveredItem === item.type 
-                ? '0 5px 15px rgba(0,0,0,0.1)' 
-                : '0 2px 4px rgba(0,0,0,0.1)',
-              transition: 'transform 0.2s, box-shadow 0.2s',
+                ? `0 0 15px ${item.color}` 
+                : `0 0 5px ${item.color}`,
+              transition: 'all 0.3s ease',
               transform: hoveredItem === item.type ? 'translateY(-5px)' : 'translateY(0)'
             }}
           >
             <div style={{
               width: '100%',
               height: '50px',
-              backgroundColor: item.color,
+              backgroundColor: `${item.color}33`, // Add transparency
               borderRadius: '4px',
-              marginBottom: '10px'
+              marginBottom: '10px',
+              border: `1px solid ${item.color}`
             }} />
             
-            <h3 style={{ margin: '10px 0' }}>{item.name}</h3>
-            <p style={{ fontSize: '14px', color: '#666' }}>{item.description}</p>
+            <h3 style={{ 
+              margin: '10px 0',
+              fontFamily: "'Press Start 2P', cursive, sans-serif",
+              fontSize: '14px',
+              color: item.color,
+              textShadow: `0 0 5px ${item.color}99`
+            }}>
+              {item.name}
+            </h3>
+            
+            <p style={{ 
+              fontSize: '14px', 
+              color: 'white',
+              fontFamily: "'Courier New', Courier, monospace"
+            }}>
+              {item.description}
+            </p>
           </div>
         ))}
       </div>
@@ -97,7 +143,8 @@ const ItemSelectionPanel: React.FC<ItemSelectionPanelProps> = ({ onSelectItem })
         textAlign: 'center', 
         marginTop: '20px',
         fontSize: '14px',
-        color: '#666'
+        color: 'white',
+        fontFamily: "'Courier New', Courier, monospace"
       }}>
         Select an item to place in the level. Try to make it challenging but still possible to complete!
       </p>

@@ -24,6 +24,10 @@ export default class GameScene extends Phaser.Scene {
   private playerFacingLeft: boolean = false; // Tracks player direction for animations
   private bleatSound!: Phaser.Sound.BaseSound;
   
+  // Define constants for player starting position
+  private readonly PLAYER_START_X: number = 80;
+  private readonly PLAYER_START_Y: number = 650;
+  
   // New properties for round-based gameplay
   private currentRound: number = 1;
   private placedItems: Array<{type: string, x: number, y: number, gameObject: Phaser.GameObjects.GameObject}> = [];
@@ -34,6 +38,7 @@ export default class GameScene extends Phaser.Scene {
   private gameStarted: boolean = false; // Track if the game has started
   private countdownText?: Phaser.GameObjects.Text; // For countdown display
   private modalElements: Phaser.GameObjects.GameObject[] = []; // Store modal elements for cleanup
+  private placementClickHandler: ((pointer: Phaser.Input.Pointer) => void) | null = null; // Store the placement click handler
 
   constructor() {
     super('GameScene');
@@ -347,8 +352,8 @@ export default class GameScene extends Phaser.Scene {
     this.walls.create(2200, 300, 'wall');
 
     // Create start point (bottom left) - just a position marker, no visible rectangle
-    const startX = 80;
-    const startY = 700;
+    const startX = this.PLAYER_START_X;
+    const startY = this.PLAYER_START_Y;
     this.startPoint = this.add.rectangle(startX, startY, 1, 1, 0x000000, 0); // Completely invisible
     this.physics.add.existing(this.startPoint, true);
     
@@ -373,7 +378,7 @@ export default class GameScene extends Phaser.Scene {
     }).setOrigin(0.5);
 
     // Create player (goat) at the start position
-    this.player = this.physics.add.sprite(80, 650, 'goat_standing');
+    this.player = this.physics.add.sprite(this.PLAYER_START_X, this.PLAYER_START_Y, 'goat_standing');
     
     // Set up player physics
     this.player.setBounce(0.1);
@@ -667,6 +672,9 @@ export default class GameScene extends Phaser.Scene {
     // Stop the dartTimer
     this.dartTimer.remove();
     
+    // Clear all darts
+    this.darts.clear(true, true);
+    
     // Create tranquilized effect - tint the goat blue
     playerSprite.setTint(0x0000ff);
     
@@ -690,21 +698,7 @@ export default class GameScene extends Phaser.Scene {
       const worldPoint = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
       this.itemPreview.setPosition(worldPoint.x, worldPoint.y);
       
-      // Handle click to place
-      if (pointer.isDown && pointer.getDuration() > 200) { // Add a small delay to prevent accidental clicks
-        console.log(`Confirming placement at (${worldPoint.x}, ${worldPoint.y})`);
-        const event = new CustomEvent('confirm-placement', {
-          detail: { 
-            type: this.itemToPlace,
-            x: worldPoint.x,
-            y: worldPoint.y
-          }
-        });
-        window.dispatchEvent(event);
-        
-        // Prevent multiple clicks
-        this.input.activePointer.reset();
-      }
+      // We're now handling clicks with a direct event listener, so no need to check here
       
       return; // Skip regular update when in placement mode
     }
@@ -897,6 +891,10 @@ export default class GameScene extends Phaser.Scene {
     console.log(`Handling item placement: ${type} at (${x}, ${y})`);
     this.placeItem(type, x, y);
     this.exitPlacementMode();
+    
+    // Clear any existing darts before starting the round
+    this.darts.clear(true, true);
+    
     this.startRound();
   }
   
@@ -916,6 +914,32 @@ export default class GameScene extends Phaser.Scene {
       this.physics.pause();
     }
     
+    // Create a named handler function for better cleanup
+    this.placementClickHandler = (pointer: Phaser.Input.Pointer) => {
+      // Only process left button clicks during placement mode
+      if (this.itemPlacementMode && pointer.button === 0) { // 0 is left button
+        console.log(`Direct pointer event: Confirming placement at (${pointer.worldX}, ${pointer.worldY})`);
+        const worldPoint = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
+        
+        const placementEvent = new CustomEvent('confirm-placement', {
+          detail: { 
+            type: this.itemToPlace,
+            x: worldPoint.x,
+            y: worldPoint.y
+          }
+        });
+        window.dispatchEvent(placementEvent);
+      }
+    };
+    
+    // Add the pointer down event listener with a small delay to prevent accidental clicks
+    this.time.delayedCall(300, () => {
+      if (this.itemPlacementMode && this.placementClickHandler) { // Check if we're still in placement mode and handler exists
+        this.input.on('pointerdown', this.placementClickHandler, this);
+        console.log('Placement click handler activated');
+      }
+    });
+    
     // Notify that we're in placement mode
     this.notifyGameState('placement');
   }
@@ -923,6 +947,12 @@ export default class GameScene extends Phaser.Scene {
   private exitPlacementMode(): void {
     console.log('Exiting placement mode');
     this.itemPlacementMode = false;
+    
+    // Remove the pointer down event listener if it exists
+    if (this.placementClickHandler) {
+      this.input.off('pointerdown', this.placementClickHandler, this);
+      this.placementClickHandler = null;
+    }
     
     // Remove the preview
     if (this.itemPreview) {
@@ -1108,8 +1138,8 @@ export default class GameScene extends Phaser.Scene {
   
   private startRound(): void {
     console.log(`Starting round ${this.currentRound}`);
-    // Reset player position
-    this.player.setPosition(this.startPoint.x, this.startPoint.y);
+    // Reset player position and velocity using our constants
+    this.player.setPosition(this.PLAYER_START_X, this.PLAYER_START_Y);
     this.player.setVelocity(0, 0);
     
     // Update round text
@@ -1197,11 +1227,11 @@ export default class GameScene extends Phaser.Scene {
     this.gameOver = false;
     this.gameStarted = false; // Game is paused until next item is placed
     
-    // Reset player appearance
+    // Reset player appearance and position
     if (this.player && this.player.active) {
       this.player.clearTint();
       this.player.setVelocity(0, 0);
-      this.player.setPosition(this.startPoint.x, this.startPoint.y);
+      this.player.setPosition(this.PLAYER_START_X, this.PLAYER_START_Y);
       this.player.body.moves = true; // Re-enable movement
     } else {
       // If player is not valid, recreate it
@@ -1242,7 +1272,7 @@ export default class GameScene extends Phaser.Scene {
   private recreatePlayer(): void {
     console.log('Recreating player');
     // Create player (goat) at the start position
-    this.player = this.physics.add.sprite(this.startPoint.x, this.startPoint.y, 'goat_standing');
+    this.player = this.physics.add.sprite(this.PLAYER_START_X, this.PLAYER_START_Y, 'goat_standing');
     
     // Set up player physics
     this.player.setBounce(0.1);
@@ -1320,6 +1350,12 @@ export default class GameScene extends Phaser.Scene {
     this.gameOver = true;
     this.player.setTint(0xff0000);
     this.player.setVelocity(0, 0);
+    
+    // Stop the dartTimer
+    this.dartTimer.remove();
+    
+    // Clear all darts
+    this.darts.clear(true, true);
     
     // No longer show the in-game modal, let React handle it
     
