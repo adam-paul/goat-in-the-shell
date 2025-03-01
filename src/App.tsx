@@ -3,9 +3,15 @@ import { createClient } from '@supabase/supabase-js'
 import './App.css'
 
 // Initialize Supabase client
-const supabaseUrl = 'https://vjyfzwsvdzdbavkgjypa.supabase.co'
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZqeWZ6d3N2ZHpkYmF2a2dqeXBhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDA3NzUxOTYsImV4cCI6MjA1NjM1MTE5Nn0.8RY1FTods5M2lEM3ZRNw7hnat257mEhLdGIv4f7UIw8'
-const supabase = createClient(supabaseUrl, supabaseKey)
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || process.env.REACT_APP_SUPABASE_URL
+const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || process.env.REACT_APP_SUPABASE_ANON_KEY
+
+// Validate environment variables
+if (!supabaseUrl || !supabaseKey) {
+  console.error('Missing Supabase environment variables. Please check your .env file.')
+}
+
+const supabase = createClient(supabaseUrl as string, supabaseKey as string)
 
 function App() {
   const [dots, setDots] = useState('...')
