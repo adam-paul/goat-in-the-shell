@@ -1,0 +1,14 @@
+gravity
+dart_speed
+platform_height
+platform_width
+spike_height
+spike_width
+oscillator_height
+oscillator_width
+shield_height
+shield_width
+dart_frequency
+dart_wall_height
+tilt
+gap_width

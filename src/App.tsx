@@ -215,6 +215,7 @@ function App() {
   }, []); // No dependencies to avoid re-creation
 
   useEffect(() => {
+    // Initialize the game
     initGame();
 
     return () => {

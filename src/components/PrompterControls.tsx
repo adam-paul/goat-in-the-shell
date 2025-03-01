@@ -1,4 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
+import { AIService, ParameterModification } from '../services/AIService';
+import { ParameterManager } from '../game/parameters';
 
 // Extend the Window interface to include playerPosition
 declare global {
@@ -20,6 +22,7 @@ const PrompterControls: React.FC<PrompterControlsProps> = ({ onPlaceObstacle, di
   const [promptText, setPromptText] = useState<string>('');
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState<number>(-1);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   const inputRef = useRef<HTMLInputElement>(null);
   
   // Focus the input field when the component mounts
@@ -29,90 +32,153 @@ const PrompterControls: React.FC<PrompterControlsProps> = ({ onPlaceObstacle, di
     }
   }, []);
   
-  // Process the command entered in the prompt
-  const processCommand = (command: string) => {
+  // Process known obstacle commands locally
+  const processLocalCommand = (command: string): { handled: boolean; response?: string } => {
     // Convert to lowercase and trim whitespace
     const normalizedCommand = command.toLowerCase().trim();
     
-    // Add to command history
-    setCommandHistory(prev => [...prev, command]);
-    setHistoryIndex(-1);
-    
-    // Parse the command
+    // Handle known obstacle commands locally
     if (normalizedCommand === 'darts' || normalizedCommand === 'dart wall') {
-      // Place a dart wall at a reasonable position
-      // We'll place it ahead of the player's current position
       const playerX = window.playerPosition?.x || 800;
       const playerY = window.playerPosition?.y || 400;
-      
-      // Place the wall a bit ahead of the player
       onPlaceObstacle('dart_wall', playerX + 300, playerY);
-      return `Creating dart wall ahead of player at position (${playerX + 300}, ${playerY})`;
+      return { 
+        handled: true, 
+        response: `Creating dart wall ahead of player at position (${playerX + 300}, ${playerY})` 
+      };
     } 
     else if (normalizedCommand === 'platform') {
-      // Place a platform near the player
       const playerX = window.playerPosition?.x || 800;
       const playerY = window.playerPosition?.y || 400;
       const isOnGround = window.playerPosition?.isOnGround || false;
-      
-      // If player is on the ground, place at ground level, otherwise place below
       const yOffset = isOnGround ? 0 : 100;
-      
-      // Place the platform a bit ahead and at appropriate height
       onPlaceObstacle('platform', playerX + 200, playerY + yOffset);
-      return `Creating platform ahead of player at position (${playerX + 200}, ${playerY + yOffset})`;
+      return { 
+        handled: true, 
+        response: `Creating platform ahead of player at position (${playerX + 200}, ${playerY + yOffset})` 
+      };
     }
     else if (normalizedCommand === 'spike') {
-      // Place a spike platform near the player
       const playerX = window.playerPosition?.x || 800;
       const playerY = window.playerPosition?.y || 400;
       const isOnGround = window.playerPosition?.isOnGround || false;
-      
-      // If player is on the ground, place at ground level, otherwise place below
       const yOffset = isOnGround ? 0 : 100;
-      
-      // Place the spike a bit ahead at appropriate height
       onPlaceObstacle('spike', playerX + 250, playerY + yOffset);
-      return `Creating spike ahead of player at position (${playerX + 250}, ${playerY + yOffset})`;
+      return { 
+        handled: true, 
+        response: `Creating spike ahead of player at position (${playerX + 250}, ${playerY + yOffset})` 
+      };
     }
     else if (normalizedCommand === 'oscillator') {
-      // Place a moving platform near the player
       const playerX = window.playerPosition?.x || 800;
       const playerY = window.playerPosition?.y || 400;
-      
-      // Place the moving platform a bit ahead and above the player
       onPlaceObstacle('oscillator', playerX + 200, playerY - 50);
-      return `Creating moving platform ahead of player at position (${playerX + 200}, ${playerY - 50})`;
+      return { 
+        handled: true, 
+        response: `Creating moving platform ahead of player at position (${playerX + 200}, ${playerY - 50})` 
+      };
     }
     else if (normalizedCommand === 'shield') {
-      // Place a shield near the player
       const playerX = window.playerPosition?.x || 800;
       const playerY = window.playerPosition?.y || 400;
-      
-      // Place the shield a bit ahead of the player
       onPlaceObstacle('shield', playerX + 150, playerY);
-      return `Creating shield ahead of player at position (${playerX + 150}, ${playerY})`;
+      return { 
+        handled: true, 
+        response: `Creating shield ahead of player at position (${playerX + 150}, ${playerY})` 
+      };
     }
     else if (normalizedCommand === 'help') {
-      return `Available commands: darts, platform, spike, oscillator, shield, help`;
+      return { 
+        handled: true, 
+        response: `Available commands:
+- Object placement: darts, platform, spike, oscillator, shield
+- Parameter adjustment: Try phrases like "make gravity weaker" or "speed up the darts"
+- Parameters: gravity, dart_speed, platform_width, and more
+- Type "reset parameters" to restore default settings` 
+      };
     }
-    else {
-      return `Unknown command: ${command}. Type 'help' for available commands.`;
+    
+    // Command not handled locally
+    return { handled: false };
+  };
+  
+  // Handle parameter modifications from AI response
+  const applyParameterModifications = (mods: ParameterModification[]) => {
+    if (!mods || mods.length === 0) return;
+    
+    // Validate the modifications
+    const validMods = AIService.validateParameterModifications(mods);
+    
+    // Apply the modifications using ParameterManager
+    validMods.forEach(mod => {
+      ParameterManager.updateParameterNormalized(mod.parameter, mod.normalized_value);
+    });
+    
+    // Log the modifications
+    console.log('Applied parameter modifications:', validMods);
+    
+    // Create parameter modification messages for the command history
+    validMods.forEach(mod => {
+      const formattedValue = (mod.normalized_value >= 0 ? '+' : '') + 
+        Math.round(mod.normalized_value * 100) + '%';
+      
+      setCommandHistory(prev => [
+        ...prev, 
+        `> Parameter ${mod.parameter}: ${formattedValue}`
+      ]);
+    });
+  };
+  
+  // Process command through the AI service for parameter modifications
+  const processWithAI = async (command: string) => {
+    try {
+      setIsLoading(true);
+      
+      // Send the command to the AI service
+      const result = await AIService.sendCommand(command);
+      
+      // Add the AI response to the command history
+      setCommandHistory(prev => [...prev, `> ${result.response}`]);
+      
+      // Apply any parameter modifications from the AI
+      if (result.parameter_modifications && result.parameter_modifications.length > 0) {
+        applyParameterModifications(result.parameter_modifications);
+      }
+      
+      setIsLoading(false);
+      return true;
+    } catch (error) {
+      console.error('Error processing command with AI:', error);
+      setCommandHistory(prev => [...prev, `> Error: Could not process command. Please try again.`]);
+      setIsLoading(false);
+      return false;
     }
   };
   
   // Handle form submission
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!promptText.trim() || disabled) return;
+    if (!promptText.trim() || disabled || isLoading) return;
     
-    const response = processCommand(promptText);
+    // Add the command to history
+    setCommandHistory(prev => [...prev, promptText]);
     
-    // Add the response to the command history
-    setCommandHistory(prev => [...prev, `> ${response}`]);
+    // Try to process the command locally first
+    const localResult = processLocalCommand(promptText);
     
-    // Clear the input
+    if (localResult.handled) {
+      // Command was handled locally
+      if (localResult.response) {
+        setCommandHistory(prev => [...prev, `> ${localResult.response}`]);
+      }
+    } else {
+      // Send the command to the AI
+      await processWithAI(promptText);
+    }
+    
+    // Clear the input and reset history index
     setPromptText('');
+    setHistoryIndex(-1);
   };
   
   // Handle keyboard navigation through command history
@@ -144,6 +210,24 @@ const PrompterControls: React.FC<PrompterControlsProps> = ({ onPlaceObstacle, di
     }
   };
   
+  // Handle parameter reset
+  const handleResetParameters = () => {
+    // Reset all parameters
+    ParameterManager.resetAllParameters();
+    
+    // Add message to command history
+    setCommandHistory(prev => [...prev, `> All parameters reset to default values`]);
+  };
+  
+  // Check if the command is a reset command
+  useEffect(() => {
+    const normalizedCommand = promptText.toLowerCase().trim();
+    if (normalizedCommand === 'reset parameters' || normalizedCommand === 'reset all parameters') {
+      handleResetParameters();
+      setPromptText('');
+    }
+  }, [promptText]);
+  
   return (
     <div className="prompter-controls" style={{
       padding: '15px',
@@ -162,8 +246,14 @@ const PrompterControls: React.FC<PrompterControlsProps> = ({ onPlaceObstacle, di
         textAlign: 'center',
         fontFamily: "'Press Start 2P', cursive, sans-serif",
         fontSize: '16px',
-        marginBottom: '15px'
+        marginBottom: '15px',
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center'
       }}>
+        {isLoading && (
+          <span style={{ marginRight: '10px', fontSize: '14px' }}>⚙️</span>
+        )}
         Command Terminal
       </h3>
       
@@ -185,7 +275,9 @@ const PrompterControls: React.FC<PrompterControlsProps> = ({ onPlaceObstacle, di
         ) : (
           commandHistory.map((cmd, index) => (
             <div key={index} style={{ 
-              color: cmd.startsWith('>') ? '#0f0' : '#fff',
+              color: cmd.startsWith('> Parameter') ? '#00ccff' : // Parameter changes in blue
+                    cmd.startsWith('>') ? '#0f0' : // Responses in green
+                    '#fff', // Commands in white
               marginBottom: '5px'
             }}>
               {cmd}
@@ -196,15 +288,22 @@ const PrompterControls: React.FC<PrompterControlsProps> = ({ onPlaceObstacle, di
       
       {/* Command input */}
       <form onSubmit={handleSubmit} style={{ display: 'flex', alignItems: 'center' }}>
-        <span style={{ color: '#e94560', marginRight: '5px', display: 'flex', alignItems: 'center' }}>{'>'}</span>
+        <span style={{ 
+          color: isLoading ? '#ffcc00' : '#e94560', 
+          marginRight: '5px', 
+          display: 'flex', 
+          alignItems: 'center' 
+        }}>
+          {isLoading ? '...' : '>'}
+        </span>
         <input
           ref={inputRef}
           type="text"
           value={promptText}
           onChange={(e) => setPromptText(e.target.value)}
           onKeyDown={handleKeyDown}
-          disabled={disabled}
-          placeholder="Type a command..."
+          disabled={disabled || isLoading}
+          placeholder={isLoading ? "Processing..." : "Type a command..."}
           style={{
             flex: 1,
             backgroundColor: 'rgba(0, 0, 0, 0.5)',
@@ -219,26 +318,51 @@ const PrompterControls: React.FC<PrompterControlsProps> = ({ onPlaceObstacle, di
         />
         <button
           type="submit"
-          disabled={disabled}
+          disabled={disabled || isLoading || !promptText.trim()}
           style={{
             marginLeft: '10px',
             padding: '8px 15px',
-            backgroundColor: disabled ? '#333' : '#e94560',
+            backgroundColor: disabled || isLoading || !promptText.trim() ? '#333' : '#e94560',
             color: 'white',
             border: 'none',
             borderRadius: '5px',
-            cursor: disabled ? 'not-allowed' : 'pointer',
+            cursor: disabled || isLoading || !promptText.trim() ? 'not-allowed' : 'pointer',
             fontFamily: "'Press Start 2P', cursive, sans-serif",
             fontSize: '12px',
             transition: 'all 0.3s ease'
           }}
         >
-          Execute
+          {isLoading ? "..." : "Execute"}
         </button>
       </form>
       
+      {/* Command hints */}
       <div style={{ marginTop: '10px', fontSize: '12px', color: '#0f0', textAlign: 'center' }}>
-        <p>Type commands to add obstacles in real-time. Try 'darts', 'platform', 'spike', 'oscillator', or 'shield'.</p>
+        <p>
+          Try placing objects ('platform', 'darts') or modifying parameters ('make gravity stronger').
+          Type 'help' for more commands.
+        </p>
+      </div>
+      
+      {/* Reset parameters button */}
+      <div style={{ marginTop: '10px', textAlign: 'center' }}>
+        <button
+          onClick={handleResetParameters}
+          disabled={disabled || isLoading}
+          style={{
+            padding: '5px 10px',
+            backgroundColor: 'rgba(255, 255, 255, 0.2)',
+            color: '#fff',
+            border: '1px solid #444',
+            borderRadius: '5px',
+            cursor: disabled || isLoading ? 'not-allowed' : 'pointer',
+            fontFamily: "'Courier New', monospace",
+            fontSize: '12px',
+            transition: 'all 0.3s ease'
+          }}
+        >
+          Reset Parameters
+        </button>
       </div>
     </div>
   );
