@@ -4,7 +4,7 @@ import Phaser from 'phaser';
 interface GameStateEvent extends CustomEvent {
   detail: {
     status: 'win' | 'playing' | 'reset' | 'gameover' | 'select' | 'placement';
-    deathType?: 'dart' | 'spike';
+    deathType?: 'dart' | 'spike' | 'fall';
   }
 }
 
@@ -272,8 +272,9 @@ export default class GameScene extends Phaser.Scene {
     
     console.log('GameScene created - initializing game elements');
     
-    // Set physics world bounds to be twice the width of the canvas
-    this.physics.world.setBounds(0, 0, this.worldWidth, 800);
+    // Set physics world bounds to be twice the width of the canvas but don't constrain the bottom
+    // The last 4 parameters are: left, right, top, bottom (true means collide, false means don't)
+    this.physics.world.setBounds(0, 0, this.worldWidth, 800, true, true, true, false);
     
     // Create a blue sky background that extends across the whole level
     this.add.rectangle(this.worldWidth / 2, 400, this.worldWidth, 800, 0x87CEEB);
@@ -290,9 +291,27 @@ export default class GameScene extends Phaser.Scene {
     this.createPlatformTexture();
     this.createWallTexture();
 
-    // Create ground that spans the entire level
-    const ground = this.platforms.create(this.worldWidth / 2, 768, 'platform') as Phaser.Physics.Arcade.Sprite;
-    ground.setScale(this.worldWidth / 50, 1).refreshBody(); // Scale to match world width
+    // Create segmented ground with gaps instead of a single platform
+    // We'll create segments with gaps between them
+    const segmentWidth = 200; // Width of each platform segment
+    const gapWidth = 100; // Width of each gap between segments
+    const groundY = 768; // Y position of the ground
+    
+    // Calculate how many segments we need to cover the entire width
+    const totalSegments = Math.ceil(this.worldWidth / (segmentWidth + gapWidth)) + 1;
+    
+    console.log(`Creating ${totalSegments} ground segments with ${gapWidth}px gaps`);
+    
+    // Create ground segments with gaps between them, starting from x=0
+    for (let i = 0; i < totalSegments; i++) {
+      // Calculate the x position for each segment
+      const segmentX = i * (segmentWidth + gapWidth) + (segmentWidth / 2);
+      
+      // Create the ground segment
+      const groundSegment = this.platforms.create(segmentX, groundY, 'platform') as Phaser.Physics.Arcade.Sprite;
+      groundSegment.setScale(segmentWidth / 100, 1).refreshBody(); // Scale to match desired width
+      console.log(`Created ground segment ${i} at X: ${segmentX}`);
+    }
     
     // Left section - initial platforms
     // Lower level platforms
@@ -382,8 +401,22 @@ export default class GameScene extends Phaser.Scene {
     
     // Set up player physics
     this.player.setBounce(0.1);
-    this.player.setCollideWorldBounds(true);
+    // Allow player to fall through the bottom of the world
+    this.player.setCollideWorldBounds(false);
     this.player.body.setGravityY(300); // Make sure gravity affects the player
+    
+    // Add custom colliders for the world bounds (left, right, and top only)
+    this.player.body.onWorldBounds = true;
+    
+    // Create invisible walls at the left and right edges of the world
+    const leftWall = this.physics.add.staticBody(0, 400, 1, 800);
+    const rightWall = this.physics.add.staticBody(this.worldWidth, 400, 1, 800);
+    const topWall = this.physics.add.staticBody(this.worldWidth/2, 0, this.worldWidth, 1);
+    
+    // Add colliders between the player and these invisible walls
+    this.physics.add.collider(this.player, leftWall);
+    this.physics.add.collider(this.player, rightWall);
+    this.physics.add.collider(this.player, topWall);
     
     // We now have two separate textures for the goat
     // Create animations using these textures
@@ -426,6 +459,21 @@ export default class GameScene extends Phaser.Scene {
     // Set up collisions
     this.physics.add.collider(this.player, this.platforms);
     this.physics.add.collider(this.player, this.walls);
+    
+    // Add a death zone below the level to detect when player falls through gaps
+    const deathZone = this.add.zone(this.worldWidth / 2, 1000, this.worldWidth, 100);
+    this.physics.world.enable(deathZone);
+    (deathZone.body as Phaser.Physics.Arcade.Body).setAllowGravity(false);
+    (deathZone.body as Phaser.Physics.Arcade.Body).setImmovable(true);
+    
+    // Add collision detection for the death zone
+    this.physics.add.overlap(
+      this.player,
+      deathZone,
+      this.fallThroughGap,
+      undefined,
+      this
+    );
     
     // Create collision between darts and player (goat) with a smaller hitbox for darts
     this.physics.add.overlap(
@@ -1230,6 +1278,7 @@ export default class GameScene extends Phaser.Scene {
     // Reset player appearance and position
     if (this.player && this.player.active) {
       this.player.clearTint();
+      this.player.setAlpha(1); // Make sure player is fully visible
       this.player.setVelocity(0, 0);
       this.player.setPosition(this.PLAYER_START_X, this.PLAYER_START_Y);
       this.player.body.moves = true; // Re-enable movement
@@ -1276,8 +1325,22 @@ export default class GameScene extends Phaser.Scene {
     
     // Set up player physics
     this.player.setBounce(0.1);
-    this.player.setCollideWorldBounds(true);
+    this.player.setCollideWorldBounds(false); // Allow falling through the bottom
     this.player.body.setGravityY(300);
+    this.player.setAlpha(1); // Reset alpha in case it was faded out
+    
+    // Add custom colliders for the world bounds (left, right, and top only)
+    this.player.body.onWorldBounds = true;
+    
+    // Create invisible walls at the left and right edges of the world
+    const leftWall = this.physics.add.staticBody(0, 400, 1, 800);
+    const rightWall = this.physics.add.staticBody(this.worldWidth, 400, 1, 800);
+    const topWall = this.physics.add.staticBody(this.worldWidth/2, 0, this.worldWidth, 1);
+    
+    // Add colliders between the player and these invisible walls
+    this.physics.add.collider(this.player, leftWall);
+    this.physics.add.collider(this.player, rightWall);
+    this.physics.add.collider(this.player, topWall);
     
     // Scale the goat
     this.player.setScale(1.2);
@@ -1336,6 +1399,41 @@ export default class GameScene extends Phaser.Scene {
         this.physics.add.collider(this.player, item.gameObject, this.hitDangerousPlatform, undefined, this);
       }
     });
+    
+    // Recreate collision with death zone
+    const deathZones = this.children.getChildren().filter(child => 
+      child instanceof Phaser.GameObjects.Zone && 
+      child.y > 900
+    );
+    
+    if (deathZones.length > 0) {
+      deathZones.forEach(zone => {
+        this.physics.add.overlap(
+          this.player,
+          zone,
+          this.fallThroughGap,
+          undefined,
+          this
+        );
+      });
+      console.log(`Recreated collision with ${deathZones.length} death zones`);
+    } else {
+      console.log('No death zones found to recreate collision with');
+      // Create a new death zone if none exists
+      const deathZone = this.add.zone(this.worldWidth / 2, 1000, this.worldWidth, 100);
+      this.physics.world.enable(deathZone);
+      (deathZone.body as Phaser.Physics.Arcade.Body).setAllowGravity(false);
+      (deathZone.body as Phaser.Physics.Arcade.Body).setImmovable(true);
+      
+      this.physics.add.overlap(
+        this.player,
+        deathZone,
+        this.fallThroughGap,
+        undefined,
+        this
+      );
+      console.log('Created new death zone');
+    }
   }
   
   // New method for handling collision with dangerous platform
@@ -1364,13 +1462,13 @@ export default class GameScene extends Phaser.Scene {
   }
   
   // Utility method to communicate with the React component
-  private notifyGameState(status: 'win' | 'playing' | 'reset' | 'gameover' | 'select' | 'placement', deathType?: 'dart' | 'spike'): void {
-    console.log(`Notifying game state change: ${status}${deathType ? `, death type: ${deathType}` : ''}`);
-    // Create and dispatch a custom event to notify the React app of game state changes
+  private notifyGameState(status: 'win' | 'playing' | 'reset' | 'gameover' | 'select' | 'placement', deathType?: 'dart' | 'spike' | 'fall'): void {
     const event = new CustomEvent('game-state-update', {
       detail: { status, deathType }
     }) as GameStateEvent;
+    
     window.dispatchEvent(event);
+    console.log(`Game state updated: ${status}${deathType ? `, death type: ${deathType}` : ''}`);
   }
 
   // Create a particle effect when a dart is blocked by a shield
@@ -1407,5 +1505,46 @@ export default class GameScene extends Phaser.Scene {
         }
       });
     }
+  }
+
+  // Handle player falling through a gap
+  private fallThroughGap(
+    _player: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Physics.Arcade.Body | Phaser.Physics.Arcade.StaticBody | Phaser.Tilemaps.Tile,
+    _deathZone: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Physics.Arcade.Body | Phaser.Physics.Arcade.StaticBody | Phaser.Tilemaps.Tile
+  ): void {
+    if (this.gameWon || this.gameOver) return;
+    
+    console.log('Player fell through a gap!');
+    
+    // Type assertion to ensure we have the correct types
+    const playerSprite = _player as Phaser.Types.Physics.Arcade.SpriteWithDynamicBody;
+    
+    // Set game over state
+    this.gameOver = true;
+    
+    // Stop player movement and inputs
+    playerSprite.setVelocity(0, 0);
+    playerSprite.body.moves = false; // Freeze the goat completely
+    
+    // Stop the dartTimer
+    this.dartTimer.remove();
+    
+    // Clear all darts
+    this.darts.clear(true, true);
+    
+    // Create falling effect - fade out the goat
+    this.tweens.add({
+      targets: playerSprite,
+      alpha: 0,
+      y: '+=200',
+      duration: 1000,
+      ease: 'Power2'
+    });
+    
+    // Small camera shake effect
+    this.cameras.main.shake(500, 0.02);
+    
+    // Dispatch game over event with death type
+    this.notifyGameState('gameover', 'fall');
   }
 }

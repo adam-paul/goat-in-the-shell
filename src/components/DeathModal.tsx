@@ -1,17 +1,26 @@
 import React, { useEffect, useRef } from 'react';
 
 interface DeathModalProps {
-  deathType: 'dart' | 'spike';
+  deathType: 'dart' | 'spike' | 'fall';
   onContinue: () => void;
 }
 
 const DeathModal: React.FC<DeathModalProps> = ({ deathType, onContinue }) => {
   // Define death-specific content
-  const title = deathType === 'dart' ? 'TRANQUILIZED!' : 'BUSTED GOAT ANKLES!';
-  const description = deathType === 'dart' 
-    ? 'Your goat was hit by a dart!' 
-    : 'Your goat landed on a dangerous platform!';
-  const backgroundColor = deathType === 'dart' ? '#333333' : '#d32f2f';
+  const title = 
+    deathType === 'dart' ? 'TRANQUILIZED!' : 
+    deathType === 'spike' ? 'BUSTED GOAT ANKLES!' : 
+    'GOAT GONE!';
+  
+  const description = 
+    deathType === 'dart' ? 'Your goat was hit by a dart!' : 
+    deathType === 'spike' ? 'Your goat landed on a dangerous platform!' : 
+    'Escape Goat fell down into a different sort of farm!';
+  
+  const backgroundColor = 
+    deathType === 'dart' ? '#333333' : 
+    deathType === 'spike' ? '#d32f2f' : 
+    '#8B4513'; // Brown for fall death
   
   // Reference for the canvas element
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -69,7 +78,7 @@ const DeathModal: React.FC<DeathModalProps> = ({ deathType, onContinue }) => {
           // Draw liquid in syringe (blue tranquilizer)
           ctx.fillStyle = '#0000ff';
           ctx.fillRect(-15, -4, 30, 8);
-        } else {
+        } else if (deathType === 'spike') {
           // For spike death, draw a broken goat leg
           
           // Update rotation for wobble effect
@@ -117,6 +126,49 @@ const DeathModal: React.FC<DeathModalProps> = ({ deathType, onContinue }) => {
             ctx.beginPath();
             ctx.moveTo(Math.cos(angle) * 8, Math.sin(angle) * 8);
             ctx.lineTo(Math.cos(angle) * (8 + length), Math.sin(angle) * (8 + length));
+            ctx.stroke();
+          }
+        } else if (deathType === 'fall') {
+          // For fall death, draw falling poof lines angling downward
+          
+          // Draw a small goat silhouette falling
+          ctx.fillStyle = '#E0E0E0'; // Light gray for goat
+          ctx.beginPath();
+          ctx.ellipse(0, -5, 10, 6, 0, 0, Math.PI * 2);
+          ctx.fill();
+          
+          // Draw tiny legs
+          ctx.fillStyle = '#D0D0D0';
+          ctx.fillRect(-8, -2, 2, 4);
+          ctx.fillRect(-4, -2, 2, 4);
+          ctx.fillRect(2, -2, 2, 4);
+          ctx.fillRect(6, -2, 2, 4);
+          
+          // Draw horns
+          ctx.fillStyle = '#C0C0C0';
+          ctx.fillRect(-6, -8, 2, 3);
+          ctx.fillRect(4, -8, 2, 3);
+          
+          // Draw falling poof lines angling downward
+          ctx.strokeStyle = '#FFFFFF';
+          ctx.lineWidth = 2;
+          
+          // Create animation time offset
+          const timeOffset = Date.now() / 500;
+          
+          // Draw several falling lines with different angles and positions
+          for (let i = 0; i < 8; i++) {
+            const angle = Math.PI / 2 + (Math.PI / 8) * (i - 4); // Angles from -45° to +45° from vertical
+            const offset = (timeOffset + i) % 4; // 0-4 animation cycle
+            const length = 5 + Math.random() * 5;
+            const distance = 10 + offset * 5; // Distance from center increases with animation
+            
+            const startX = Math.cos(angle) * distance;
+            const startY = Math.sin(angle) * distance;
+            
+            ctx.beginPath();
+            ctx.moveTo(startX, startY);
+            ctx.lineTo(startX + Math.cos(angle) * length, startY + Math.sin(angle) * length);
             ctx.stroke();
           }
         }

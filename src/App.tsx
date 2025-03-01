@@ -10,7 +10,7 @@ import TutorialModal from './components/TutorialModal'
 // Define game status types
 type GameStatus = 'tutorial' | 'win' | 'playing' | 'reset' | 'gameover' | 'select' | 'placement';
 // Define death types
-type DeathType = 'dart' | 'spike' | null;
+type DeathType = 'dart' | 'spike' | 'fall' | null;
 
 // Define item types
 export type ItemType = 'platform' | 'spike' | 'moving' | 'shield';
