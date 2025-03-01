@@ -1049,7 +1049,7 @@ export default class GameScene extends Phaser.Scene {
             this.physics.add.collider(this.player, shieldBlock);
             
             // Add collision with darts - destroy darts when they hit the shield
-            this.physics.add.overlap(shieldBlock, this.darts, (shield, dart) => {
+            this.physics.add.overlap(shieldBlock, this.darts, (_shield, dart) => {
               // Type assertion to ensure we have the correct types
               const dartSprite = dart as Phaser.Physics.Arcade.Sprite;
               
@@ -1072,7 +1072,7 @@ export default class GameScene extends Phaser.Scene {
             this.physics.add.collider(this.player, gameObject);
             
             // Add collision with darts for the fallback shield
-            this.physics.add.overlap(gameObject, this.darts, (shield, dart) => {
+            this.physics.add.overlap(gameObject, this.darts, (_shield, dart) => {
               const dartSprite = dart as Phaser.Physics.Arcade.Sprite;
               this.createDartBlockEffect(dartSprite.x, dartSprite.y);
               dartSprite.destroy();
