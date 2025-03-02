@@ -98,18 +98,31 @@ class ConnectionManager:
         
         logger.info(f"Client connected to lobby {lobby_code} as {player_role}")
         
+        # Create lobby info object
+        lobby_info = {
+            "code": lobby_code,
+            "player_count": self.lobby_info[lobby_code]["player_count"],
+            "has_goat": self.lobby_info[lobby_code]["has_goat"],
+            "has_prompter": self.lobby_info[lobby_code]["has_prompter"]
+        }
+        
         # Notify all clients in the lobby about the new connection
         await self.broadcast(
             lobby_code,
             {
                 "type": "system_message",
                 "message": f"Player joined as {player_role}",
-                "lobby_info": {
-                    "code": lobby_code,
-                    "player_count": self.lobby_info[lobby_code]["player_count"],
-                    "has_goat": self.lobby_info[lobby_code]["has_goat"],
-                    "has_prompter": self.lobby_info[lobby_code]["has_prompter"]
-                }
+                "lobby_info": lobby_info
+            }
+        )
+        
+        # Also send a more specific player_joined message
+        await self.broadcast(
+            lobby_code,
+            {
+                "type": "player_joined",
+                "data": lobby_info,
+                "player_role": player_role
             }
         )
         return True
@@ -496,7 +509,48 @@ async def websocket_endpoint(websocket: WebSocket, lobby_code: str, player_role:
             # Process message based on type
             message_type = data.get("type")
             
-            if message_type == "command":
+            if message_type == "start_game":
+                # Only prompter (host) can start the game
+                if current_role != "prompter":
+                    await manager.send_personal(websocket, {
+                        "type": "error",
+                        "message": "Only host can start the game"
+                    })
+                    continue
+                
+                # Check if both players are in the lobby
+                if current_lobby in manager.lobby_info and manager.lobby_info[current_lobby]["has_goat"] and manager.lobby_info[current_lobby]["has_prompter"]:
+                    # Broadcast game start to everyone in the lobby
+                    await manager.broadcast(current_lobby, {
+                        "type": "start_game",
+                        "message": "Game starting!"
+                    })
+                    logger.info(f"Game started in lobby {current_lobby}")
+                else:
+                    await manager.send_personal(websocket, {
+                        "type": "error",
+                        "message": "Cannot start game: need both goat and prompter players"
+                    })
+            
+            elif message_type == "item_placed":
+                # Broadcast to other players that an item has been placed
+                await manager.broadcast(current_lobby, {
+                    "type": "item_placed",
+                    "data": data,
+                    "from_role": current_role
+                })
+                logger.info(f"Item placed message broadcast from {current_role} in lobby {current_lobby}")
+                
+            elif message_type == "countdown_started":
+                # Broadcast to other players that countdown has started
+                await manager.broadcast(current_lobby, {
+                    "type": "countdown_started",
+                    "data": data,
+                    "from_role": current_role
+                })
+                logger.info(f"Countdown started message broadcast from {current_role} in lobby {current_lobby}")
+            
+            elif message_type == "command":
                 if current_role != "prompter" and current_role != "spectator":
                     await manager.send_personal(websocket, {
                         "type": "error",
@@ -577,11 +631,30 @@ async def websocket_endpoint(websocket: WebSocket, lobby_code: str, player_role:
                         asyncio.create_task(restart_ai())
             
             elif message_type == "ping":
-                # Respond to ping requests with a pong message
+                # Get current lobby information
+                lobby_info = {}
+                if current_lobby in manager.lobby_info:
+                    lobby_info = {
+                        "code": current_lobby,
+                        "player_count": manager.lobby_info[current_lobby]["player_count"],
+                        "has_goat": manager.lobby_info[current_lobby]["has_goat"],
+                        "has_prompter": manager.lobby_info[current_lobby]["has_prompter"]
+                    }
+                
+                # Respond to ping requests with a pong message and lobby info
                 await manager.send_personal(websocket, {
                     "type": "pong",
-                    "timestamp": data.get("timestamp", 0)
+                    "timestamp": data.get("timestamp", 0),
+                    "lobby_info": lobby_info
                 })
+                
+                # If the ping specifically requests lobby info, also send a system message
+                if data.get("requestLobbyInfo"):
+                    await manager.send_personal(websocket, {
+                        "type": "system_message",
+                        "message": "Lobby status update",
+                        "lobby_info": lobby_info
+                    })
             
             else:
                 # Unknown message type

@@ -1,7 +1,6 @@
 import Phaser from 'phaser';
 import { ParameterManager } from '../parameters/ParameterManager';
 import { initParameterEvents } from '../parameters/ParameterEvents';
-import { MultiplayerService } from '../../services/MultiplayerService';
 
 // Extend the Window interface to include playerPosition
 declare global {
@@ -27,19 +26,6 @@ export default class GameScene extends Phaser.Scene {
   private platforms!: Phaser.Physics.Arcade.StaticGroup;
   private walls!: Phaser.Physics.Arcade.StaticGroup;
   private darts!: Phaser.Physics.Arcade.Group;
-  
-  init(data: any): void {
-    // Initialize with game mode data
-    if (data?.mode) {
-      this.multiplayerMode = data.mode === 'multiplayer';
-      this.playerRole = data.playerRole || 'goat';
-      
-      console.log(`Game initialized: Multiplayer mode: ${this.multiplayerMode}, Role: ${this.playerRole}`);
-    }
-    
-    // Set up multiplayer event listeners regardless, so we can handle mode changes
-    this.setupMultiplayerEventListeners();
-  }
   private dartTimer!: Phaser.Time.TimerEvent;
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private startPoint!: Phaser.GameObjects.Rectangle;
@@ -62,317 +48,6 @@ export default class GameScene extends Phaser.Scene {
   private itemPlacementMode: boolean = false;
   private itemToPlace: string = '';
   private itemPreview?: Phaser.GameObjects.Rectangle;
-  
-  // Multiplayer properties
-  private multiplayerMode: boolean = false;
-  private playerRole: 'goat' | 'prompter' = 'goat';
-  private multiplayerService: MultiplayerService = MultiplayerService.getInstance();
-  private isMultiplayerReady: boolean = false;
-  private waitingForOtherPlayer: boolean = false;
-  private otherPlayerPlacedItem: boolean = false;
-  private remotePlayerState: {
-    position?: { x: number, y: number },
-    velocity?: { x: number, y: number },
-    facingLeft?: boolean,
-    isOnGround?: boolean
-  } = {};
-  private networkStatusText?: Phaser.GameObjects.Text; // For multiplayer status display
-  private waitingMessage?: Phaser.GameObjects.Text; // For "waiting for other player" message
-  
-  // Set up multiplayer event listeners
-  private setupMultiplayerEventListeners(): void {
-    console.log('Setting up multiplayer event listeners');
-    
-    // Listen for game state updates from the other player
-    this.multiplayerService.on('game_state', (data: unknown) => {
-      const playerState = data as {
-        position?: { x: number, y: number },
-        velocity?: { x: number, y: number },
-        facingLeft?: boolean,
-        isOnGround?: boolean
-      };
-      
-      // Store the remote player state
-      this.remotePlayerState = playerState;
-    });
-    
-    // Listen for command results from the prompter
-    this.multiplayerService.on('command_result', (data: unknown) => {
-      const result = data as {
-        success?: boolean,
-        response?: string,
-        parameter_modifications?: Array<{parameter: string, value: number}>,
-        item_placement?: {type: string, x: number, y: number}
-      };
-      
-      console.log('Received command result:', result);
-      
-      // Process command results
-      if (result.success && result.item_placement) {
-        this.handleRemoteItemPlacement(
-          result.item_placement.type,
-          result.item_placement.x,
-          result.item_placement.y
-        );
-      }
-    });
-    
-    // Listen for game events from other players
-    this.multiplayerService.on('game_event', (data: unknown) => {
-      const eventData = data as {
-        event_type: 'win' | 'playing' | 'reset' | 'gameover' | 'select' | 'placement',
-        death_type?: 'dart' | 'spike' | 'fall',
-        timestamp: number
-      };
-      
-      console.log('Received game event:', eventData);
-      
-      // Handle game events differently based on role
-      this.handleRemoteGameEvent(eventData);
-    });
-    
-    // Listen for item placed notification from other player
-    this.multiplayerService.on('item_placed', (data: unknown) => {
-      console.log('Received item_placed notification:', data);
-      
-      // Set flag that other player has placed their item
-      this.otherPlayerPlacedItem = true;
-      
-      // If we've already placed our item and we're waiting, start the countdown
-      if (this.waitingForOtherPlayer) {
-        console.log("Other player placed item, and we were waiting. Starting countdown now.");
-        this.waitingForOtherPlayer = false;
-        this.startRound();
-      } else {
-        console.log("Other player placed item first. We'll start countdown when we place ours.");
-        // Show a notification that other player is waiting
-        this.showWaitingMessage("Other player waiting for your item placement...");
-      }
-    });
-    
-    // Listen for countdown started from other player
-    this.multiplayerService.on('countdown_started', (data: unknown) => {
-      console.log('Received countdown_started notification:', data);
-      
-      // If we're in countdown already, ignore this
-      if (this.countdownText) {
-        console.log("Already in countdown, ignoring remote countdown start");
-        return;
-      }
-      
-      // Hide any waiting messages
-      this.hideWaitingMessage();
-      
-      // Make sure any existing countdown text is removed
-      if (this.countdownText) {
-        this.countdownText.destroy();
-        this.countdownText = undefined;
-      }
-      
-      // Create countdown text in the center of the screen
-      this.countdownText = this.add.text(
-        this.cameras.main.width / 2,
-        this.cameras.main.height / 2,
-        '3',
-        {
-          fontSize: '64px',
-          color: '#ffffff',
-          fontFamily: 'Arial',
-          fontStyle: 'bold',
-          stroke: '#000000',
-          strokeThickness: 6
-        }
-      ).setOrigin(0.5).setScrollFactor(0);
-      
-      // Reset multiplayer flags
-      this.waitingForOtherPlayer = false;
-      this.otherPlayerPlacedItem = false;
-      
-      // Start countdown
-      let countdown = 3;
-      
-      // Create a timer event that fires every second
-      const countdownTimer = this.time.addEvent({
-        delay: 1000,
-        callback: () => {
-          countdown--;
-          if (countdown > 0) {
-            // Update countdown text
-            if (this.countdownText) {
-              this.countdownText.setText(countdown.toString());
-            }
-          } else {
-            // Countdown finished, start the game
-            if (this.countdownText) {
-              this.countdownText.destroy();
-              this.countdownText = undefined;
-            }
-            
-            // Resume physics to start the game
-            this.physics.resume();
-            this.gameStarted = true;
-            
-            // Ensure dart timer is active
-            if (this.dartTimer) {
-              this.dartTimer.remove();
-            }
-            
-            // Create a new dart timer with parameter-defined frequency
-            this.dartTimer = this.time.addEvent({
-              delay: this.dartFrequency,
-              callback: this.shootDarts,
-              callbackScope: this,
-              loop: true
-            });
-            console.log(`Dart timer started for this round with frequency ${this.dartFrequency}ms`);
-            
-            // Notify that the game is in playing state
-            this.notifyGameState('playing');
-            
-            // Stop the timer
-            countdownTimer.remove();
-          }
-        },
-        callbackScope: this,
-        repeat: 2
-      });
-    });
-    
-    // Listen for remote-player-update from the React UI
-    window.addEventListener('remote-player-update', (event) => {
-      const customEvent = event as CustomEvent;
-      this.remotePlayerState = customEvent.detail;
-    });
-    
-    // Listen for game-mode-config from the React UI
-    window.addEventListener('game-mode-config', (event) => {
-      const customEvent = event as CustomEvent;
-      const configData = customEvent.detail;
-      
-      // Only update these values if the event has valid data
-      if (configData) {
-        // Save the previous values for logging
-        const prevMultiplayerMode = this.multiplayerMode;
-        const prevPlayerRole = this.playerRole;
-        
-        // Update the values
-        this.multiplayerMode = configData.mode === 'multiplayer';
-        this.playerRole = configData.playerRole || 'goat';
-        
-        console.log(`Game mode config received! 
-          - Multiplayer: ${this.multiplayerMode} (was: ${prevMultiplayerMode})
-          - Role: ${this.playerRole} (was: ${prevPlayerRole})
-          - Data received:`, configData);
-          
-        // Update the multiplayer status display if it exists
-        if (this.networkStatusText) {
-          this.updateMultiplayerStatus();
-        }
-        
-        // Reset multiplayer flags
-        this.waitingForOtherPlayer = false;
-        this.otherPlayerPlacedItem = false;
-        
-        // Log configuration to console
-        this.logMultiplayerConfiguration();
-      } else {
-        console.error('Received game-mode-config event with invalid data', customEvent);
-      }
-    });
-  }
-  
-  /**
-   * Log the current multiplayer configuration to help with debugging
-   */
-  private logMultiplayerConfiguration(): void {
-    console.log(`
-      ===== MULTIPLAYER CONFIGURATION =====
-      Multiplayer mode: ${this.multiplayerMode ? 'ENABLED' : 'DISABLED'}
-      Player role: ${this.playerRole}
-      Connected to server: ${this.multiplayerService.isConnected() ? 'YES' : 'NO'}
-      Lobby code: ${this.multiplayerService.getLobbyCode()}
-      Is input focused: ${this.isCommandInputFocused}
-      ==================================
-    `);
-  }
-  
-  // Handle game events from other players
-  private handleRemoteGameEvent(eventData: {
-    event_type: 'win' | 'playing' | 'reset' | 'gameover' | 'select' | 'placement',
-    death_type?: 'dart' | 'spike' | 'fall',
-    timestamp: number
-  }): void {
-    if (!this.multiplayerMode) return;
-    
-    console.log(`Processing remote game event: ${eventData.event_type}`);
-    
-    // The goat player is authoritative for game state
-    // If we're the prompter, respect the goat player's game state
-    if (this.playerRole === 'prompter') {
-      switch (eventData.event_type) {
-        case 'win':
-          // Handle win condition
-          if (!this.gameWon) {
-            this.gameWon = true;
-            // Create a local event to update UI
-            const winEvent = new CustomEvent('game-state-update', {
-              detail: { status: 'win' }
-            }) as GameStateEvent;
-            window.dispatchEvent(winEvent);
-          }
-          break;
-          
-        case 'gameover':
-          // Handle game over
-          if (!this.gameOver) {
-            this.gameOver = true;
-            // Create a local event to update UI
-            const gameoverEvent = new CustomEvent('game-state-update', {
-              detail: { status: 'gameover', deathType: eventData.death_type }
-            }) as GameStateEvent;
-            window.dispatchEvent(gameoverEvent);
-          }
-          break;
-          
-        case 'playing':
-        case 'select':
-        case 'placement':
-          // Update UI state for these states
-          const stateEvent = new CustomEvent('game-state-update', {
-            detail: { status: eventData.event_type }
-          }) as GameStateEvent;
-          window.dispatchEvent(stateEvent);
-          break;
-          
-        case 'reset':
-          // Reset should be handled at App level
-          break;
-      }
-    }
-  }
-  
-  // Handle item placement from remote player
-  private handleRemoteItemPlacement(type: string, x: number, y: number): void {
-    if (!this.multiplayerMode) return;
-    
-    console.log(`Remote item placement: ${type} at (${x}, ${y})`);
-    
-    // In synchronized multiplayer, we need to track that the other player has placed an item
-    this.otherPlayerPlacedItem = true;
-    
-    // Use the existing placeItem method with the received coordinates
-    const event = new CustomEvent('place-live-item', {
-      detail: { type, x, y }
-    });
-    window.dispatchEvent(event);
-    
-    // If we're waiting for the other player to place an item, we can now start the countdown
-    if (this.waitingForOtherPlayer) {
-      console.log("Received remote item placement while waiting. Starting countdown now.");
-      this.waitingForOtherPlayer = false;
-      this.startRound();
-    }
-  }
   private roundText!: Phaser.GameObjects.Text;
   private gameStarted: boolean = false; // Track if the game has started
   private countdownText?: Phaser.GameObjects.Text; // For countdown display
@@ -613,11 +288,6 @@ export default class GameScene extends Phaser.Scene {
     this.gameWon = false;
     this.gameOver = false;
     this.gameStarted = false; // Game hasn't started yet
-    
-    // If multiplayer mode, add a network status overlay
-    if (this.multiplayerMode) {
-      this.createMultiplayerStatusOverlay();
-    }
     
     console.log('GameScene created - initializing game elements');
     
@@ -1137,44 +807,6 @@ export default class GameScene extends Phaser.Scene {
     // Don't process player movement if game hasn't started
     if (!this.gameStarted) return;
 
-    // Periodically log multiplayer state for debugging (every ~5 seconds)
-    if (this.multiplayerMode && this.time.now % 5000 < 20) {
-      console.log(`[MP Debug] Role: ${this.playerRole}, Mode: ${this.multiplayerMode ? 'multiplayer' : 'singleplayer'}`);
-    }
-
-    // MULTIPLAYER: Handle player based on role
-    if (this.multiplayerMode) {
-      // Strict role-based control flow
-      if (this.playerRole === 'goat') {
-        // Escape Goat player controls the goat directly
-        this.handleLocalPlayerMovement();
-        
-        // Send player state updates to other players (throttled)
-        this.sendPlayerStateUpdate();
-      } else if (this.playerRole === 'prompter') {
-        // Shell Commander doesn't control the goat, but updates its position from network
-        this.updateRemotePlayer();
-      } else {
-        // This should never happen, but just in case
-        console.error(`Invalid player role: ${this.playerRole}`);
-      }
-    } else {
-      // Single player mode - handle local movement normally
-      this.handleLocalPlayerMovement();
-    }
-
-    // Update player position in window object for external access
-    if (this.player && this.player.active) {
-      window.playerPosition = {
-        x: this.player.x,
-        y: this.player.y,
-        isOnGround: this.player.body.touching.down || this.player.body.blocked.down
-      };
-    }
-  }
-  
-  // Handle local player movement (goat)
-  private handleLocalPlayerMovement(): void {
     // Handle player movement
     if (this.cursors.left?.isDown) {
       this.player.setVelocityX(-200); // Slightly faster for better gameplay
@@ -1214,130 +846,14 @@ export default class GameScene extends Phaser.Scene {
         this.bleatSound.play();
       }
     }
-  }
-  
-  // Send player state updates to server in multiplayer mode
-  private sendPlayerStateUpdate(): void {
-    if (!this.multiplayerMode || !this.player || this.playerRole !== 'goat') return;
-    
-    // Throttle updates to 10 per second to reduce network traffic
-    // Only send if time divisible by 100 ms (approximately)
-    if (this.time.now % 100 < 20) {
-      this.multiplayerService.sendMessage('player_state', {
-        position: { x: this.player.x, y: this.player.y },
-        velocity: { x: this.player.body.velocity.x, y: this.player.body.velocity.y },
-        facingLeft: this.playerFacingLeft,
+
+    // Update player position in window object for external access
+    if (this.player && this.player.active) {
+      window.playerPosition = {
+        x: this.player.x,
+        y: this.player.y,
         isOnGround: this.player.body.touching.down || this.player.body.blocked.down
-      });
-    }
-  }
-  
-  // Create a network status display for multiplayer mode
-  private createMultiplayerStatusOverlay(): void {
-    // Create a text object to display network status
-    this.networkStatusText = this.add.text(10, 10, '', {
-      font: '14px Courier',
-      color: '#ffffff',
-      backgroundColor: 'rgba(0, 0, 0, 0.5)',
-      padding: { x: 5, y: 5 }
-    });
-    
-    // Set text to be fixed to the camera
-    this.networkStatusText.setScrollFactor(0);
-    this.networkStatusText.setDepth(1000); // Make sure it's above everything
-    
-    // Update network status text
-    this.updateNetworkStatus();
-    
-    // Set up a timer to update the network status text
-    this.time.addEvent({
-      delay: 1000,
-      callback: this.updateNetworkStatus,
-      callbackScope: this,
-      loop: true
-    });
-  }
-  
-  // Update the network status display
-  private updateNetworkStatus(): void {
-    if (!this.networkStatusText) return;
-    
-    // Check if connected
-    const connected = this.multiplayerService.isConnected();
-    const statusColor = connected ? '#00ff00' : '#ff0000';
-    const statusText = connected ? 'Connected' : 'Disconnected';
-    
-    // Get role display name with updated terminology
-    const roleDisplay = this.playerRole === 'goat' ? 'Escape Goat' : 'Shell Commander';
-    
-    // Update text
-    this.networkStatusText.setText([
-      `Multiplayer: ${statusText}`,
-      `Role: ${roleDisplay}`,
-      `Lobby: ${this.multiplayerService.getLobbyCode() || 'N/A'}`
-    ]);
-    
-    // Add a colored circle for status
-    const graphics = this.add.graphics();
-    if (graphics) {
-      graphics.clear();
-      
-      // Main indicator circle
-      graphics.fillStyle(connected ? 0x00ff00 : 0xff0000, 0.8);
-      
-      // Position circle next to the text
-      const x = this.networkStatusText.x + this.networkStatusText.width + 10;
-      const y = this.networkStatusText.y + 10;
-      graphics.fillCircle(x, y, 5);
-      
-      // Add glow effect
-      graphics.fillStyle(connected ? 0x00ff00 : 0xff0000, 0.3);
-      graphics.fillCircle(x, y, 8);
-      
-      // Ensure it's fixed to camera
-      graphics.setScrollFactor(0);
-      graphics.setDepth(1000);
-    }
-  }
-  
-  // Alias for updateNetworkStatus to handle references in the code
-  private updateMultiplayerStatus(): void {
-    this.updateNetworkStatus();
-  }
-  
-  // Update player from remote state (for prompter viewing the goat)
-  private updateRemotePlayer(): void {
-    if (!this.multiplayerMode || !this.player || !this.remotePlayerState) return;
-    
-    // Update player position if we have remote state
-    if (this.remotePlayerState.position) {
-      this.player.setPosition(
-        this.remotePlayerState.position.x, 
-        this.remotePlayerState.position.y
-      );
-    }
-    
-    // Update player velocity if we have remote state
-    if (this.remotePlayerState.velocity) {
-      this.player.setVelocity(
-        this.remotePlayerState.velocity.x, 
-        this.remotePlayerState.velocity.y
-      );
-    }
-    
-    // Update player facing direction
-    if (this.remotePlayerState.facingLeft !== undefined) {
-      this.playerFacingLeft = this.remotePlayerState.facingLeft;
-      this.player.setFlipX(this.playerFacingLeft);
-    }
-    
-    // Update player animation based on velocity
-    if (this.remotePlayerState.velocity?.x < 0) {
-      this.player.anims.play('left', true);
-    } else if (this.remotePlayerState.velocity?.x > 0) {
-      this.player.anims.play('right', true);
-    } else {
-      this.player.anims.play('turn');
+      };
     }
   }
 
@@ -1491,18 +1007,6 @@ export default class GameScene extends Phaser.Scene {
     
     // Clear any existing darts before starting the round
     this.darts.clear(true, true);
-    
-    // If in multiplayer, we need to notify the other player that we've placed our item
-    if (this.multiplayerMode && this.multiplayerService.isConnected()) {
-      this.multiplayerService.sendMessage('item_placed', {
-        type: type,
-        x: x,
-        y: y,
-        round: this.currentRound,
-        timestamp: Date.now()
-      });
-      console.log("Sent item_placed message to other player");
-    }
     
     this.startRound();
   }
@@ -1954,32 +1458,6 @@ export default class GameScene extends Phaser.Scene {
     // Update round text
     this.roundText.setText(`Round: ${this.currentRound}`);
     
-    // In multiplayer, we need to wait for both players to place their items before starting countdown
-    if (this.multiplayerMode && !this.otherPlayerPlacedItem) {
-      this.waitingForOtherPlayer = true;
-      
-      // Show waiting message
-      this.showWaitingMessage("Waiting for other player to place item...");
-      
-      // Notify server about our item placement
-      if (this.multiplayerService.isConnected()) {
-        this.multiplayerService.sendMessage('item_placed', {
-          round: this.currentRound,
-          timestamp: Date.now()
-        });
-        console.log("Sent item_placed message to other player");
-      }
-      
-      return; // Don't start countdown yet
-    }
-    
-    // Reset multiplayer flags
-    this.waitingForOtherPlayer = false;
-    this.otherPlayerPlacedItem = false;
-    
-    // Remove waiting message if it exists
-    this.hideWaitingMessage();
-    
     // Make sure any existing countdown text is removed
     if (this.countdownText) {
       this.countdownText.destroy();
@@ -2000,15 +1478,6 @@ export default class GameScene extends Phaser.Scene {
         strokeThickness: 6
       }
     ).setOrigin(0.5).setScrollFactor(0);
-    
-    // If in multiplayer mode, notify other player about countdown start
-    if (this.multiplayerMode && this.multiplayerService.isConnected()) {
-      this.multiplayerService.sendMessage('countdown_started', {
-        round: this.currentRound,
-        timestamp: Date.now()
-      });
-      console.log("Sent countdown_started message to other player");
-    }
     
     // Start countdown
     let countdown = 3;
@@ -2058,46 +1527,6 @@ export default class GameScene extends Phaser.Scene {
       callbackScope: this,
       repeat: 2
     });
-  }
-  
-  // Show waiting message in the center of the screen
-  private showWaitingMessage(message: string): void {
-    // Remove existing message if any
-    this.hideWaitingMessage();
-    
-    // Create new message
-    this.waitingMessage = this.add.text(
-      this.cameras.main.width / 2,
-      this.cameras.main.height / 2,
-      message,
-      {
-        fontSize: '28px',
-        color: '#10b981', // Green color
-        fontFamily: 'Arial',
-        fontStyle: 'bold',
-        stroke: '#000000',
-        strokeThickness: 4,
-        backgroundColor: 'rgba(0, 0, 0, 0.5)',
-        padding: { x: 20, y: 10 }
-      }
-    ).setOrigin(0.5).setScrollFactor(0);
-    
-    // Add a pulsing effect to the message
-    this.tweens.add({
-      targets: this.waitingMessage,
-      alpha: 0.7,
-      duration: 800,
-      yoyo: true,
-      repeat: -1
-    });
-  }
-  
-  // Hide waiting message
-  private hideWaitingMessage(): void {
-    if (this.waitingMessage) {
-      this.waitingMessage.destroy();
-      this.waitingMessage = undefined;
-    }
   }
   
   private startNextRound(): void {
@@ -2308,24 +1737,11 @@ export default class GameScene extends Phaser.Scene {
   
   // Utility method to communicate with the React component
   private notifyGameState(status: 'win' | 'playing' | 'reset' | 'gameover' | 'select' | 'placement', deathType?: 'dart' | 'spike' | 'fall'): void {
-    const gameStateData = { status, deathType };
-    
-    // Create event for local React components
     const event = new CustomEvent('game-state-update', {
-      detail: gameStateData
+      detail: { status, deathType }
     }) as GameStateEvent;
     
-    // Dispatch event locally
     window.dispatchEvent(event);
-    
-    // In multiplayer mode, send game state to other players
-    if (this.multiplayerMode && this.multiplayerService.isConnected()) {
-      this.multiplayerService.sendMessage('game_event', {
-        event_type: status,
-        death_type: deathType,
-        timestamp: Date.now()
-      });
-    }
     console.log(`Game state updated: ${status}${deathType ? `, death type: ${deathType}` : ''}`);
   }
 
