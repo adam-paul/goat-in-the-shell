@@ -455,48 +455,26 @@ async def websocket_endpoint(websocket: WebSocket, lobby_code: str, player_role:
         await websocket.close(code=1000, reason="Invalid player role")
         return
     
-    # For single player AI mode
-    is_single_player = (lobby_code == "SINGLEPLAYER" and player_role == "goat")
-    
     connection_success = await manager.connect(websocket, lobby_code, player_role)
     if not connection_success:
         return  # Connection was rejected
         
-    # Setup AI command timer for single player mode
-    ai_command_task = None
-    if is_single_player:
-        logger.info("Setting up single player AI command timer")
-        
-        # Define the AI command timer function
-        async def ai_command_timer():
-            try:
-                # Wait a few seconds before the first command to let the player get ready
-                await asyncio.sleep(3)
-                
-                while True:
-                    # Generate AI command
-                    try:
-                        result = await AIHandler.generate_single_player_command()
-                        
-                        # Send the AI command to the player
-                        await manager.send_personal(websocket, {
-                            "type": "ai_command",
-                            "result": result
-                        })
-                        
-                        logger.info(f"Sent AI command to single player: {result.get('response', '')}")
-                    except Exception as e:
-                        logger.error(f"Error in AI command timer: {str(e)}")
-                    
-                    # Wait 5 seconds before the next command
-                    await asyncio.sleep(5)
-            except asyncio.CancelledError:
-                logger.info("AI command timer cancelled")
-            except Exception as e:
-                logger.error(f"Unexpected error in AI command timer: {str(e)}")
-        
-        # Start the AI command timer
-        ai_command_task = asyncio.create_task(ai_command_timer())
+    # Generate a session ID that can be used to authenticate with the game server
+    session_id = str(uuid.uuid4())
+    logger.info(f"Player {player_role} connected to lobby {lobby_code} with session ID: {session_id}")
+    
+    # Send welcome message with session information
+    await manager.send_personal(websocket, {
+        "type": "welcome",
+        "message": f"Connected to lobby {lobby_code} as {player_role}",
+        "session_id": session_id,
+        "lobby_info": {
+            "code": lobby_code,
+            "player_count": manager.lobby_info[lobby_code]["player_count"] if lobby_code in manager.lobby_info else 0,
+            "has_goat": manager.lobby_info[lobby_code]["has_goat"] if lobby_code in manager.lobby_info else False,
+            "has_prompter": manager.lobby_info[lobby_code]["has_prompter"] if lobby_code in manager.lobby_info else False,
+        }
+    })
     
     try:
         while True:
@@ -520,35 +498,17 @@ async def websocket_endpoint(websocket: WebSocket, lobby_code: str, player_role:
                 
                 # Check if both players are in the lobby
                 if current_lobby in manager.lobby_info and manager.lobby_info[current_lobby]["has_goat"] and manager.lobby_info[current_lobby]["has_prompter"]:
-                    # Broadcast game start to everyone in the lobby
+                    # Broadcast lobby readiness status - Game server will handle actual game start
                     await manager.broadcast(current_lobby, {
-                        "type": "start_game",
-                        "message": "Game starting!"
+                        "type": "lobby_ready",
+                        "message": "Lobby ready to start game"
                     })
-                    logger.info(f"Game started in lobby {current_lobby}")
+                    logger.info(f"Lobby {current_lobby} ready - players can connect to game server")
                 else:
                     await manager.send_personal(websocket, {
                         "type": "error",
-                        "message": "Cannot start game: need both goat and prompter players"
+                        "message": "Cannot ready lobby: need both goat and prompter players"
                     })
-            
-            elif message_type == "item_placed":
-                # Broadcast to other players that an item has been placed
-                await manager.broadcast(current_lobby, {
-                    "type": "item_placed",
-                    "data": data,
-                    "from_role": current_role
-                })
-                logger.info(f"Item placed message broadcast from {current_role} in lobby {current_lobby}")
-                
-            elif message_type == "countdown_started":
-                # Broadcast to other players that countdown has started
-                await manager.broadcast(current_lobby, {
-                    "type": "countdown_started",
-                    "data": data,
-                    "from_role": current_role
-                })
-                logger.info(f"Countdown started message broadcast from {current_role} in lobby {current_lobby}")
             
             elif message_type == "command":
                 if current_role != "prompter" and current_role != "spectator":
@@ -563,11 +523,11 @@ async def websocket_endpoint(websocket: WebSocket, lobby_code: str, player_role:
                 try:
                     result = await AIHandler.process_command(command)
                     
-                    # Broadcast the command result to everyone in the lobby
-                    await manager.broadcast(current_lobby, {
+                    # Send the command result back to the requester only
+                    # Game server will handle distributing game effects
+                    await manager.send_personal(websocket, {
                         "type": "command_result",
-                        "result": result,
-                        "from_role": current_role
+                        "result": result
                     })
                 except Exception as e:
                     logger.error(f"Error processing command: {str(e)}")
@@ -575,60 +535,6 @@ async def websocket_endpoint(websocket: WebSocket, lobby_code: str, player_role:
                         "type": "error",
                         "message": f"Error processing command: {str(e)}"
                     })
-            
-            elif message_type == "player_state":
-                if current_role != "goat":
-                    await manager.send_personal(websocket, {
-                        "type": "error",
-                        "message": "Only goat player can send state updates"
-                    })
-                    continue
-                
-                # Broadcast player state to everyone else in the lobby
-                await manager.broadcast(current_lobby, {
-                    "type": "game_state",
-                    "player_state": data.get("data", {}),
-                    "timestamp": data.get("timestamp", 0)
-                })
-            
-            elif message_type == "place_item":
-                if current_role != "prompter" and not is_single_player:
-                    await manager.send_personal(websocket, {
-                        "type": "error",
-                        "message": "Only prompter can place items"
-                    })
-                    continue
-                
-                # Broadcast item placement to everyone in the lobby
-                await manager.broadcast(current_lobby, {
-                    "type": "place_item",
-                    "item_data": data.get("data", {}),
-                    "from_role": current_role
-                })
-            
-            elif message_type == "game_event":
-                # Broadcast game events (win, loss, etc.) to everyone in the lobby
-                await manager.broadcast(current_lobby, {
-                    "type": "game_event",
-                    "event_data": data.get("data", {}),
-                    "from_role": current_role
-                })
-                
-                # If the game is over in single player mode, pause the AI commands
-                if is_single_player and data.get("event_type") in ["win", "gameover"]:
-                    if ai_command_task and not ai_command_task.done():
-                        logger.info("Pausing AI commands due to game event")
-                        ai_command_task.cancel()
-                        
-                        # Restart the timer after a delay if the game continues
-                        async def restart_ai():
-                            await asyncio.sleep(5)  # Wait for 5 seconds
-                            nonlocal ai_command_task
-                            if not websocket.client_state == WebSocket.DISCONNECTED:
-                                logger.info("Restarting AI command timer")
-                                ai_command_task = asyncio.create_task(ai_command_timer())
-                        
-                        asyncio.create_task(restart_ai())
             
             elif message_type == "ping":
                 # Get current lobby information
@@ -656,31 +562,67 @@ async def websocket_endpoint(websocket: WebSocket, lobby_code: str, player_role:
                         "lobby_info": lobby_info
                     })
             
+            elif message_type == "get_session_token":
+                # Generate a session token for game server authentication
+                token = str(uuid.uuid4())
+                await manager.send_personal(websocket, {
+                    "type": "session_token",
+                    "token": token,
+                    "expires": time.time() + 3600  # Token valid for 1 hour
+                })
+                logger.info(f"Generated session token for player in lobby {current_lobby}")
+            
             else:
-                # Unknown message type
-                logger.warning(f"Unknown message type: {message_type}")
+                # Unknown message type - inform client that game state messages should go to game server
+                logger.warning(f"Unsupported message type: {message_type}")
                 await manager.send_personal(websocket, {
                     "type": "error",
-                    "message": f"Unknown message type: {message_type}"
+                    "message": f"This server only handles lobby management and AI commands. Game state messages should be sent to the game server."
                 })
     
     except WebSocketDisconnect:
         logger.info("WebSocket disconnected")
-        
-        # Cancel AI command task if it's running
-        if is_single_player and ai_command_task and not ai_command_task.done():
-            ai_command_task.cancel()
-        
         await manager.disconnect(websocket)
     
     except Exception as e:
         logger.error(f"WebSocket error: {str(e)}")
-        
-        # Cancel AI command task if it's running
-        if is_single_player and ai_command_task and not ai_command_task.done():
-            ai_command_task.cancel()
-        
         await manager.disconnect(websocket)
+
+# Add a validation endpoint for the game server to use
+@app.get("/validate-session/{lobby_code}/{session_id}")
+async def validate_session(lobby_code: str, session_id: str):
+    """
+    Validate a session ID for the game server.
+    Game server will call this to verify that a player is allowed to join a game.
+    """
+    # Simple validation - in a real implementation, we would check against stored session IDs
+    is_valid = len(session_id) == 36  # Simple UUID validation
+    
+    # Check if lobby exists
+    lobby_exists = lobby_code in manager.active_connections
+    
+    return {
+        "valid": is_valid and lobby_exists,
+        "lobby_code": lobby_code,
+        "message": "Session validated" if (is_valid and lobby_exists) else "Invalid session or lobby",
+        "player_count": len(manager.active_connections.get(lobby_code, [])),
+        "has_goat": manager.lobby_info.get(lobby_code, {}).get("has_goat", False),
+        "has_prompter": manager.lobby_info.get(lobby_code, {}).get("has_prompter", False)
+    }
+
+# Add an endpoint to forward AI commands to the game server
+@app.post("/forward-command")
+async def forward_command(request: CommandRequest):
+    """
+    Process an AI command and forward the results to the game server.
+    Game server will call this when it receives commands from the prompter.
+    """
+    try:
+        result = await AIHandler.process_command(request.command)
+        return result
+    except Exception as e:
+        logger.error(f"Error processing forwarded command: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # This is used when running the app directly
 if __name__ == "__main__":
@@ -688,4 +630,6 @@ if __name__ == "__main__":
     logger.info("Starting uvicorn server")
     port = int(os.getenv("PORT", "8000"))
     logger.info(f"Using port: {port}")
-    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True) 
+    logger.info("NOTE: This server now only handles lobby management and AI commands.")
+    logger.info("Game state synchronization will be handled by the Node.js game server.")
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)

@@ -1,6 +1,19 @@
 # Goat In The Shell - AI Backend
 
-This is the FastAPI backend for the "Goat In The Shell" game, handling AI-powered text commands and WebSocket communication for multiplayer functionality.
+This is the FastAPI backend for the "Goat In The Shell" game, handling AI-powered text commands and lobby management for multiplayer functionality.
+
+## Important: Dual-Server Architecture
+
+As of the latest update, this server now only handles:
+1. Lobby management (player connections, role assignments)
+2. AI command processing
+
+All game state synchronization, physics, and real-time gameplay is now handled by a separate Node.js game server. Players will connect to both servers:
+
+1. **FastAPI Server (this server)**: For initial lobby setup and AI processing
+2. **Node.js Game Server**: For real-time game state and physics
+
+See the MULTIPLAYER.md file in the project root for implementation details on the dual-server architecture.
 
 ## Local Setup
 
@@ -111,12 +124,18 @@ A simple ping-pong test endpoint for verifying WebSocket functionality.
 
 ### /ws/{lobby_code}/{player_role}
 
-Main WebSocket endpoint for multiplayer games. The `lobby_code` is a unique identifier for the game session, and `player_role` can be one of:
+WebSocket endpoint for lobby management. The `lobby_code` is a unique identifier for the game session, and `player_role` can be one of:
 - `goat`: Player controlling the goat character
 - `prompter`: Player controlling the command terminal
 - `spectator`: Observer who can watch the game but not participate
 
-For single player mode, use `SINGLEPLAYER` as the lobby code and `goat` as the player role.
+**Note:** This WebSocket endpoint now only handles:
+- Initial lobby connections
+- Player role assignment and validation
+- Generating session tokens for game server authentication
+- AI command processing
+
+All game state synchronization (player positions, item placement, etc.) is now handled by the Node.js game server.
 
 ## Development
 
@@ -163,54 +182,85 @@ async function sendCommand(command) {
 }
 ```
 
-### WebSocket Integration
+### Dual WebSocket Integration
 
-For WebSocket connections from your frontend:
+For connecting to both servers from your frontend:
 
 ```javascript
+// 1. First connect to the FastAPI lobby server
 function connectToLobby(lobbyCode, playerRole) {
   const ws = new WebSocket(`wss://your-railway-url/ws/${lobbyCode}/${playerRole}`);
   
   ws.onopen = () => {
-    console.log(`Connected to lobby ${lobbyCode} as ${playerRole}`);
+    console.log(`Connected to lobby server ${lobbyCode} as ${playerRole}`);
   };
+  
+  let sessionToken = null;
   
   ws.onmessage = (event) => {
     const data = JSON.parse(event.data);
-    console.log('Received:', data);
+    console.log('Received from lobby server:', data);
     
     // Handle different message types
     switch (data.type) {
+      case 'welcome':
+        // Save session token for game server authentication
+        sessionToken = data.session_id;
+        // Now connect to game server
+        connectToGameServer(lobbyCode, playerRole, sessionToken);
+        break;
       case 'system_message':
         console.log('System message:', data.message);
         break;
       case 'command_result':
         console.log('Command result:', data.result);
         break;
-      case 'game_state':
-        console.log('Game state update:', data.player_state);
-        break;
-      case 'ai_command':
-        console.log('AI command:', data.result);
-        break;
+      // Note: game_state and other game events now come from the game server
     }
   };
   
   ws.onclose = () => {
-    console.log('Connection closed');
+    console.log('Lobby server connection closed');
   };
   
   ws.onerror = (error) => {
-    console.error('WebSocket error:', error);
+    console.error('Lobby server WebSocket error:', error);
   };
   
   return ws;
 }
 
-// For single player mode
-const singlePlayerWs = connectToLobby('SINGLEPLAYER', 'goat');
+// 2. Then connect to the Node.js game server
+function connectToGameServer(lobbyCode, playerRole, sessionToken) {
+  // Connect to game server with Socket.io
+  const gameServer = io('your-game-server-url');
+  
+  // Authenticate with session token from lobby server
+  gameServer.on('connect', () => {
+    console.log(`Connected to game server`);
+    
+    // Join lobby with authentication token
+    gameServer.emit('join-game', {
+      lobbyCode,
+      playerRole,
+      sessionToken
+    });
+  });
+  
+  // Handle game events from game server
+  gameServer.on('game-state', (data) => {
+    console.log('Game state update:', data);
+    // Update game rendering with new state
+  });
+  
+  gameServer.on('disconnect', () => {
+    console.log('Game server connection closed');
+  });
+  
+  return gameServer;
+}
 
 // For multiplayer mode
-const goatWs = connectToLobby('ABCDEF', 'goat');
-const prompterWs = connectToLobby('ABCDEF', 'prompter');
+const lobbyConnection = connectToLobby('ABCDEF', 'goat');
+// Game server connection will be made after receiving welcome message with session token
 ``` 
