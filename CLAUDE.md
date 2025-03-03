@@ -36,7 +36,6 @@
 ## Game Features
 - **Player Character**: A goat with custom-drawn graphics and animations
 - **Game Logic**: Phaser-based platformer with physics, collisions, and custom hitboxes
-- **Sound Effects**: Programmatically generated audio for goat bleating
 - **Dart Traps**: Vertical walls shoot tranquilizer darts that cause game over if they hit the goat
 - **Game States**: Select, Placement, Playing, Win, Game Over (tranquilized/spike/fall), Reset
 - **Round-based Gameplay**: Progressive rounds with countdown timer

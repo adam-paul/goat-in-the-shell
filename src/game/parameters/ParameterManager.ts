@@ -1,14 +1,9 @@
 import { 
-  GameParameter, 
   GAME_PARAMETERS, 
   convertFromNormalizedValue,
   convertToNormalizedValue
 } from './ParameterMap';
-
-/**
- * Type definition for parameter change listeners
- */
-type ParameterChangeListener = (newValue: number, normalizedValue: number, parameter: GameParameter) => void;
+import { GameParameter, ParameterChangeListener } from '../../types';
 
 /**
  * Manager class that handles parameter state and notifications
@@ -227,29 +222,5 @@ export class ParameterManager {
   }
 }
 
-// Create a custom event for parameter changes
-export interface ParameterChangeEvent extends CustomEvent {
-  detail: {
-    key: string;
-    currentValue: number;
-    normalizedValue: number;
-    description: string;
-  }
-}
-
-/**
- * Utility function to dispatch a parameter change event to the document
- * This allows React components to listen for parameter changes
- */
-export function dispatchParameterChangeEvent(
-  key: string, 
-  currentValue: number, 
-  normalizedValue: number,
-  description: string
-): void {
-  const event = new CustomEvent('parameter-change', {
-    detail: { key, currentValue, normalizedValue, description }
-  }) as ParameterChangeEvent;
-  
-  window.dispatchEvent(event);
-}
+// Function removed to avoid duplication with dispatchParameterChange in ParameterEvents
+// Import moved to top of file

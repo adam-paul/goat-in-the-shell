@@ -1,17 +1,5 @@
 import React, { useState } from 'react';
-
-// Using a type instead of enum to avoid React refresh warning
-export type GameMode = 'single_player' | 'multiplayer';
-
-// Constants to use in place of enum
-export const GameModes = {
-  SINGLE_PLAYER: 'single_player' as GameMode,
-  MULTIPLAYER: 'multiplayer' as GameMode
-};
-
-interface GameModeSelectionProps {
-  onSelectMode: (mode: GameMode, lobbyCode?: string) => void;
-}
+import { GameMode, GameModeSelectionProps } from '../types';
 
 const GameModeSelection: React.FC<GameModeSelectionProps> = ({ onSelectMode }) => {
   const [selectedMode, setSelectedMode] = useState<GameMode | null>(null);
@@ -19,15 +7,15 @@ const GameModeSelection: React.FC<GameModeSelectionProps> = ({ onSelectMode }) =
   const [isCreatingLobby, setIsCreatingLobby] = useState<boolean>(false);
 
   const handleCreateGame = () => {
-    if (selectedMode === GameModes.SINGLE_PLAYER) {
-      onSelectMode(GameModes.SINGLE_PLAYER);
-    } else if (selectedMode === GameModes.MULTIPLAYER) {
+    if (selectedMode === 'single_player') {
+      onSelectMode('single_player');
+    } else if (selectedMode === 'multiplayer') {
       if (isCreatingLobby) {
         // Generate a new lobby
-        onSelectMode(GameModes.MULTIPLAYER);
+        onSelectMode('multiplayer');
       } else {
         // Join existing lobby with code
-        onSelectMode(GameModes.MULTIPLAYER, lobbyCode);
+        onSelectMode('multiplayer', lobbyCode);
       }
     }
   };
@@ -93,22 +81,22 @@ const GameModeSelection: React.FC<GameModeSelectionProps> = ({ onSelectMode }) =
         }}>
           <button
             onClick={() => {
-              setSelectedMode(GameModes.SINGLE_PLAYER);
+              setSelectedMode('single_player');
               setIsCreatingLobby(false);
             }}
             style={{
               padding: '15px 20px',
-              backgroundColor: selectedMode === GameModes.SINGLE_PLAYER ? 'rgba(233, 69, 96, 0.4)' : 'rgba(233, 69, 96, 0.2)',
+              backgroundColor: selectedMode === 'single_player' ? 'rgba(233, 69, 96, 0.4)' : 'rgba(233, 69, 96, 0.2)',
               color: 'white',
               border: '2px solid #e94560',
               borderRadius: '8px',
               cursor: 'pointer',
               fontSize: '16px',
               fontFamily: "'Press Start 2P', cursive, sans-serif",
-              boxShadow: selectedMode === GameModes.SINGLE_PLAYER ? '0 7px 20px rgba(233, 69, 96, 0.6)' : '0 0 15px rgba(233, 69, 96, 0.5)',
+              boxShadow: selectedMode === 'single_player' ? '0 7px 20px rgba(233, 69, 96, 0.6)' : '0 0 15px rgba(233, 69, 96, 0.5)',
               transition: 'all 0.3s ease',
               textShadow: '0 0 5px rgba(233, 69, 96, 0.7)',
-              transform: selectedMode === GameModes.SINGLE_PLAYER ? 'translateY(-3px)' : 'translateY(0)'
+              transform: selectedMode === 'single_player' ? 'translateY(-3px)' : 'translateY(0)'
             }}
             onMouseOver={(e) => {
               e.currentTarget.style.backgroundColor = 'rgba(233, 69, 96, 0.4)';
@@ -116,7 +104,7 @@ const GameModeSelection: React.FC<GameModeSelectionProps> = ({ onSelectMode }) =
               e.currentTarget.style.boxShadow = '0 7px 20px rgba(233, 69, 96, 0.6)';
             }}
             onMouseOut={(e) => {
-              if (selectedMode !== GameModes.SINGLE_PLAYER) {
+              if (selectedMode !== 'single_player') {
                 e.currentTarget.style.backgroundColor = 'rgba(233, 69, 96, 0.2)';
                 e.currentTarget.style.transform = 'translateY(0)';
                 e.currentTarget.style.boxShadow = '0 0 15px rgba(233, 69, 96, 0.5)';
@@ -128,22 +116,22 @@ const GameModeSelection: React.FC<GameModeSelectionProps> = ({ onSelectMode }) =
 
           <button
             onClick={() => {
-              setSelectedMode(GameModes.MULTIPLAYER);
+              setSelectedMode('multiplayer');
               setIsCreatingLobby(true);
             }}
             style={{
               padding: '15px 20px',
-              backgroundColor: selectedMode === GameModes.MULTIPLAYER && isCreatingLobby ? 'rgba(233, 69, 96, 0.4)' : 'rgba(233, 69, 96, 0.2)',
+              backgroundColor: selectedMode === 'multiplayer' && isCreatingLobby ? 'rgba(233, 69, 96, 0.4)' : 'rgba(233, 69, 96, 0.2)',
               color: 'white',
               border: '2px solid #e94560',
               borderRadius: '8px',
               cursor: 'pointer',
               fontSize: '16px',
               fontFamily: "'Press Start 2P', cursive, sans-serif",
-              boxShadow: selectedMode === GameModes.MULTIPLAYER && isCreatingLobby ? '0 7px 20px rgba(233, 69, 96, 0.6)' : '0 0 15px rgba(233, 69, 96, 0.5)',
+              boxShadow: selectedMode === 'multiplayer' && isCreatingLobby ? '0 7px 20px rgba(233, 69, 96, 0.6)' : '0 0 15px rgba(233, 69, 96, 0.5)',
               transition: 'all 0.3s ease',
               textShadow: '0 0 5px rgba(233, 69, 96, 0.7)',
-              transform: selectedMode === GameModes.MULTIPLAYER && isCreatingLobby ? 'translateY(-3px)' : 'translateY(0)'
+              transform: selectedMode === 'multiplayer' && isCreatingLobby ? 'translateY(-3px)' : 'translateY(0)'
             }}
             onMouseOver={(e) => {
               e.currentTarget.style.backgroundColor = 'rgba(233, 69, 96, 0.4)';
@@ -151,7 +139,7 @@ const GameModeSelection: React.FC<GameModeSelectionProps> = ({ onSelectMode }) =
               e.currentTarget.style.boxShadow = '0 7px 20px rgba(233, 69, 96, 0.6)';
             }}
             onMouseOut={(e) => {
-              if (!(selectedMode === GameModes.MULTIPLAYER && isCreatingLobby)) {
+              if (!(selectedMode === 'multiplayer' && isCreatingLobby)) {
                 e.currentTarget.style.backgroundColor = 'rgba(233, 69, 96, 0.2)';
                 e.currentTarget.style.transform = 'translateY(0)';
                 e.currentTarget.style.boxShadow = '0 0 15px rgba(233, 69, 96, 0.5)';
@@ -163,22 +151,22 @@ const GameModeSelection: React.FC<GameModeSelectionProps> = ({ onSelectMode }) =
 
           <button
             onClick={() => {
-              setSelectedMode(GameModes.MULTIPLAYER);
+              setSelectedMode('multiplayer');
               setIsCreatingLobby(false);
             }}
             style={{
               padding: '15px 20px',
-              backgroundColor: selectedMode === GameModes.MULTIPLAYER && !isCreatingLobby ? 'rgba(233, 69, 96, 0.4)' : 'rgba(233, 69, 96, 0.2)',
+              backgroundColor: selectedMode === 'multiplayer' && !isCreatingLobby ? 'rgba(233, 69, 96, 0.4)' : 'rgba(233, 69, 96, 0.2)',
               color: 'white',
               border: '2px solid #e94560',
               borderRadius: '8px',
               cursor: 'pointer',
               fontSize: '16px',
               fontFamily: "'Press Start 2P', cursive, sans-serif",
-              boxShadow: selectedMode === GameModes.MULTIPLAYER && !isCreatingLobby ? '0 7px 20px rgba(233, 69, 96, 0.6)' : '0 0 15px rgba(233, 69, 96, 0.5)',
+              boxShadow: selectedMode === 'multiplayer' && !isCreatingLobby ? '0 7px 20px rgba(233, 69, 96, 0.6)' : '0 0 15px rgba(233, 69, 96, 0.5)',
               transition: 'all 0.3s ease',
               textShadow: '0 0 5px rgba(233, 69, 96, 0.7)',
-              transform: selectedMode === GameModes.MULTIPLAYER && !isCreatingLobby ? 'translateY(-3px)' : 'translateY(0)'
+              transform: selectedMode === 'multiplayer' && !isCreatingLobby ? 'translateY(-3px)' : 'translateY(0)'
             }}
             onMouseOver={(e) => {
               e.currentTarget.style.backgroundColor = 'rgba(233, 69, 96, 0.4)';
@@ -186,7 +174,7 @@ const GameModeSelection: React.FC<GameModeSelectionProps> = ({ onSelectMode }) =
               e.currentTarget.style.boxShadow = '0 7px 20px rgba(233, 69, 96, 0.6)';
             }}
             onMouseOut={(e) => {
-              if (!(selectedMode === GameModes.MULTIPLAYER && !isCreatingLobby)) {
+              if (!(selectedMode === 'multiplayer' && !isCreatingLobby)) {
                 e.currentTarget.style.backgroundColor = 'rgba(233, 69, 96, 0.2)';
                 e.currentTarget.style.transform = 'translateY(0)';
                 e.currentTarget.style.boxShadow = '0 0 15px rgba(233, 69, 96, 0.5)';
@@ -197,7 +185,7 @@ const GameModeSelection: React.FC<GameModeSelectionProps> = ({ onSelectMode }) =
           </button>
         </div>
 
-        {selectedMode === GameModes.MULTIPLAYER && !isCreatingLobby && (
+        {selectedMode === 'multiplayer' && !isCreatingLobby && (
           <div style={{
             marginBottom: '20px'
           }}>
@@ -225,39 +213,39 @@ const GameModeSelection: React.FC<GameModeSelectionProps> = ({ onSelectMode }) =
 
         <button
           onClick={handleCreateGame}
-          disabled={!selectedMode || (selectedMode === GameModes.MULTIPLAYER && !isCreatingLobby && !lobbyCode)}
+          disabled={!selectedMode || (selectedMode === 'multiplayer' && !isCreatingLobby && !lobbyCode)}
           style={{
             padding: '12px 30px',
-            backgroundColor: (!selectedMode || (selectedMode === GameModes.MULTIPLAYER && !isCreatingLobby && !lobbyCode)) 
+            backgroundColor: (!selectedMode || (selectedMode === 'multiplayer' && !isCreatingLobby && !lobbyCode)) 
               ? 'rgba(102, 102, 102, 0.2)' 
               : 'rgba(233, 69, 96, 0.2)',
             color: 'white',
-            border: `2px solid ${(!selectedMode || (selectedMode === GameModes.MULTIPLAYER && !isCreatingLobby && !lobbyCode)) ? '#666' : '#e94560'}`,
+            border: `2px solid ${(!selectedMode || (selectedMode === 'multiplayer' && !isCreatingLobby && !lobbyCode)) ? '#666' : '#e94560'}`,
             borderRadius: '8px',
             fontSize: '16px',
             fontWeight: 'bold',
-            cursor: (!selectedMode || (selectedMode === GameModes.MULTIPLAYER && !isCreatingLobby && !lobbyCode)) ? 'not-allowed' : 'pointer',
-            boxShadow: `0 0 15px rgba(${(!selectedMode || (selectedMode === GameModes.MULTIPLAYER && !isCreatingLobby && !lobbyCode)) ? '102, 102, 102' : '233, 69, 96'}, 0.5)`,
+            cursor: (!selectedMode || (selectedMode === 'multiplayer' && !isCreatingLobby && !lobbyCode)) ? 'not-allowed' : 'pointer',
+            boxShadow: `0 0 15px rgba(${(!selectedMode || (selectedMode === 'multiplayer' && !isCreatingLobby && !lobbyCode)) ? '102, 102, 102' : '233, 69, 96'}, 0.5)`,
             transition: 'all 0.3s ease',
             fontFamily: "'Press Start 2P', cursive, sans-serif",
-            textShadow: `0 0 5px rgba(${(!selectedMode || (selectedMode === GameModes.MULTIPLAYER && !isCreatingLobby && !lobbyCode)) ? '102, 102, 102' : '233, 69, 96'}, 0.7)`
+            textShadow: `0 0 5px rgba(${(!selectedMode || (selectedMode === 'multiplayer' && !isCreatingLobby && !lobbyCode)) ? '102, 102, 102' : '233, 69, 96'}, 0.7)`
           }}
           onMouseOver={(e) => {
-            if (selectedMode && !(selectedMode === GameModes.MULTIPLAYER && !isCreatingLobby && !lobbyCode)) {
+            if (selectedMode && !(selectedMode === 'multiplayer' && !isCreatingLobby && !lobbyCode)) {
               e.currentTarget.style.backgroundColor = 'rgba(233, 69, 96, 0.4)';
               e.currentTarget.style.transform = 'translateY(-3px)';
               e.currentTarget.style.boxShadow = '0 7px 20px rgba(233, 69, 96, 0.6)';
             }
           }}
           onMouseOut={(e) => {
-            if (selectedMode && !(selectedMode === GameModes.MULTIPLAYER && !isCreatingLobby && !lobbyCode)) {
+            if (selectedMode && !(selectedMode === 'multiplayer' && !isCreatingLobby && !lobbyCode)) {
               e.currentTarget.style.backgroundColor = 'rgba(233, 69, 96, 0.2)';
               e.currentTarget.style.transform = 'translateY(0)';
               e.currentTarget.style.boxShadow = '0 0 15px rgba(233, 69, 96, 0.5)';
             }
           }}
         >
-          {selectedMode === GameModes.MULTIPLAYER && !isCreatingLobby ? 'Join Game' : 'Start Game'}
+          {selectedMode === 'multiplayer' && !isCreatingLobby ? 'Join Game' : 'Start Game'}
         </button>
       </div>
     </div>

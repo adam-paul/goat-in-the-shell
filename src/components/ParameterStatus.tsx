@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { GameParameter } from '../types';
 import { 
-  GameParameter, 
   GAME_PARAMETERS, 
   ParameterManager
 } from '../game/parameters';

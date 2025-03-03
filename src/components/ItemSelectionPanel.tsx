@@ -1,16 +1,5 @@
 import React, { useState } from 'react';
-import { ItemType } from '../App';
-
-interface ItemSelectionPanelProps {
-  onSelectItem: (itemType: ItemType) => void;
-}
-
-interface ItemOption {
-  type: ItemType;
-  name: string;
-  description: string;
-  color: string;
-}
+import { ItemType, ItemOption, ItemSelectionPanelProps } from '../types';
 
 const ItemSelectionPanel: React.FC<ItemSelectionPanelProps> = ({ onSelectItem }) => {
   // Track which item is being hovered

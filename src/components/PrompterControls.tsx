@@ -1,22 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
-import { AIService, ParameterModification } from '../services/AIService';
+import { AIService } from '../services/AIService';
 import { ParameterManager } from '../game/parameters';
-
-// Extend the Window interface to include playerPosition
-declare global {
-  interface Window {
-    playerPosition?: {
-      x: number;
-      y: number;
-      isOnGround?: boolean;
-    };
-  }
-}
-
-interface PrompterControlsProps {
-  onPlaceObstacle: (type: string, x: number, y: number) => void;
-  disabled: boolean;
-}
+import { ParameterModification, PrompterControlsProps } from '../types';
 
 const PrompterControls: React.FC<PrompterControlsProps> = ({ onPlaceObstacle, disabled }) => {
   const [promptText, setPromptText] = useState<string>('');

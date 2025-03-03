@@ -3,23 +3,11 @@
  * Handles communication with the AI backend for game parameter commands
  */
 
-// Interface for parameter modification returned by the AI
-export interface ParameterModification {
-  parameter: string;
-  normalized_value: number;
-}
-
-// Response interface for the AI command endpoint
-export interface CommandResponse {
-  response: string;
-  success: boolean;
-  parameter_modifications: ParameterModification[];
-}
-
-// Request interface for sending commands to the AI
-export interface CommandRequest {
-  command: string;
-}
+import { 
+  ParameterModification, 
+  CommandResponse, 
+  CommandRequest 
+} from '../types';
 
 // Service class for communicating with the AI backend
 export class AIService {

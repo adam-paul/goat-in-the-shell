@@ -1,8 +1,5 @@
 import React from 'react';
-
-interface TutorialModalProps {
-  onStart: () => void;
-}
+import { TutorialModalProps } from '../types';
 
 const TutorialModal: React.FC<TutorialModalProps> = ({ onStart }) => {
   return (

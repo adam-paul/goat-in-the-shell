@@ -39,7 +39,6 @@ This project requires environment variables for both the frontend and backend:
 - Round-based gameplay with countdown timer
 - Three death conditions: dart hit (tranquilized effect), spike contact, falling through gaps
 - Item placement system: platforms, spikes, oscillators, shields, dart walls
-- Custom sound effects
 - Win and lose conditions with appropriate feedback
 - Interactive UI with modals for deaths, tutorials, and item selection
 
@@ -93,7 +92,6 @@ uvicorn main:app --reload
 
 ### The Goat
 - Custom animated goat character with running and standing animations
-- Simulated bleat sound when jumping
 - Smooth movement with proper physics
 
 ### Dart Traps

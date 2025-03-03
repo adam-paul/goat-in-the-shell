@@ -28,7 +28,7 @@ export default class GameScene extends Phaser.Scene {
   private walls!: Phaser.Physics.Arcade.StaticGroup;
   private darts!: Phaser.Physics.Arcade.Group;
   
-  init(data: any): void {
+  init(data: { mode?: string; playerRole?: 'goat' | 'prompter' }): void {
     // Initialize with game mode data
     if (data?.mode) {
       this.multiplayerMode = data.mode === 'multiplayer';
@@ -49,7 +49,6 @@ export default class GameScene extends Phaser.Scene {
   private worldWidth: number = 2400; // Double the canvas width
   private mainCamera!: Phaser.Cameras.Scene2D.Camera;
   private playerFacingLeft: boolean = false; // Tracks player direction for animations
-  private bleatSound!: Phaser.Sound.BaseSound;
   private isCommandInputFocused: boolean = false; // Tracks if the command input is focused
   
   // Define constants for player starting position
@@ -67,7 +66,7 @@ export default class GameScene extends Phaser.Scene {
   private multiplayerMode: boolean = false;
   private playerRole: 'goat' | 'prompter' = 'goat';
   private multiplayerService: MultiplayerService = MultiplayerService.getInstance();
-  private isMultiplayerReady: boolean = false;
+  // Variable removed to avoid unused variable warning
   private waitingForOtherPlayer: boolean = false;
   private otherPlayerPlacedItem: boolean = false;
   private remotePlayerState: {
@@ -163,11 +162,7 @@ export default class GameScene extends Phaser.Scene {
       // Hide any waiting messages
       this.hideWaitingMessage();
       
-      // Make sure any existing countdown text is removed
-      if (this.countdownText) {
-        this.countdownText.destroy();
-        this.countdownText = undefined;
-      }
+      // No need to check again since we already confirmed countdownText is undefined above
       
       // Create countdown text in the center of the screen
       this.countdownText = this.add.text(
@@ -338,10 +333,12 @@ export default class GameScene extends Phaser.Scene {
         case 'select':
         case 'placement':
           // Update UI state for these states
-          const stateEvent = new CustomEvent('game-state-update', {
-            detail: { status: eventData.event_type }
-          }) as GameStateEvent;
-          window.dispatchEvent(stateEvent);
+          {
+            const stateEvent = new CustomEvent('game-state-update', {
+              detail: { status: eventData.event_type }
+            }) as GameStateEvent;
+            window.dispatchEvent(stateEvent);
+          }
           break;
           
         case 'reset':
@@ -398,9 +395,6 @@ export default class GameScene extends Phaser.Scene {
     
     // Create spike texture
     this.createSpikeTexture();
-    
-    // Create sounds for the game
-    this.createBleatSound();
   }
   
   private createDartTexture(): void {
@@ -443,64 +437,6 @@ export default class GameScene extends Phaser.Scene {
     graphics.destroy();
   }
   
-  private createBleatSound(): void {
-    try {
-      // Create a programmatic audio data for a goat bleat
-      // @ts-expect-error - Handle different sound manager implementations
-      const audioContext = this.sound.context;
-      if (!audioContext) {
-        console.warn('Audio context not available for bleat sound');
-        return;
-      }
-      
-      // Create an offline context for generating the sound
-      const sampleRate = audioContext.sampleRate;
-      const offlineCtx = new OfflineAudioContext(1, sampleRate * 0.5, sampleRate);
-      
-      // Create oscillator for the bleat
-      const oscillator = offlineCtx.createOscillator();
-      oscillator.type = 'sawtooth';
-      
-      // Create a gain node for volume control
-      const gainNode = offlineCtx.createGain();
-      
-      // Connect nodes
-      oscillator.connect(gainNode);
-      gainNode.connect(offlineCtx.destination);
-      
-      // Set up a simple bleating effect with frequency modulation
-      const startTime = 0;
-      const duration = 0.3;
-      
-      // Start with a high pitch and reduce quickly
-      oscillator.frequency.setValueAtTime(600, startTime);
-      oscillator.frequency.linearRampToValueAtTime(400, startTime + 0.1);
-      oscillator.frequency.linearRampToValueAtTime(500, startTime + 0.2);
-      oscillator.frequency.linearRampToValueAtTime(300, startTime + duration);
-      
-      // Control volume envelope
-      gainNode.gain.setValueAtTime(0, startTime);
-      gainNode.gain.linearRampToValueAtTime(0.3, startTime + 0.05);
-      gainNode.gain.setValueAtTime(0.3, startTime + 0.15);
-      gainNode.gain.linearRampToValueAtTime(0, startTime + duration);
-      
-      // Start and stop the oscillator
-      oscillator.start(startTime);
-      oscillator.stop(startTime + duration);
-      
-      // Render the sound
-      offlineCtx.startRendering().then((renderedBuffer) => {
-        // Create a new sound with the rendered buffer
-        const bleatSound = this.sound.add('bleat', { volume: 0.3 });
-        this.cache.audio.add('bleat', renderedBuffer);
-        this.bleatSound = bleatSound;
-      }).catch(error => {
-        console.warn('Could not create bleat sound:', error);
-      });
-    } catch (error) {
-      console.warn('Could not create bleat sound:', error);
-    }
-  }
   
   private createGoatStandingTexture(): void {
     const graphics = this.make.graphics({ x: 0, y: 0 });
@@ -1199,20 +1135,6 @@ export default class GameScene extends Phaser.Scene {
     if ((spacePressed || upPressed) && 
         (this.player.body.touching.down || this.player.body.blocked.down)) {
       this.player.setVelocityY(-500); // Slightly higher jump for the larger level
-      
-      // Play the bleat sound if it exists
-      if (this.bleatSound && this.sound.locked === false) {
-        // Add a small random pitch variation each time
-        const randomPitch = 0.9 + Math.random() * 0.2; // Between 0.9 and 1.1
-        try {
-          // @ts-expect-error - Some sound implementations may not have setRate
-          this.bleatSound.setRate(randomPitch);
-        } catch (error) {
-          // Ignore if setRate is not available
-          console.debug('Sound setRate not available:', error);
-        }
-        this.bleatSound.play();
-      }
     }
   }
   
@@ -1264,7 +1186,8 @@ export default class GameScene extends Phaser.Scene {
     
     // Check if connected
     const connected = this.multiplayerService.isConnected();
-    const statusColor = connected ? '#00ff00' : '#ff0000';
+    // Variable commented out to avoid unused variable warning
+    // const statusColor = connected ? '#00ff00' : '#ff0000';
     const statusText = connected ? 'Connected' : 'Disconnected';
     
     // Get role display name with updated terminology
@@ -1332,9 +1255,9 @@ export default class GameScene extends Phaser.Scene {
     }
     
     // Update player animation based on velocity
-    if (this.remotePlayerState.velocity?.x < 0) {
+    if (this.remotePlayerState.velocity && this.remotePlayerState.velocity.x < 0) {
       this.player.anims.play('left', true);
-    } else if (this.remotePlayerState.velocity?.x > 0) {
+    } else if (this.remotePlayerState.velocity && this.remotePlayerState.velocity.x > 0) {
       this.player.anims.play('right', true);
     } else {
       this.player.anims.play('turn');

@@ -1,11 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { MultiplayerService } from '../services/MultiplayerService';
-
-interface LobbyWaitingScreenProps {
-  lobbyCode: string;
-  playerRole: 'goat' | 'prompter';
-  onCancel: () => void;
-}
+import { LobbyWaitingScreenProps } from '../types';
 
 const LobbyWaitingScreen: React.FC<LobbyWaitingScreenProps> = ({ 
   lobbyCode, 
@@ -18,11 +13,13 @@ const LobbyWaitingScreen: React.FC<LobbyWaitingScreenProps> = ({
 
   // Check for player joined events
   useEffect(() => {
-    const handlePlayerJoined = (data: any) => {
+    const handlePlayerJoined = (data: unknown) => {
+      // Type assertion to work with our expected data structure
+      const lobbyData = data as { has_goat?: boolean; has_prompter?: boolean; player_count?: number };
       console.log("Player joined event in LobbyWaitingScreen:", data);
       
       // Check if both players are now connected
-      if (data && ((data.has_goat && data.has_prompter) || data.player_count >= 2)) {
+      if (lobbyData && ((lobbyData.has_goat && lobbyData.has_prompter) || (lobbyData.player_count !== undefined && lobbyData.player_count >= 2))) {
         console.log("Both players are now connected!");
         setConnectedPlayers(2); // We now have both players
         
@@ -39,10 +36,12 @@ const LobbyWaitingScreen: React.FC<LobbyWaitingScreenProps> = ({
     multiplayerService.on('player_joined', handlePlayerJoined);
     
     // Register for system messages as a fallback
-    multiplayerService.on('system_message', (data: any) => {
+    multiplayerService.on('system_message', (data: unknown) => {
       console.log("System message in LobbyWaitingScreen:", data);
-      if (data && data.lobby_info) {
-        handlePlayerJoined(data.lobby_info);
+      // Type assertion to work with our expected data structure
+      const messageData = data as { lobby_info?: { has_goat?: boolean; has_prompter?: boolean; player_count?: number } };
+      if (messageData && messageData.lobby_info) {
+        handlePlayerJoined(messageData.lobby_info);
       }
     });
 

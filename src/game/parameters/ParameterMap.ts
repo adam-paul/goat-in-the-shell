@@ -6,18 +6,7 @@
  * - 1 represents twice the default value
  */
 
-/**
- * Interface for a single game parameter
- */
-export interface GameParameter {
-  key: string;
-  defaultValue: number;
-  currentValue: number;
-  normalizedValue: number;
-  min: number;
-  max: number;
-  description: string;
-}
+import { GameParameter } from '../../types';
 
 /**
  * Convert a normalized value (-1 to 1) to actual value

@@ -141,7 +141,7 @@ export class MultiplayerService {
       console.error('Max reconnection attempts reached');
       // Notify application about permanent disconnect
       const handlers = this.messageHandlers.get('disconnect') || [];
-      handlers.forEach(handler => handler());
+      handlers.forEach(handler => handler(null));
     }
   }
   

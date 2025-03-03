@@ -1,9 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-
-interface DeathModalProps {
-  deathType: 'dart' | 'spike' | 'fall';
-  onContinue: () => void;
-}
+import { DeathModalProps } from '../types';
 
 const DeathModal: React.FC<DeathModalProps> = ({ deathType, onContinue }) => {
   // Define death-specific content

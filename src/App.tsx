@@ -7,20 +7,16 @@ import ItemSelectionPanel from './components/ItemSelectionPanel'
 import DeathModal from './components/DeathModal'
 import TutorialModal from './components/TutorialModal'
 import PrompterControls from './components/PrompterControls'
-import GameModeSelection, { GameMode, GameModes } from './components/GameModeSelection'
+import GameModeSelection from './components/GameModeSelection'
 import LobbyWaitingScreen from './components/LobbyWaitingScreen'
 import { MultiplayerService } from './services/MultiplayerService'
-
-// Define game status types
-type GameStatus = 'tutorial' | 'modeSelect' | 'lobby' | 'win' | 'playing' | 'reset' | 'gameover' | 'select' | 'placement';
-// Define death types
-type DeathType = 'dart' | 'spike' | 'fall' | null;
-
-// Define item types
-export type ItemType = 'platform' | 'spike' | 'moving' | 'shield';
-
-// Define game modes
-export type GameModeType = 'singleplayer' | 'multiplayer';
+import { 
+  GameStatus, 
+  DeathType, 
+  ItemType, 
+  GameMode, 
+  PlayerRole 
+} from './types';
 
 // Initialize Supabase client
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || process.env.REACT_APP_SUPABASE_URL
@@ -43,16 +39,15 @@ function App() {
   const [showPrompter, setShowPrompter] = useState<boolean>(false);
   
   // Multiplayer state
-  const [currentGameMode, setCurrentGameMode] = useState<GameModeType>('singleplayer');
+  const [currentGameMode, setCurrentGameMode] = useState<GameMode>('single_player');
   const [lobbyCode, setLobbyCode] = useState<string>('');
-  const [playerRole, setPlayerRole] = useState<'goat' | 'prompter'>('goat');
+  const [playerRole, setPlayerRole] = useState<PlayerRole>('goat');
 
   // Get MultiplayerService instance
   const multiplayerService = MultiplayerService.getInstance();
 
   // Handle tutorial completion
   const handleTutorialComplete = () => {
-    console.log('Tutorial completed, moving to game mode selection');
     setGameStatus('modeSelect');
   };
 
@@ -60,9 +55,9 @@ function App() {
   const handleGameModeSelect = async (mode: GameMode, joinLobbyCode?: string) => {
     console.log(`Game mode selected: ${mode}`);
     
-    if (mode === GameModes.SINGLE_PLAYER) {
+    if (mode === 'single_player') {
       // Single player mode
-      setCurrentGameMode('singleplayer');
+      setCurrentGameMode('single_player');
       setGameStatus('select');
     } else {
       // Multiplayer mode
@@ -150,8 +145,9 @@ function App() {
     multiplayerService.on('command_result', (data) => {
       console.log('Command result:', data);
       // Handle command results
-      if (data.type && data.x !== undefined && data.y !== undefined) {
-        handlePlaceObstacle(data.type, data.x, data.y);
+      const commandData = data as {type?: string; x?: number; y?: number};
+      if (commandData.type && commandData.x !== undefined && commandData.y !== undefined) {
+        handlePlaceObstacle(commandData.type, commandData.x, commandData.y);
       }
     });
 
@@ -309,7 +305,7 @@ function App() {
   // Use useRef to avoid recreating the function on every render
   const gameInstanceRef = useRef<Phaser.Game | null>(null);
 
-  const initGame = useCallback((gameMode?: GameModeType, role?: 'goat' | 'prompter') => {
+  const initGame = useCallback((gameMode?: GameMode, role?: PlayerRole) => {
     console.log(`Initializing game with mode: ${gameMode}, role: ${role || playerRole}`);
     
     // Use the ref to track and clean up the game instance
@@ -421,7 +417,7 @@ function App() {
     setDeathType(null);
     
     // Initialize a new game without multiplayer settings
-    initGame('singleplayer');
+    initGame('single_player');
     
     // Skip tutorial and go directly to mode selection after reset
     setTimeout(() => {
@@ -632,7 +628,7 @@ function App() {
     if (gameStatus !== 'playing') return false;
     
     // Different logic based on game mode
-    if (currentGameMode === 'singleplayer') {
+    if (currentGameMode === 'single_player') {
       // In single player, only show if explicitly toggled on by the player
       return showPrompter;
     } else {
@@ -752,7 +748,7 @@ function App() {
         </button>
         
         {/* Only show prompter toggle in single player mode */}
-        {currentGameMode === 'singleplayer' && (
+        {currentGameMode === 'single_player' && (
           <button 
             onClick={togglePrompter}
             style={{
@@ -810,7 +806,7 @@ function App() {
       <footer style={{ marginTop: '30px', textAlign: 'center', fontSize: '14px', color: '#666' }}>
         <p>Use arrow keys or WASD to move. Space to jump.</p>
         <p>Avoid darts and dangerous platforms. Reach the finish line!</p>
-        {gameStatus === 'playing' && currentGameMode === 'singleplayer' && (
+        {gameStatus === 'playing' && currentGameMode === 'single_player' && (
           <p>Try the command terminal to add obstacles in real-time!</p>
         )}
         {gameStatus === 'playing' && currentGameMode === 'multiplayer' && (

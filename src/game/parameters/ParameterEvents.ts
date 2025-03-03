@@ -4,18 +4,7 @@
  */
 
 import { ParameterManager } from './ParameterManager';
-
-/**
- * Custom event for parameter changes
- */
-export interface ParameterChangeEvent extends CustomEvent {
-  detail: {
-    key: string;
-    currentValue: number;
-    normalizedValue: number;
-    description: string;
-  }
-}
+import { ParameterChangeEvent } from '../../types';
 
 /**
  * Dispatch a parameter change event to the window
