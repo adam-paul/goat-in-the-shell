@@ -2293,7 +2293,7 @@ export default class GameScene extends Phaser.Scene {
    */
   private setupParameterListeners(): void {
     // Gravity parameter - affects physics world gravity
-    ParameterManager.onParameterChanged('gravity', (newValue) => {
+    ParameterManager.onParameterChanged('gravity', (newValue: number) => {
       console.log(`Updating gravity to ${newValue}`);
       this.currentGravity = newValue;
       this.physics.world.gravity.set(0, newValue);
@@ -2305,7 +2305,7 @@ export default class GameScene extends Phaser.Scene {
     });
     
     // Dart speed parameter - affects velocity of newly fired darts
-    ParameterManager.onParameterChanged('dart_speed', (newValue) => {
+    ParameterManager.onParameterChanged('dart_speed', (newValue: number) => {
       console.log(`Updating dart speed to ${newValue}`);
       this.dartSpeed = newValue;
       
@@ -2314,7 +2314,7 @@ export default class GameScene extends Phaser.Scene {
     });
     
     // Dart frequency parameter - affects dart firing interval
-    ParameterManager.onParameterChanged('dart_frequency', (newValue) => {
+    ParameterManager.onParameterChanged('dart_frequency', (newValue: number) => {
       console.log(`Updating dart frequency to ${newValue}`);
       this.dartFrequency = newValue;
       
@@ -2336,7 +2336,7 @@ export default class GameScene extends Phaser.Scene {
     });
     
     // Platform tilt parameter - applies to all platforms
-    ParameterManager.onParameterChanged('tilt', (newValue) => {
+    ParameterManager.onParameterChanged('tilt', (newValue: number) => {
       console.log(`Updating platform tilt to ${newValue}`);
       this.updatePlatformTilt(newValue);
     });

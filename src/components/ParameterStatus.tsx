@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { GameParameter } from '../types';
+import { GameParameter } from '../shared/types';
 import { 
   GAME_PARAMETERS, 
   ParameterManager

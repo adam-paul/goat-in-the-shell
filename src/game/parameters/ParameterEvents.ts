@@ -4,7 +4,7 @@
  */
 
 import { ParameterManager } from './ParameterManager';
-import { ParameterChangeEvent } from '../../types';
+import { GameParameter, ParameterChangeEvent } from '../../shared/types';
 
 /**
  * Dispatch a parameter change event to the window
@@ -29,7 +29,7 @@ export function dispatchParameterChange(
  */
 export function initParameterEvents(): void {
   // Listen for parameter changes and dispatch window events
-  ParameterManager.onParameterChanged('*', (newValue, normalizedValue, parameter) => {
+  ParameterManager.onParameterChanged('*', (newValue: number, normalizedValue: number, parameter: GameParameter) => {
     dispatchParameterChange(
       parameter.key,
       newValue,

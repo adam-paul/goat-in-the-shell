@@ -3,7 +3,7 @@ import {
   convertFromNormalizedValue,
   convertToNormalizedValue
 } from './ParameterMap';
-import { GameParameter, ParameterChangeListener } from '../../types';
+import { GameParameter, ParameterChangeListener } from '../../shared/types';
 
 /**
  * Manager class that handles parameter state and notifications

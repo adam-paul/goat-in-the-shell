@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ItemType, ItemOption, ItemSelectionPanelProps } from '../types';
+import { ItemType, ItemOption, ItemSelectionPanelProps } from '../shared/types';
 
 const ItemSelectionPanel: React.FC<ItemSelectionPanelProps> = ({ onSelectItem }) => {
   // Track which item is being hovered

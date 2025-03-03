@@ -7,7 +7,7 @@ import {
   ParameterModification, 
   CommandResponse, 
   CommandRequest 
-} from '../types';
+} from '../shared/types';
 
 // Service class for communicating with the AI backend
 export class AIService {

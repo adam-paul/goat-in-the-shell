@@ -6,7 +6,7 @@
  * - 1 represents twice the default value
  */
 
-import { GameParameter } from '../../types';
+import { GameParameter } from '../../shared/types';
 
 /**
  * Convert a normalized value (-1 to 1) to actual value

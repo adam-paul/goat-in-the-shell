@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { AIService } from '../services/AIService';
 import { ParameterManager } from '../game/parameters';
-import { ParameterModification, PrompterControlsProps } from '../types';
+import { ParameterModification, PrompterControlsProps } from '../shared/types';
 
 const PrompterControls: React.FC<PrompterControlsProps> = ({ onPlaceObstacle, disabled }) => {
   const [promptText, setPromptText] = useState<string>('');
