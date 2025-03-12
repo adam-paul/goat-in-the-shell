@@ -1,3 +1,12 @@
+import { 
+  PlayerInputMessage, 
+  PlaceItemMessage,
+  JoinLobbyMessage,
+  StartGameMessage,
+  ChatMessage,
+  CommandMessage
+} from '../../shared/types';
+
 export class NetworkMessenger {
   private socket: WebSocket | null = null;
   
@@ -9,38 +18,106 @@ export class NetworkMessenger {
     this.socket = socket;
   }
   
-  // Send a message to the server
+  // Send a generic message to the server
   sendMessage(type: string, payload?: any) {
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
       console.error('Cannot send message: WebSocket is not connected');
       return false;
     }
     
-    this.socket.send(JSON.stringify({
+    const message = {
       type,
-      payload
-    }));
+      payload,
+      timestamp: Date.now()
+    };
+    
+    console.log('Sending message:', message);
+    this.socket.send(JSON.stringify(message));
     
     return true;
   }
   
-  // Send player state update
-  sendPlayerState(playerState: any) {
-    return this.sendMessage('player_state', playerState);
+  // Send player input (movement controls)
+  sendPlayerInput(input: { left?: boolean, right?: boolean, jump?: boolean }) {
+    const message: PlayerInputMessage = {
+      type: 'PLAYER_INPUT',
+      payload: {
+        ...input,
+        timestamp: Date.now()
+      }
+    };
+    
+    return this.sendMessage(message.type, message.payload);
   }
   
-  // Send command (e.g., place obstacle)
-  sendCommand(type: string, x: number, y: number) {
-    return this.sendMessage('command', { type, x, y });
+  // Send player position update (for prediction)
+  sendPlayerPosition() {
+    return this.sendPlayerInput({
+      left: false,
+      right: false,
+      jump: false
+    });
   }
   
-  // Send lobby create/join request
-  sendLobbyRequest(lobbyCode: string, role: string) {
-    return this.sendMessage('join_lobby', { lobbyCode, role });
+  // Send item placement request
+  sendPlaceItem(itemType: string, x: number, y: number, rotation: number = 0, properties: Record<string, any> = {}) {
+    const message: PlaceItemMessage = {
+      type: 'PLACE_ITEM',
+      payload: {
+        type: itemType,
+        position: { x, y },
+        rotation,
+        properties
+      }
+    };
+    
+    return this.sendMessage(message.type, message.payload);
+  }
+  
+  // Send lobby join request
+  sendJoinLobby(playerName: string, lobbyId?: string) {
+    const message: JoinLobbyMessage = {
+      type: 'JOIN_LOBBY',
+      payload: {
+        lobbyId,
+        playerName
+      }
+    };
+    
+    return this.sendMessage(message.type, message.payload);
   }
   
   // Send game start request
   sendStartGame() {
-    return this.sendMessage('start_game');
+    const message: StartGameMessage = {
+      type: 'START_GAME'
+    };
+    
+    return this.sendMessage(message.type, {});
+  }
+  
+  // Send chat message
+  sendChatMessage(messageText: string, lobbyId: string) {
+    const message: ChatMessage = {
+      type: 'CHAT_MESSAGE',
+      payload: {
+        message: messageText,
+        lobbyId
+      }
+    };
+    
+    return this.sendMessage(message.type, message.payload);
+  }
+  
+  // Send AI command
+  sendAICommand(command: string) {
+    const message: CommandMessage = {
+      type: 'AI_COMMAND',
+      payload: {
+        command
+      }
+    };
+    
+    return this.sendMessage(message.type, message.payload);
   }
 }

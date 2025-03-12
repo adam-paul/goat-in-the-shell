@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { GameParameter } from '../shared/types';
+import { GameParameter } from '../../shared/types';
+// These imports will be fixed when we migrate the parameter system
 import { 
   GAME_PARAMETERS, 
   ParameterManager

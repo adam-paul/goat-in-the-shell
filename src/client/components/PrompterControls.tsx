@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
+// These imports will be fixed when we migrate the services
 import { AIService } from '../services/AIService';
 import { ParameterManager } from '../game/parameters';
-import { ParameterModification, PrompterControlsProps } from '../shared/types';
+import { ParameterModification, PrompterControlsProps } from '../../shared/types';
 
 const PrompterControls: React.FC<PrompterControlsProps> = ({ onPlaceObstacle, disabled }) => {
   const [promptText, setPromptText] = useState<string>('');
@@ -115,7 +116,7 @@ const PrompterControls: React.FC<PrompterControlsProps> = ({ onPlaceObstacle, di
     const validMods = AIService.validateParameterModifications(mods);
     
     // Apply the modifications using ParameterManager
-    validMods.forEach(mod => {
+    validMods.forEach((mod: ParameterModification) => {
       ParameterManager.updateParameterNormalized(mod.parameter, mod.normalized_value);
     });
     
@@ -123,7 +124,7 @@ const PrompterControls: React.FC<PrompterControlsProps> = ({ onPlaceObstacle, di
     console.log('Applied parameter modifications:', validMods);
     
     // Create parameter modification messages for the command history
-    validMods.forEach(mod => {
+    validMods.forEach((mod: ParameterModification) => {
       const formattedValue = (mod.normalized_value >= 0 ? '+' : '') + 
         Math.round(mod.normalized_value * 100) + '%';
       

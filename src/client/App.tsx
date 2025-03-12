@@ -9,14 +9,13 @@ import { useNetwork } from './network/NetworkProvider';
 import useInputHandler from './input/InputHandler';
 import useItemPlacementHandler from './input/ItemPlacementHandler';
 
-// These imports will need to be updated once components are migrated
-// For now, we'll reference them from their old locations
-import ItemSelectionPanel from '../old-src/components/ItemSelectionPanel';
-import DeathModal from '../old-src/components/DeathModal';
-import TutorialModal from '../old-src/components/TutorialModal';
-import PrompterControls from '../old-src/components/PrompterControls';
-import GameModeSelection from '../old-src/components/GameModeSelection';
-import LobbyWaitingScreen from '../old-src/components/LobbyWaitingScreen';
+// Import components from the new component structure
+import DeathModal from './components/DeathModal';
+import ItemSelectionPanel from './components/ItemSelectionPanel';
+import TutorialModal from './components/TutorialModal';
+import PrompterControls from './components/PrompterControls';
+import GameModeSelection from './components/GameModeSelection';
+import LobbyWaitingScreen from './components/LobbyWaitingScreen';
 
 function App() {
   // Use our game store for state management

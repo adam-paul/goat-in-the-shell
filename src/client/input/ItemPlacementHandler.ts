@@ -4,11 +4,7 @@ import { useNetwork } from '../network/NetworkProvider';
 import { useGameStore } from '../store/gameStore';
 import { ItemType } from '../../shared/types';
 
-// Interface for placement position
-interface PlacementPosition {
-  x: number;
-  y: number;
-}
+// Position type is already handled by the game engine
 
 /**
  * Custom hook to handle item placement interactions
@@ -99,7 +95,7 @@ export const useItemPlacementHandler = () => {
 /**
  * Validates if the placement position is valid for the item type
  */
-function isValidPlacementPosition(itemType: ItemType, x: number, y: number): boolean {
+function isValidPlacementPosition(_itemType: ItemType, x: number, y: number): boolean {
   // This is a simplified version - the server will do full validation
   // In the real implementation, we'd check against game world boundaries
   // and existing objects

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { MultiplayerService } from '../services/MultiplayerService';
-import { LobbyWaitingScreenProps } from '../shared/types';
+import { LobbyWaitingScreenProps } from '../../shared/types';
 
 const LobbyWaitingScreen: React.FC<LobbyWaitingScreenProps> = ({ 
   lobbyCode, 

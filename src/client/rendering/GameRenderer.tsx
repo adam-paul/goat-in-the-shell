@@ -16,7 +16,6 @@ const GameRenderer: React.FC<GameRendererProps> = ({ containerClassName = 'game-
   const { 
     currentGameMode, 
     playerRole,
-    gameStatus,
     handlePlaceItem 
   } = useGameStore();
 

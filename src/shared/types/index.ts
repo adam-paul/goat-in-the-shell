@@ -149,11 +149,14 @@ export interface ServerStateMessage extends NetworkMessage {
       position: { x: number; y: number };
       velocity: { x: number; y: number };
       isOnGround: boolean;
+      isAlive: boolean;
     }>;
     obstacles: Array<{
       id: string;
       type: ItemType;
       position: { x: number; y: number };
+      rotation?: number;
+      properties?: Record<string, any>;
     }>;
     gameStatus: GameStatus;
     deathType?: DeathType;
@@ -176,7 +179,7 @@ export interface ParameterUpdateMessage extends NetworkMessage {
  * AI command message
  */
 export interface CommandMessage extends NetworkMessage {
-  type: 'command';
+  type: 'AI_COMMAND';
   payload: {
     command: string;
   };
@@ -186,7 +189,7 @@ export interface CommandMessage extends NetworkMessage {
  * Command result message
  */
 export interface CommandResultMessage extends NetworkMessage {
-  type: 'command_result';
+  type: 'COMMAND_RESULT';
   payload: {
     response: string;
     success: boolean;
@@ -194,6 +197,131 @@ export interface CommandResultMessage extends NetworkMessage {
     x?: number;
     y?: number;
     parameter_modifications?: ParameterModification[];
+  };
+}
+
+/**
+ * Message for new connection initialization
+ */
+export interface InitialStateMessage extends NetworkMessage {
+  type: 'INITIAL_STATE';
+  payload: {
+    clientId: string;
+    timestamp: number;
+    gameConfig: {
+      gravity: number;
+      moveSpeed: number;
+      jumpForce: number;
+      [key: string]: any;
+    }
+  };
+}
+
+/**
+ * Message for game state updates
+ */
+export interface StateUpdateMessage extends NetworkMessage {
+  type: 'STATE_UPDATE';
+  payload: {
+    timestamp: number;
+    state: {
+      players: Array<{
+        id: string;
+        name: string;
+        position: { x: number; y: number };
+        velocity: { x: number; y: number };
+        isAlive: boolean;
+        score: number;
+      }>;
+      items: Array<{
+        id: string;
+        type: string;
+        position: { x: number; y: number };
+        rotation: number;
+        placedBy: string;
+        properties: Record<string, any>;
+      }>;
+      gameStatus: GameStatus;
+    };
+  };
+}
+
+/**
+ * Message for player input
+ */
+export interface PlayerInputMessage extends NetworkMessage {
+  type: 'PLAYER_INPUT';
+  payload: {
+    left?: boolean;
+    right?: boolean;
+    jump?: boolean;
+    timestamp?: number;
+  };
+}
+
+/**
+ * Message for placing items
+ */
+export interface PlaceItemMessage extends NetworkMessage {
+  type: 'PLACE_ITEM';
+  payload: {
+    type: string;
+    position: { x: number; y: number };
+    rotation?: number;
+    properties?: Record<string, any>;
+  };
+}
+
+/**
+ * Message for starting the game
+ */
+export interface StartGameMessage extends NetworkMessage {
+  type: 'START_GAME';
+}
+
+/**
+ * Message for joining a lobby
+ */
+export interface JoinLobbyMessage extends NetworkMessage {
+  type: 'JOIN_LOBBY';
+  payload: {
+    lobbyId?: string;
+    playerName: string;
+  };
+}
+
+/**
+ * Message for chat messages
+ */
+export interface ChatMessage extends NetworkMessage {
+  type: 'CHAT_MESSAGE';
+  payload: {
+    message: string;
+    lobbyId: string;
+  };
+}
+
+/**
+ * Message for game events
+ */
+export interface EventMessage extends NetworkMessage {
+  type: 'EVENT';
+  payload: {
+    eventType: string;
+    timestamp: number;
+    [key: string]: any;
+  };
+}
+
+/**
+ * Message for error responses
+ */
+export interface ErrorMessage extends NetworkMessage {
+  type: 'ERROR';
+  payload: {
+    code: string;
+    message: string;
+    timestamp: number;
   };
 }
 
@@ -268,6 +396,12 @@ declare global {
     };
   }
 }
+
+// Import and re-export from shared constants
+import { MESSAGE_TYPES, EVENT_TYPES, ERROR_CODES } from '../constants';
+
+// Re-export everything from constants
+export { MESSAGE_TYPES, EVENT_TYPES, ERROR_CODES };
 
 // Export default empty object to make this a module
 export default {};

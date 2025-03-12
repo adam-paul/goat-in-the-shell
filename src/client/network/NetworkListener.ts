@@ -1,9 +1,24 @@
-import { GameStatus } from '../../shared/types';
+import { 
+  GameStatus, 
+  DeathType, 
+  InitialStateMessage, 
+  StateUpdateMessage,
+  EventMessage,
+  CommandResultMessage,
+  ErrorMessage,
+  MESSAGE_TYPES,
+  EVENT_TYPES
+} from '../../shared/types';
 
 // Define the store interface we need - avoids circular dependencies
 interface GameStore {
   setGameStatus: (status: GameStatus) => void;
-  setDeathType: (type: string) => void;
+  setDeathType: (type: DeathType) => void;
+  updateGameState: (state: any) => void;
+  setClientId: (id: string) => void;
+  clientId: string; // Add clientId property
+  setGameConfig: (config: any) => void;
+  setErrorMessage: (message: string) => void;
 }
 
 export class NetworkListener {
@@ -14,30 +29,29 @@ export class NetworkListener {
   }
   
   handleMessage(message: any) {
+    // Log the received message for debugging
+    console.log('Received message:', message);
+    
     // Determine message type and route to appropriate handler
     switch (message.type) {
-      case 'player_joined':
-        this.handlePlayerJoined();
+      case MESSAGE_TYPES.INITIAL_STATE:
+        this.handleInitialState(message as InitialStateMessage);
         break;
         
-      case 'start_game':
-        this.handleStartGame();
+      case MESSAGE_TYPES.STATE_UPDATE:
+        this.handleStateUpdate(message as StateUpdateMessage);
         break;
         
-      case 'player_state':
-        this.handlePlayerState(message.payload);
+      case MESSAGE_TYPES.EVENT:
+        this.handleEvent(message as EventMessage);
         break;
         
-      case 'command_result':
-        this.handleCommandResult(message.payload);
+      case MESSAGE_TYPES.COMMAND_RESULT:
+        this.handleCommandResult(message as CommandResultMessage);
         break;
         
-      case 'game_state':
-        this.handleGameState(message.payload);
-        break;
-        
-      case 'disconnect':
-        this.handleDisconnect();
+      case MESSAGE_TYPES.ERROR:
+        this.handleError(message as ErrorMessage);
         break;
         
       default:
@@ -46,54 +60,133 @@ export class NetworkListener {
     }
   }
 
-  private handlePlayerJoined() {
-    // Handle player joined event
-    console.log('Player joined the lobby');
+  private handleInitialState(message: InitialStateMessage) {
+    const { clientId, gameConfig } = message.payload;
+    
+    // Store client ID and game configuration
+    this.gameStore.setClientId(clientId);
+    this.gameStore.setGameConfig(gameConfig);
+    
+    console.log('Connection established with client ID:', clientId);
   }
   
-  private handleStartGame() {
-    // Game has started
-    this.gameStore.setGameStatus('select');
-  }
-  
-  private handlePlayerState(data: any) {
-    // Update player state in game by dispatching a custom event
-    const playerStateEvent = new CustomEvent('remote-player-update', {
-      detail: data
+  private handleStateUpdate(message: StateUpdateMessage) {
+    const { state } = message.payload;
+    
+    // Update the game state in the store
+    this.gameStore.updateGameState(state);
+    
+    // Update game status if provided
+    if (state.gameStatus) {
+      this.gameStore.setGameStatus(state.gameStatus);
+    }
+    
+    // Dispatch a custom event for the game renderer to update
+    const stateUpdateEvent = new CustomEvent('game-state-update', {
+      detail: state
     });
-    window.dispatchEvent(playerStateEvent);
+    window.dispatchEvent(stateUpdateEvent);
   }
   
-  private handleCommandResult(data: any) {
-    // Handle command results from the prompter
-    const commandData = data as {type?: string; x?: number; y?: number};
-    if (commandData.type && commandData.x !== undefined && commandData.y !== undefined) {
+  private handleEvent(message: EventMessage) {
+    const { eventType } = message.payload;
+    
+    switch (eventType) {
+      case EVENT_TYPES.PLAYER_JOINED:
+        console.log(`Player joined: ${message.payload.playerName}`);
+        break;
+        
+      case EVENT_TYPES.PLAYER_LEFT:
+        console.log(`Player left: ${message.payload.playerId}`);
+        break;
+        
+      case EVENT_TYPES.GAME_STARTED:
+        this.gameStore.setGameStatus('playing');
+        break;
+        
+      case EVENT_TYPES.ROUND_COMPLETE:
+        // Handle round completion
+        break;
+        
+      case EVENT_TYPES.PLAYER_DEATH:
+        if (message.payload.playerId === this.gameStore.clientId) {
+          this.gameStore.setGameStatus('gameover');
+          this.gameStore.setDeathType(message.payload.deathType as DeathType);
+        }
+        break;
+        
+      case EVENT_TYPES.ITEM_PLACED:
+        // Notify renderer to place the item
+        const event = new CustomEvent('place-live-item', {
+          detail: { 
+            type: message.payload.itemType, 
+            x: message.payload.position.x, 
+            y: message.payload.position.y,
+            properties: message.payload.properties
+          }
+        });
+        window.dispatchEvent(event);
+        break;
+        
+      default:
+        console.warn('Unknown event type:', eventType);
+    }
+  }
+  
+  private handleCommandResult(message: CommandResultMessage) {
+    const { success, response, type, x, y, parameter_modifications } = message.payload;
+    
+    // If command included an item placement
+    if (success && type && x !== undefined && y !== undefined) {
       // Notify renderer to place the item
       const event = new CustomEvent('place-live-item', {
         detail: { 
-          type: commandData.type, 
-          x: commandData.x, 
-          y: commandData.y 
+          type, 
+          x, 
+          y 
         }
       });
       window.dispatchEvent(event);
     }
-  }
-  
-  private handleGameState(data: any) {
-    // Update game state from server
-    if (data?.gameStatus) {
-      this.gameStore.setGameStatus(data.gameStatus);
-      
-      // If the status is 'gameover', set the death type
-      if (data.gameStatus === 'gameover' && data.deathType) {
-        this.gameStore.setDeathType(data.deathType);
-      }
+    
+    // If command included parameter modifications
+    if (parameter_modifications && parameter_modifications.length > 0) {
+      parameter_modifications.forEach(mod => {
+        const event = new CustomEvent('parameter-change', {
+          detail: {
+            key: mod.parameter,
+            normalizedValue: mod.normalized_value
+          }
+        });
+        window.dispatchEvent(event);
+      });
     }
+    
+    // Display command response
+    const responseEvent = new CustomEvent('command-response', {
+      detail: { success, response }
+    });
+    window.dispatchEvent(responseEvent);
   }
   
-  private handleDisconnect() {
-    // Handle disconnection
-    this.gameStore.setGameStatus('modeSelect');
+  private handleError(message: ErrorMessage) {
+    const { code, message: errorMessage } = message.payload;
+    
+    console.error(`Server error (${code}): ${errorMessage}`);
+    this.gameStore.setErrorMessage(`${errorMessage}`);
+    
+    // Handle specific error codes
+    switch (code) {
+      case 'UNAUTHORIZED':
+        // Handle authorization errors
+        break;
+        
+      case 'INVALID_STATE':
+        // Handle invalid game state errors
+        break;
+        
+      default:
+        // Generic error handling
+    }
   }
 }

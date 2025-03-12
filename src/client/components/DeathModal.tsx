@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { DeathModalProps } from '../shared/types';
+import { DeathModalProps } from '../../shared/types';
 
 const DeathModal: React.FC<DeathModalProps> = ({ deathType, onContinue }) => {
   // Define death-specific content

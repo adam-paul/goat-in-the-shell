@@ -8,35 +8,56 @@ import {
   PlayerRole 
 } from '../../shared/types';
 
-// Define the store state interface
-interface GameState {
+// Define the state interface (without actions)
+interface GameStateData {
   // Game state
   gameStatus: GameStatus;
-  setGameStatus: (status: GameStatus) => void;
   
   // Item placement state
   selectedItem: ItemType | null;
-  setSelectedItem: (item: ItemType | null) => void;
   placementConfirmed: boolean;
-  setPlacementConfirmed: (confirmed: boolean) => void;
   
   // Death handling
   deathType: DeathType;
-  setDeathType: (type: DeathType) => void;
   
   // Prompter UI state
   showPrompter: boolean;
-  togglePrompter: () => void;
   
   // Multiplayer state
   currentGameMode: GameMode;
-  setCurrentGameMode: (mode: GameMode) => void;
   lobbyCode: string;
-  setLobbyCode: (code: string) => void;
   playerRole: PlayerRole;
+  
+  // Network state
+  networkConnected: boolean;
+  errorMessage: string;
+  clientId: string;
+  
+  // Server state
+  gameConfig: any;
+  gameState: any;
+}
+
+// Define the complete store interface with actions
+interface GameState extends GameStateData {
+  // State setters
+  setGameStatus: (status: GameStatus) => void;
+  setSelectedItem: (item: ItemType | null) => void;
+  setPlacementConfirmed: (confirmed: boolean) => void;
+  setDeathType: (type: DeathType) => void;
+  togglePrompter: () => void;
+  setCurrentGameMode: (mode: GameMode) => void;
+  setLobbyCode: (code: string) => void;
   setPlayerRole: (role: PlayerRole) => void;
-  isConnected: boolean;
-  setIsConnected: (connected: boolean) => void;
+  
+  // Network state setters
+  setNetworkConnected: (connected: boolean) => void;
+  setErrorMessage: (message: string) => void;
+  setClientId: (id: string) => void;
+  
+  // Server state setters
+  setGameConfig: (config: any) => void;
+  updateGameState: (state: any) => void;
   
   // Game item placement helpers
   handleSelectItem: (item: ItemType) => void;
@@ -52,42 +73,51 @@ interface GameState {
 export const useGameStore = create<GameState>((set, get) => ({
   // Default game state
   gameStatus: 'tutorial',
-  setGameStatus: (status) => set({ gameStatus: status }),
-  
-  // Item placement state
   selectedItem: null,
-  setSelectedItem: (item) => set({ selectedItem: item }),
   placementConfirmed: false,
-  setPlacementConfirmed: (confirmed) => set({ placementConfirmed: confirmed }),
-  
-  // Death handling
   deathType: null,
-  setDeathType: (type) => set({ deathType: type }),
-  
-  // Prompter UI state
   showPrompter: false,
-  togglePrompter: () => set((state) => ({ showPrompter: !state.showPrompter })),
-  
-  // Multiplayer state
   currentGameMode: 'single_player',
-  setCurrentGameMode: (mode) => set({ currentGameMode: mode }),
   lobbyCode: '',
-  setLobbyCode: (code) => set({ lobbyCode: code }),
   playerRole: 'goat',
-  setPlayerRole: (role) => set({ playerRole: role }),
-  isConnected: false,
-  setIsConnected: (connected) => set({ isConnected: connected }),
+  
+  // Network state
+  networkConnected: false,
+  errorMessage: '',
+  clientId: '',
+  
+  // Server state
+  gameConfig: {},
+  gameState: {},
+  
+  // State setters
+  setGameStatus: (status) => set(() => ({ gameStatus: status })),
+  setSelectedItem: (item) => set(() => ({ selectedItem: item })),
+  setPlacementConfirmed: (confirmed) => set(() => ({ placementConfirmed: confirmed })),
+  setDeathType: (type) => set(() => ({ deathType: type })),
+  togglePrompter: () => set((state) => ({ showPrompter: !state.showPrompter })),
+  setCurrentGameMode: (mode) => set(() => ({ currentGameMode: mode })),
+  setLobbyCode: (code) => set(() => ({ lobbyCode: code })),
+  setPlayerRole: (role) => set(() => ({ playerRole: role })),
+  
+  // Network state setters
+  setNetworkConnected: (connected) => set(() => ({ networkConnected: connected })),
+  setErrorMessage: (message) => set(() => ({ errorMessage: message })),
+  setClientId: (id) => set(() => ({ clientId: id })),
+  
+  // Server state setters
+  setGameConfig: (config) => set(() => ({ gameConfig: config })),
+  updateGameState: (state) => set(() => ({ gameState: state })),
   
   // Game item placement helpers
-  handleSelectItem: (item: ItemType) => {
-    set({ 
+  handleSelectItem: (item) => {
+    set(() => ({ 
       selectedItem: item, 
       gameStatus: 'placement',
       placementConfirmed: false
-    });
+    }));
     
     // Notify the server about entering placement mode
-    // This will be implemented in NetworkProvider
     const event = new CustomEvent('enter-placement-mode', {
       detail: { type: item }
     });
@@ -95,35 +125,33 @@ export const useGameStore = create<GameState>((set, get) => ({
   },
   
   handleCancelPlacement: () => {
-    set({ 
+    set(() => ({ 
       selectedItem: null, 
       placementConfirmed: false,
       gameStatus: 'select' 
-    });
+    }));
     
     // Notify the server about exiting placement mode
-    // This will be implemented in NetworkProvider
     const event = new CustomEvent('exit-placement-mode', {
       detail: {}
     });
     window.dispatchEvent(event);
   },
   
-  handlePlaceItem: (x: number, y: number) => {
+  handlePlaceItem: (x, y) => {
     const state = get();
     
     if (!state.selectedItem || state.placementConfirmed) {
       return;
     }
     
-    set({ 
+    set(() => ({ 
       placementConfirmed: true,
       selectedItem: null,
       gameStatus: 'playing' 
-    });
+    }));
     
     // Notify the server to place the item
-    // This will be implemented in NetworkProvider
     const event = new CustomEvent('place-item', {
       detail: { 
         type: state.selectedItem, 
@@ -135,10 +163,9 @@ export const useGameStore = create<GameState>((set, get) => ({
   },
   
   handleContinueToNextRound: () => {
-    set({ deathType: null });
+    set(() => ({ deathType: null }));
     
     // Notify the server to continue to the next round
-    // This will be implemented in NetworkProvider
     const event = new CustomEvent('continue-to-next-round', {
       detail: {}
     });
@@ -150,25 +177,26 @@ export const useGameStore = create<GameState>((set, get) => ({
     const state = get();
     
     // If in multiplayer, disconnect from the server
-    if (state.currentGameMode === 'multiplayer' && state.isConnected) {
-      // This will be implemented in NetworkProvider
-      const event = new CustomEvent('disconnect-multiplayer', {
+    if (state.currentGameMode === 'multiplayer' && state.networkConnected) {
+      // This will trigger the NetworkProvider to disconnect
+      const event = new CustomEvent('disconnect-network', {
         detail: {}
       });
       window.dispatchEvent(event);
     }
     
-    set({
+    set(() => ({
       gameStatus: 'reset',
       selectedItem: null,
       placementConfirmed: false,
       deathType: null,
       currentGameMode: 'single_player',
-      isConnected: false
-    });
+      networkConnected: false,
+      errorMessage: '',
+      gameState: {}
+    }));
     
     // Reinitialize the game
-    // This will be implemented in GameRenderer
     const event = new CustomEvent('reset-game', {
       detail: {
         mode: 'single_player'
@@ -178,7 +206,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     
     // Go to mode selection after a short delay
     setTimeout(() => {
-      set({ gameStatus: 'modeSelect' });
+      set(() => ({ gameStatus: 'modeSelect' }));
     }, 1000);
   }
 }));

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { GameMode, GameModeSelectionProps } from '../shared/types';
+import { GameMode, GameModeSelectionProps } from '../../shared/types';
 
 const GameModeSelection: React.FC<GameModeSelectionProps> = ({ onSelectMode }) => {
   const [selectedMode, setSelectedMode] = useState<GameMode | null>(null);

@@ -1,6 +1,14 @@
 # Goat in the Shell
 
-A 2D platformer game built with React, TypeScript, and Phaser.js where you control a goat navigating through a challenging level while avoiding deadly darts. The game features a unique AI-powered command terminal for dynamic obstacle placement.
+A multiplayer platformer game with server-authoritative architecture where you control a goat navigating through challenging levels while avoiding deadly obstacles. The game features a unique AI-powered command terminal for dynamic obstacle placement.
+
+## Architecture Migration 
+
+The project has been refactored from a client-centric architecture to a server-authoritative multiplayer system:
+
+- **Client**: Handles rendering and input capture
+- **Server**: Runs game physics and logic using Matter.js
+- **WebSockets**: Real-time communication between client and server
 
 ## Concept
 
@@ -11,6 +19,7 @@ This game is a challenging 2D platformer where you:
 3. **Build the Level**: Place platforms and obstacles using direct selection or AI commands
 4. **Master Platforming**: Jump between platforms and navigate around obstacles
 5. **Progress Through Rounds**: Each round adds new challenges with a countdown timer
+6. **Play with Friends**: Connect with other players in multiplayer mode
 
 ## Environment Variables
 
@@ -28,17 +37,19 @@ This project requires environment variables for both the frontend and backend:
    OPENAI_API_KEY=your_openai_api_key
    ```
 
-3. These environment variables are automatically loaded by Vite and the FastAPI backend.
+3. These environment variables are automatically loaded by Vite and the backend.
 
 ## Current Features
 
 - Responsive platformer mechanics with goat character movement and jumping
+- Server-authoritative physics using Matter.js
 - Procedurally generated goat and level graphics
 - Multiple obstacles: dart traps, spikes, platforms, and gaps
 - AI-powered command terminal for dynamic obstacle placement
 - Round-based gameplay with countdown timer
 - Three death conditions: dart hit (tranquilized effect), spike contact, falling through gaps
 - Item placement system: platforms, spikes, oscillators, shields, dart walls
+- Multiplayer support with lobbies
 - Win and lose conditions with appropriate feedback
 - Interactive UI with modals for deaths, tutorials, and item selection
 
@@ -46,20 +57,48 @@ This project requires environment variables for both the frontend and backend:
 
 - React 19
 - TypeScript
-- Phaser 3 for game engine
+- Phaser 3 for client-side rendering
+- Matter.js for server-side physics
+- Express.js and WebSockets for server
 - Vite for build tool
-- Supabase for backend services
-- FastAPI for AI integration backend
 - OpenAI API (GPT-4o) for command processing
+
+## Project Structure
+
+```
+src/
+├── client/              # Client-side application code
+│   ├── rendering/       # Display and visualization systems
+│   ├── input/           # User input capture and processing
+│   ├── store/           # Client-side state management
+│   ├── components/      # React UI components
+│   └── network/         # Client-server communication
+├── server/              # Server-side code
+│   ├── physics/         # Authoritative physics engine (Matter.js)
+│   ├── logic/           # Game rules and mechanics
+│   ├── game-state/      # World state management
+│   └── network/         # Client communication
+└── shared/              # Code used by both client and server
+    ├── types/           # TypeScript type definitions
+    ├── constants/       # Shared configuration values
+    └── utils/           # Common utility functions
+api/                     # Python FastAPI for AI integration
+```
 
 ## Installation and Setup
 
 ```bash
-# Install frontend dependencies
+# Install dependencies
 npm install
 
-# Start development server
+# Run both client and server in development mode
+npm run dev:all
+
+# Run client only
 npm run dev
+
+# Run server only
+npm run server:dev
 
 # Build for production
 npm run build
@@ -67,7 +106,7 @@ npm run build
 # Run linting
 npm run lint
 
-# Start the API backend (from the api directory)
+# Start the AI API backend (from the api directory)
 cd api
 pip install -r requirements.txt
 uvicorn main:app --reload
@@ -81,14 +120,12 @@ uvicorn main:app --reload
 - **Item Selection Panel**: Select and place items manually
 - **Reset Button**: Restart the game after winning or losing
 
-## Project Structure
-
-- `/src/game/scenes`: Phaser game scenes with game logic
-- `/src/components`: React components including modals and controls
-- `/public/assets`: Game assets and resources
-- `/api`: FastAPI backend for AI command processing
-
 ## Game Mechanics
+
+### Server-Authoritative Physics
+- All game physics and state managed on server
+- Client-side prediction and reconciliation for smooth gameplay
+- Anti-cheat protection through server validation
 
 ### The Goat
 - Custom animated goat character with running and standing animations
@@ -109,13 +146,19 @@ uvicorn main:app --reload
 - Integration with GPT-4o for command processing
 - Real-time obstacle placement based on player position
 
+### Multiplayer
+- Join lobbies with friends
+- Synchronized gameplay across clients
+- Real-time updates and interactions
+
 ## Roadmap
 
-1. Add more types of obstacles (moving platforms, disappearing tiles)
-2. Implement multiple levels with different themes
-3. Add collectible items (carrots for health/score)
-4. Create power-ups (temporary dart immunity, double jump)
-5. Add a level editor for custom challenges
+1. Complete server-client integration
+2. Add more types of obstacles (moving platforms, disappearing tiles)
+3. Implement multiple levels with different themes
+4. Add collectible items (carrots for health/score)
+5. Create power-ups (temporary dart immunity, double jump)
+6. Add a level editor for custom challenges
 
 ## License
 

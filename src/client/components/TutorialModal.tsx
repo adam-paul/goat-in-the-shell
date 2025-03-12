@@ -1,5 +1,5 @@
 import React from 'react';
-import { TutorialModalProps } from '../shared/types';
+import { TutorialModalProps } from '../../shared/types';
 
 const TutorialModal: React.FC<TutorialModalProps> = ({ onStart }) => {
   return (
