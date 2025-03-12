@@ -9,8 +9,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "start": "vite preview --host 0.0.0.0 --port ${PORT:-3000}",
-    "server": "node --experimental-specifier-resolution=node --loader ts-node/esm src/server/index.ts",
-    "server:dev": "nodemon --experimental-specifier-resolution=node --loader ts-node/esm src/server/index.ts",
+    "server": "tsx src/server/index.ts",
+    "server:dev": "nodemon --watch src/server --watch src/shared -e ts,json --exec \"tsx src/server/index.ts\"",
     "dev:all": "concurrently \"npm run dev\" \"npm run server:dev\""
   },
   "dependencies": {
@@ -44,6 +44,7 @@
     "nodemon": "^3.1.0",
     "serve": "^14.2.4",
     "ts-node": "^10.9.2",
+    "tsx": "^4.19.3",
     "typescript": "~5.7.2",
     "typescript-eslint": "^8.24.1",
     "vite": "^6.2.0"

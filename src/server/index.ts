@@ -1,5 +1,5 @@
 import express from 'express';
-import http from 'http';
+import * as http from 'http';
 import { WebSocketServer } from 'ws';
 import cors from 'cors';
 import { v4 as uuidv4 } from 'uuid';

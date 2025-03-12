@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "outDir": "dist/server",
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": false,
+    "allowImportingTsExtensions": false
+  },
+  "include": ["src/server", "src/shared"],
+  "exclude": ["node_modules"]
+}
