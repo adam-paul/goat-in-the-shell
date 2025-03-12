@@ -32,6 +32,7 @@ interface GameStateData {
   networkConnected: boolean;
   errorMessage: string;
   clientId: string;
+  instanceId: string;
   
   // Server state
   gameConfig: any;
@@ -54,6 +55,7 @@ interface GameState extends GameStateData {
   setNetworkConnected: (connected: boolean) => void;
   setErrorMessage: (message: string) => void;
   setClientId: (id: string) => void;
+  setInstanceId: (id: string) => void;
   
   // Server state setters
   setGameConfig: (config: any) => void;
@@ -85,6 +87,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   networkConnected: false,
   errorMessage: '',
   clientId: '',
+  instanceId: '',
   
   // Server state
   gameConfig: {},
@@ -104,6 +107,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   setNetworkConnected: (connected) => set(() => ({ networkConnected: connected })),
   setErrorMessage: (message) => set(() => ({ errorMessage: message })),
   setClientId: (id) => set(() => ({ clientId: id })),
+  setInstanceId: (id) => set(() => ({ instanceId: id })),
   
   // Server state setters
   setGameConfig: (config) => set(() => ({ gameConfig: config })),
@@ -193,6 +197,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       currentGameMode: 'single_player',
       networkConnected: false,
       errorMessage: '',
+      instanceId: '',
       gameState: {}
     }));
     

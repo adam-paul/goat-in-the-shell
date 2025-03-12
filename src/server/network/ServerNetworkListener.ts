@@ -1,5 +1,5 @@
 import { WebSocket } from 'ws';
-import { GameStateManager } from "../game-state";
+import { GameStateManager, GameInstanceManager } from "../game-state";
 import { GameLogicProcessor } from "../logic";
 
 // Define message types
@@ -20,10 +20,16 @@ interface NetworkMessage {
 class ServerNetworkListener {
   private gameState: GameStateManager;
   private gameLogic: GameLogicProcessor;
+  private instanceManager: GameInstanceManager;
   
-  constructor(gameState: GameStateManager, gameLogic: GameLogicProcessor) {
+  constructor(
+    gameState: GameStateManager, 
+    gameLogic: GameLogicProcessor, 
+    instanceManager: GameInstanceManager
+  ) {
     this.gameState = gameState;
     this.gameLogic = gameLogic;
+    this.instanceManager = instanceManager;
   }
   
   /**
@@ -114,26 +120,41 @@ class ServerNetworkListener {
    * Handle player movement input
    */
   private handlePlayerInput(data: any, clientId: string): void {
+    // Get the game instance this player belongs to
+    const instance = this.instanceManager.getInstanceByPlayer(clientId);
+    if (!instance || !instance.isActive) {
+      console.warn(`Client ${clientId} not in an active game instance`);
+      return;
+    }
+    
     // Validate the input first
     if (!this.gameLogic.validatePlayerInput(data, clientId)) {
       console.warn(`Invalid player input from client ${clientId}`);
       return;
     }
     
-    // Apply the input to the game state
-    this.gameState.applyPlayerInput(data, clientId);
+    // Apply the input to the instance's game state
+    instance.state.applyPlayerInput(data, clientId);
   }
   
   /**
    * Handle item placement requests
    */
   private handlePlaceItem(data: any, clientId: string): void {
+    // Get the game instance this player belongs to
+    const instance = this.instanceManager.getInstanceByPlayer(clientId);
+    if (!instance) {
+      console.warn(`Client ${clientId} not associated with a game instance`);
+      return;
+    }
+    
     if (!this.gameLogic.validateItemPlacement(data, clientId)) {
       console.warn(`Invalid item placement from client ${clientId}`);
       return;
     }
     
-    this.gameState.placeItem(data, clientId);
+    // Place the item in the instance's game state
+    instance.state.placeItem(data, clientId);
   }
   
   /**
@@ -145,7 +166,18 @@ class ServerNetworkListener {
       return;
     }
     
+    // Get the game instance this player belongs to
+    const instance = this.instanceManager.getInstanceByPlayer(clientId);
+    if (!instance) {
+      console.warn(`Client ${clientId} not associated with a game instance`);
+      return;
+    }
+    
+    // Start both the game state and the instance
     this.gameState.startGame(clientId);
+    this.instanceManager.startInstance(instance.id);
+    
+    console.log(`Game instance ${instance.id} started by player ${clientId}`);
   }
   
   /**
@@ -153,7 +185,38 @@ class ServerNetworkListener {
    */
   private handleJoinLobby(data: any, clientId: string): void {
     const { lobbyId, playerName } = data;
+    
+    // First add the player to the lobby in the game state
     this.gameState.addPlayerToLobby(clientId, lobbyId, playerName);
+    
+    // Find the lobby
+    let targetLobbyId = lobbyId;
+    if (!targetLobbyId) {
+      // If no lobby ID provided, create a new one or use default
+      targetLobbyId = 'default';
+    }
+    
+    // Get or create a game instance for this lobby
+    let instance = this.instanceManager.getInstanceByLobby(targetLobbyId);
+    
+    // If instance doesn't exist, create it
+    if (!instance) {
+      // Get all players in the lobby
+      const lobby = Array.from(this.gameState['lobbies'].values())
+        .find(l => l.id === targetLobbyId);
+      
+      if (lobby) {
+        instance = this.instanceManager.createInstance(targetLobbyId, lobby.players);
+      } else {
+        // Fallback - create instance with just this player
+        instance = this.instanceManager.createInstance(targetLobbyId, [clientId]);
+      }
+    } else {
+      // Add player to existing instance
+      this.instanceManager.addPlayerToInstance(instance.id, clientId);
+    }
+    
+    console.log(`Player ${playerName} (${clientId}) joined lobby ${targetLobbyId}`);
   }
   
   /**
@@ -187,4 +250,5 @@ class ServerNetworkListener {
   }
 }
 
-export { ServerNetworkListener, NetworkMessage, MessageType };
+export { ServerNetworkListener };
+export type { NetworkMessage, MessageType };

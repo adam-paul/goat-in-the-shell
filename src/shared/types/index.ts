@@ -107,6 +107,22 @@ export interface CommandRequest {
 }
 
 // ==================
+// Game Instance Types
+// ==================
+
+/**
+ * Game instance information
+ */
+export interface GameInstanceInfo {
+  id: string;
+  lobbyId: string;
+  players: string[];
+  isActive: boolean;
+  startTime: number;
+  createdAt: number;
+}
+
+// ==================
 // Network Protocol Types
 // ==================
 
@@ -208,6 +224,7 @@ export interface InitialStateMessage extends NetworkMessage {
   payload: {
     clientId: string;
     timestamp: number;
+    instanceId?: string;
     gameConfig: {
       gravity: number;
       moveSpeed: number;
@@ -287,6 +304,7 @@ export interface JoinLobbyMessage extends NetworkMessage {
   payload: {
     lobbyId?: string;
     playerName: string;
+    instanceId?: string;
   };
 }
 

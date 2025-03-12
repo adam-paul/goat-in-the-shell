@@ -258,9 +258,15 @@ class GameStateManager {
   }
 }
 
+import { GameInstanceManager } from './GameInstanceManager';
+
 export function setupGameStateManager(): GameStateManager {
   return new GameStateManager();
 }
 
-export { GameStateManager };
+export function setupGameInstanceManager(): GameInstanceManager {
+  return new GameInstanceManager();
+}
+
+export { GameStateManager, GameInstanceManager };
 export type { Player, GameItem, Lobby };

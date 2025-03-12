@@ -1,16 +1,18 @@
 import { WebSocket } from 'ws';
+import { GameInstance } from '../game-state/GameInstanceManager';
 
 class ServerNetworkMessenger {
   /**
    * Send the initial game state to a new client
    */
-  sendInitialState(socket: WebSocket, clientId: string): void {
+  sendInitialState(socket: WebSocket, clientId: string, instanceId?: string): void {
     if (socket.readyState !== WebSocket.OPEN) return;
     
     const initialStateMessage = {
       type: 'INITIAL_STATE',
       data: {
         clientId,
+        instanceId,
         timestamp: Date.now(),
         gameConfig: {
           // Game configuration details would go here
@@ -22,6 +24,27 @@ class ServerNetworkMessenger {
     };
     
     socket.send(JSON.stringify(initialStateMessage));
+  }
+  
+  /**
+   * Send game instance details to a client
+   */
+  sendInstanceDetails(socket: WebSocket, instance: GameInstance): void {
+    if (socket.readyState !== WebSocket.OPEN) return;
+    
+    const instanceMessage = {
+      type: 'INSTANCE_DETAILS',
+      data: {
+        id: instance.id,
+        lobbyId: instance.lobbyId,
+        players: instance.players,
+        isActive: instance.isActive,
+        startTime: instance.startTime,
+        timestamp: Date.now()
+      }
+    };
+    
+    socket.send(JSON.stringify(instanceMessage));
   }
   
   /**

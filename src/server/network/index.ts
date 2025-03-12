@@ -1,5 +1,5 @@
 import { WebSocketServer, WebSocket } from 'ws';
-import { GameStateManager } from '../game-state';
+import { GameStateManager, GameInstanceManager } from '../game-state';
 import { GameLogicProcessor } from '../logic';
 import { ServerNetworkListener, NetworkMessage } from './ServerNetworkListener';
 import { ServerNetworkMessenger } from './ServerNetworkMessenger';
@@ -23,13 +23,14 @@ interface ClientConnection {
 function setupNetworking(
   wss: WebSocketServer,
   gameState: GameStateManager,
-  gameLogic: GameLogicProcessor
+  gameLogic: GameLogicProcessor,
+  gameInstanceManager: GameInstanceManager
 ): { 
   listener: ServerNetworkListener, 
   messenger: ServerNetworkMessenger 
 } {
   const clients = new Map<string, ClientConnection>();
-  const listener = new ServerNetworkListener(gameState, gameLogic);
+  const listener = new ServerNetworkListener(gameState, gameLogic, gameInstanceManager);
   const messenger = new ServerNetworkMessenger();
   
   // Set up ping interval to check for disconnected clients
@@ -89,4 +90,76 @@ function pingClients(
   });
 }
 
-export { setupNetworking, ServerNetworkListener, ServerNetworkMessenger, NetworkMessage };
+// Higher-level function that integrates with the game instance manager
+function setupServerNetworkManager(
+  wss: WebSocketServer,
+  gameState: GameStateManager,
+  gameLogic: GameLogicProcessor,
+  gameInstanceManager: GameInstanceManager
+) {
+  const clients = new Map<string, ClientConnection>();
+  const listener = new ServerNetworkListener(gameState, gameLogic, gameInstanceManager);
+  const messenger = new ServerNetworkMessenger();
+  
+  // Set up ping interval to check for disconnected clients
+  setInterval(() => pingClients(clients, listener), 30000);
+  
+  // Implement network manager functions
+  const handleNewConnection = (socket: WebSocket, clientId: string) => {
+    // Register the new client
+    clients.set(clientId, {
+      id: clientId,
+      socket,
+      isAlive: true,
+      lastMessageTime: Date.now()
+    });
+    
+    // Set up all socket event listeners
+    listener.setupSocketListeners(socket, clientId, clients);
+    
+    // Send initial game state to new client
+    messenger.sendInitialState(socket, clientId);
+  };
+  
+  const handleDisconnection = (clientId: string) => {
+    // Get the instance this player belongs to
+    const instance = gameInstanceManager.getInstanceByPlayer(clientId);
+    if (instance) {
+      // Remove player from instance
+      gameInstanceManager.removePlayer(clientId);
+      
+      // Notify remaining players in the instance
+      instance.players.forEach(playerId => {
+        const client = clients.get(playerId);
+        if (client) {
+          messenger.sendEvent(client.socket, 'PLAYER_LEFT', { playerId: clientId });
+        }
+      });
+    }
+    
+    // Remove client from tracking map
+    clients.delete(clientId);
+  };
+  
+  const broadcastToLobby = (lobbyId: string, message: any) => {
+    const instance = gameInstanceManager.getInstanceByLobby(lobbyId);
+    if (!instance) return;
+    
+    instance.players.forEach(playerId => {
+      const client = clients.get(playerId);
+      if (client && client.socket.readyState === WebSocket.OPEN) {
+        client.socket.send(JSON.stringify(message));
+      }
+    });
+  };
+  
+  return {
+    handleNewConnection,
+    handleDisconnection,
+    broadcastToLobby,
+    clients
+  };
+}
+
+export { setupNetworking, setupServerNetworkManager, ServerNetworkListener, ServerNetworkMessenger };
+export type { NetworkMessage };

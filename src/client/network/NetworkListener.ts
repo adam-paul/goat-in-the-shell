@@ -19,6 +19,7 @@ interface GameStore {
   clientId: string; // Add clientId property
   setGameConfig: (config: any) => void;
   setErrorMessage: (message: string) => void;
+  setInstanceId?: (id: string) => void; // Optional method to store game instance ID
 }
 
 export class NetworkListener {
@@ -54,6 +55,10 @@ export class NetworkListener {
         this.handleError(message as ErrorMessage);
         break;
         
+      case 'INSTANCE_DETAILS':
+        this.handleInstanceDetails(message);
+        break;
+        
       default:
         console.warn('Unknown message type:', message.type);
         break;
@@ -61,13 +66,40 @@ export class NetworkListener {
   }
 
   private handleInitialState(message: InitialStateMessage) {
-    const { clientId, gameConfig } = message.payload;
+    const { clientId, gameConfig, instanceId } = message.payload;
     
     // Store client ID and game configuration
     this.gameStore.setClientId(clientId);
     this.gameStore.setGameConfig(gameConfig);
     
+    // Store instance ID if provided and store supports it
+    if (instanceId && this.gameStore.setInstanceId) {
+      this.gameStore.setInstanceId(instanceId);
+    }
+    
     console.log('Connection established with client ID:', clientId);
+  }
+  
+  private handleInstanceDetails(message: any) {
+    const { id, lobbyId, players, isActive } = message.data;
+    
+    console.log(`Received game instance details: ID ${id}, lobby ${lobbyId}, active: ${isActive}`);
+    
+    // Store instance ID if store supports it
+    if (this.gameStore.setInstanceId) {
+      this.gameStore.setInstanceId(id);
+    }
+    
+    // Notify any components that need to know about instance details
+    const instanceEvent = new CustomEvent('game-instance-update', {
+      detail: { 
+        id, 
+        lobbyId, 
+        players, 
+        isActive 
+      }
+    });
+    window.dispatchEvent(instanceEvent);
   }
   
   private handleStateUpdate(message: StateUpdateMessage) {

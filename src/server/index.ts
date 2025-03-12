@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 import { setupServerNetworkManager } from './network';
 import { setupPhysicsEngine } from './physics';
-import { setupGameStateManager } from './game-state';
+import { setupGameStateManager, setupGameInstanceManager } from './game-state';
 import { setupGameLogicProcessor } from './logic';
 
 // Constants
@@ -34,9 +34,10 @@ const wss = new WebSocketServer({ server });
 
 // Game systems
 const gameState = setupGameStateManager();
+const gameInstanceManager = setupGameInstanceManager();
 const physics = setupPhysicsEngine(gameState);
 const gameLogic = setupGameLogicProcessor(gameState, physics);
-const networkManager = setupServerNetworkManager(wss, gameState, gameLogic);
+const networkManager = setupServerNetworkManager(wss, gameState, gameLogic, gameInstanceManager);
 
 // Connection handling
 wss.on('connection', (socket, _request) => {
@@ -51,10 +52,34 @@ wss.on('connection', (socket, _request) => {
   });
 });
 
+// Game update loop
+const TARGET_FPS = 60;
+const FRAME_TIME = 1000 / TARGET_FPS;
+let lastUpdateTime = Date.now();
+
+function gameLoop() {
+  const currentTime = Date.now();
+  const deltaTime = currentTime - lastUpdateTime;
+  
+  // Update all game instances
+  gameInstanceManager.updateInstances(deltaTime / 1000); // Convert to seconds
+  
+  // Schedule next update with timing adjustment to maintain target FPS
+  const elapsed = Date.now() - currentTime;
+  const delay = Math.max(0, FRAME_TIME - elapsed);
+  
+  setTimeout(gameLoop, delay);
+  
+  lastUpdateTime = currentTime;
+}
+
 // Start the server
 server.listen(PORT, () => {
   console.log(`🎮 Game server running at http://localhost:${PORT}`);
   console.log(`🔌 WebSocket server running at ws://localhost:${PORT}`);
+  
+  // Start game loop
+  gameLoop();
 });
 
 // Handle graceful shutdown
