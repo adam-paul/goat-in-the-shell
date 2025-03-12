@@ -40,15 +40,15 @@ src/
 │   ├── components/      # React UI components
 │   ├── assets/          # Game assets (sprites, sounds)
 │   └── network/         # Client-server communication
-│       ├── listener/    # Inbound message handling
-│       └── messenger/   # Outbound message transmission
+│       ├── listener     # Inbound message handling
+│       └── messenger    # Outbound message transmission
 ├── server/              # Server-side code
 │   ├── physics/         # Authoritative physics engine
 │   ├── logic/           # Game rules and mechanics
 │   ├── game-state/      # World state management
 │   └── network/         # Client communication
-│       ├── listener/    # Client message handling
-│       └── messenger/   # State updates to clients
+│       ├── listener     # Client message handling
+│       └── messenger    # State updates to clients
 └── shared/              # Code used by both client and server
     ├── types/           # TypeScript type definitions
     ├── constants/       # Shared configuration values
