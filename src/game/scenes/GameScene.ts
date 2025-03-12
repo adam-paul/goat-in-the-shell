@@ -37,7 +37,7 @@ export default class GameScene extends Phaser.Scene {
       console.log(`Game initialized: Multiplayer mode: ${this.multiplayerMode}, Role: ${this.playerRole}`);
     }
     
-    // Set up multiplayer event listeners regardless, so we can handle mode changes
+    // Set up multiplayer event listeners
     this.setupMultiplayerEventListeners();
   }
   private dartTimer!: Phaser.Time.TimerEvent;
@@ -82,197 +82,93 @@ export default class GameScene extends Phaser.Scene {
   private setupMultiplayerEventListeners(): void {
     console.log('Setting up multiplayer event listeners');
     
-    // Listen for game state updates from the other player
-    this.multiplayerService.on('game_state', (data: unknown) => {
-      const playerState = data as {
-        position?: { x: number, y: number },
-        velocity?: { x: number, y: number },
-        facingLeft?: boolean,
-        isOnGround?: boolean
-      };
+    // Define all event handlers in a map for cleaner registration
+    const multiplayerEventHandlers = {
+      'game_state': (data: unknown) => {
+        const playerState = data as {
+          position?: { x: number, y: number },
+          velocity?: { x: number, y: number },
+          facingLeft?: boolean,
+          isOnGround?: boolean
+        };
+        
+        // Store the remote player state
+        this.remotePlayerState = playerState;
+      },
       
-      // Store the remote player state
-      this.remotePlayerState = playerState;
-    });
-    
-    // Listen for command results from the prompter
-    this.multiplayerService.on('command_result', (data: unknown) => {
-      const result = data as {
-        success?: boolean,
-        response?: string,
-        parameter_modifications?: Array<{parameter: string, value: number}>,
-        item_placement?: {type: string, x: number, y: number}
-      };
+      'command_result': (data: unknown) => {
+        const result = data as {
+          success: boolean,
+          message: string,
+          command: string
+        };
+        
+        console.log(`Received command result: ${result.success ? 'SUCCESS' : 'FAILURE'} - ${result.message}`);
+        
+        // Dispatch a custom event for the React component to handle
+        window.dispatchEvent(new CustomEvent('command-result', {
+          detail: result
+        }));
+      },
       
-      console.log('Received command result:', result);
+      'game_event': (data: unknown) => {
+        const eventData = data as {
+          event_type: 'win' | 'playing' | 'reset' | 'gameover' | 'select' | 'placement',
+          death_type?: 'dart' | 'spike' | 'fall',
+          timestamp: number
+        };
+        
+        this.handleRemoteGameEvent(eventData);
+      },
       
-      // Process command results
-      if (result.success && result.item_placement) {
-        this.handleRemoteItemPlacement(
-          result.item_placement.type,
-          result.item_placement.x,
-          result.item_placement.y
-        );
-      }
-    });
-    
-    // Listen for game events from other players
-    this.multiplayerService.on('game_event', (data: unknown) => {
-      const eventData = data as {
-        event_type: 'win' | 'playing' | 'reset' | 'gameover' | 'select' | 'placement',
-        death_type?: 'dart' | 'spike' | 'fall',
-        timestamp: number
-      };
+      'item_placed': (data: unknown) => {
+        const itemData = data as {
+          type: string,
+          x: number,
+          y: number
+        };
+        
+        this.handleRemoteItemPlacement(itemData.type, itemData.x, itemData.y);
+      },
       
-      console.log('Received game event:', eventData);
-      
-      // Handle game events differently based on role
-      this.handleRemoteGameEvent(eventData);
-    });
-    
-    // Listen for item placed notification from other player
-    this.multiplayerService.on('item_placed', (data: unknown) => {
-      console.log('Received item_placed notification:', data);
-      
-      // Set flag that other player has placed their item
-      this.otherPlayerPlacedItem = true;
-      
-      // If we've already placed our item and we're waiting, start the countdown
-      if (this.waitingForOtherPlayer) {
-        console.log("Other player placed item, and we were waiting. Starting countdown now.");
-        this.waitingForOtherPlayer = false;
-        this.startRound();
-      } else {
-        console.log("Other player placed item first. We'll start countdown when we place ours.");
-        // Show a notification that other player is waiting
-        this.showWaitingMessage("Other player waiting for your item placement...");
-      }
-    });
-    
-    // Listen for countdown started from other player
-    this.multiplayerService.on('countdown_started', (data: unknown) => {
-      console.log('Received countdown_started notification:', data);
-      
-      // If we're in countdown already, ignore this
-      if (this.countdownText) {
-        console.log("Already in countdown, ignoring remote countdown start");
-        return;
-      }
-      
-      // Hide any waiting messages
-      this.hideWaitingMessage();
-      
-      // No need to check again since we already confirmed countdownText is undefined above
-      
-      // Create countdown text in the center of the screen
-      this.countdownText = this.add.text(
-        this.cameras.main.width / 2,
-        this.cameras.main.height / 2,
-        '3',
-        {
-          fontSize: '64px',
-          color: '#ffffff',
-          fontFamily: 'Arial',
-          fontStyle: 'bold',
-          stroke: '#000000',
-          strokeThickness: 6
+      'countdown_started': (data: unknown) => {
+        const countdownData = data as {
+          duration: number,
+          timestamp: number
+        };
+        
+        console.log(`Remote player started countdown: ${countdownData.duration}ms`);
+        
+        // Show countdown if we're not the one who started it
+        if (!this.countdownText) {
+          this.showCountdown(countdownData.duration);
         }
-      ).setOrigin(0.5).setScrollFactor(0);
-      
-      // Reset multiplayer flags
-      this.waitingForOtherPlayer = false;
-      this.otherPlayerPlacedItem = false;
-      
-      // Start countdown
-      let countdown = 3;
-      
-      // Create a timer event that fires every second
-      const countdownTimer = this.time.addEvent({
-        delay: 1000,
-        callback: () => {
-          countdown--;
-          if (countdown > 0) {
-            // Update countdown text
-            if (this.countdownText) {
-              this.countdownText.setText(countdown.toString());
-            }
-          } else {
-            // Countdown finished, start the game
-            if (this.countdownText) {
-              this.countdownText.destroy();
-              this.countdownText = undefined;
-            }
-            
-            // Resume physics to start the game
-            this.physics.resume();
-            this.gameStarted = true;
-            
-            // Ensure dart timer is active
-            if (this.dartTimer) {
-              this.dartTimer.remove();
-            }
-            
-            // Create a new dart timer with parameter-defined frequency
-            this.dartTimer = this.time.addEvent({
-              delay: this.dartFrequency,
-              callback: this.shootDarts,
-              callbackScope: this,
-              loop: true
-            });
-            console.log(`Dart timer started for this round with frequency ${this.dartFrequency}ms`);
-            
-            // Notify that the game is in playing state
-            this.notifyGameState('playing');
-            
-            // Stop the timer
-            countdownTimer.remove();
-          }
-        },
-        callbackScope: this,
-        repeat: 2
-      });
+      }
+    };
+    
+    // Register all multiplayer service event handlers
+    Object.entries(multiplayerEventHandlers).forEach(([event, handler]) => {
+      this.multiplayerService.on(event, handler);
     });
     
-    // Listen for remote-player-update from the React UI
-    window.addEventListener('remote-player-update', (event) => {
+    // Register window event listeners
+    window.addEventListener('remote-player-update', (event: Event) => {
       const customEvent = event as CustomEvent;
       this.remotePlayerState = customEvent.detail;
     });
     
-    // Listen for game-mode-config from the React UI
-    window.addEventListener('game-mode-config', (event) => {
+    window.addEventListener('game-mode-config', (event: Event) => {
       const customEvent = event as CustomEvent;
-      const configData = customEvent.detail;
+      const { mode, role } = customEvent.detail;
       
-      // Only update these values if the event has valid data
-      if (configData) {
-        // Save the previous values for logging
-        const prevMultiplayerMode = this.multiplayerMode;
-        const prevPlayerRole = this.playerRole;
-        
-        // Update the values
-        this.multiplayerMode = configData.mode === 'multiplayer';
-        this.playerRole = configData.playerRole || 'goat';
-        
-        console.log(`Game mode config received! 
-          - Multiplayer: ${this.multiplayerMode} (was: ${prevMultiplayerMode})
-          - Role: ${this.playerRole} (was: ${prevPlayerRole})
-          - Data received:`, configData);
-          
-        // Update the multiplayer status display if it exists
-        if (this.networkStatusText) {
-          this.updateMultiplayerStatus();
-        }
-        
-        // Reset multiplayer flags
-        this.waitingForOtherPlayer = false;
-        this.otherPlayerPlacedItem = false;
-        
-        // Log configuration to console
-        this.logMultiplayerConfiguration();
-      } else {
-        console.error('Received game-mode-config event with invalid data', customEvent);
-      }
+      this.multiplayerMode = mode === 'multiplayer';
+      this.playerRole = role || 'goat';
+      
+      console.log(`Game mode updated: ${this.multiplayerMode ? 'Multiplayer' : 'Single Player'}, Role: ${this.playerRole}`);
+      this.updateMultiplayerStatus();
+      
+      // Log detailed configuration for debugging
+      this.logMultiplayerConfiguration();
     });
   }
   
@@ -289,6 +185,75 @@ export default class GameScene extends Phaser.Scene {
       Is input focused: ${this.isCommandInputFocused}
       ==================================
     `);
+  }
+  
+  // Helper method to show countdown for game start
+  private showCountdown(duration: number = 3000): void {
+    // Create countdown text in the center of the screen
+    this.countdownText = this.add.text(
+      this.cameras.main.width / 2,
+      this.cameras.main.height / 2,
+      '3',
+      {
+        fontSize: '64px',
+        color: '#ffffff',
+        fontFamily: 'Arial',
+        fontStyle: 'bold',
+        stroke: '#000000',
+        strokeThickness: 6
+      }
+    ).setOrigin(0.5).setScrollFactor(0);
+    
+    // Start countdown
+    let countdown = 3;
+    
+    // Calculate delay based on duration (default 3000ms for 3 seconds)
+    const delayPerCount = Math.floor(duration / countdown);
+    
+    // Create a timer event that fires every second (or adjusted based on duration)
+    const countdownTimer = this.time.addEvent({
+      delay: delayPerCount,
+      callback: () => {
+        countdown--;
+        if (countdown > 0) {
+          // Update countdown text
+          if (this.countdownText) {
+            this.countdownText.setText(countdown.toString());
+          }
+        } else {
+          // Countdown finished, start the game
+          if (this.countdownText) {
+            this.countdownText.destroy();
+            this.countdownText = undefined;
+          }
+          
+          // Resume physics to start the game
+          this.physics.resume();
+          this.gameStarted = true;
+          
+          // Ensure dart timer is active
+          if (this.dartTimer) {
+            this.dartTimer.remove();
+          }
+          
+          // Create a new dart timer with parameter-defined frequency
+          this.dartTimer = this.time.addEvent({
+            delay: this.dartFrequency,
+            callback: this.shootDarts,
+            callbackScope: this,
+            loop: true
+          });
+          
+          // Notify that the game is in playing state
+          this.notifyGameState('playing');
+          
+          // Stop the timer
+          countdownTimer.remove();
+        }
+      },
+      callbackScope: this,
+      repeat: 2
+    });
   }
   
   // Handle game events from other players
@@ -695,14 +660,8 @@ export default class GameScene extends Phaser.Scene {
       fontStyle: 'bold'
     }).setOrigin(0.5);
 
-    // Create player (goat) at the start position
-    this.player = this.physics.add.sprite(this.PLAYER_START_X, this.PLAYER_START_Y, 'goat_standing');
-    
-    // Set up player physics with current gravity setting
-    this.player.setBounce(0.1);
-    // Allow player to fall through the bottom of the world
-    this.player.setCollideWorldBounds(false);
-    this.player.body.setGravityY(this.currentGravity); // Apply current gravity parameter
+    // Create player using the common setup method
+    this.setupPlayer(this.PLAYER_START_X, this.PLAYER_START_Y);
     
     // Immediately pause physics to prevent any movement during tutorial
     this.physics.pause();
@@ -1017,41 +976,23 @@ export default class GameScene extends Phaser.Scene {
   
   // Handle dart collision with player
   private hitByDart(
-    player: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Physics.Arcade.Body | Phaser.Physics.Arcade.StaticBody | Phaser.Tilemaps.Tile,
+    _player: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Physics.Arcade.Body | Phaser.Physics.Arcade.StaticBody | Phaser.Tilemaps.Tile,
     dart: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Physics.Arcade.Body | Phaser.Physics.Arcade.StaticBody | Phaser.Tilemaps.Tile
   ): void {
     if (this.gameWon || this.gameOver) return;
     
     // Type assertion to ensure we have the correct types
-    const playerSprite = player as Phaser.Types.Physics.Arcade.SpriteWithDynamicBody;
     const dartSprite = dart as Phaser.Physics.Arcade.Sprite;
     
     // Destroy the dart
     dartSprite.destroy();
     
-    // Set game over state
-    this.gameOver = true;
-    
-    // Stop player movement and inputs
-    playerSprite.setVelocity(0, 0);
-    playerSprite.body.moves = false; // Freeze the goat completely
-    
-    // Stop the dartTimer
-    this.dartTimer.remove();
-    
-    // Clear all darts
-    this.darts.clear(true, true);
-    
-    // Create tranquilized effect - tint the goat blue
-    playerSprite.setTint(0x0000ff);
-    
-    // Small camera shake effect
-    this.cameras.main.shake(500, 0.02);
-    
-    // Dispatch game over event with death type
-    this.notifyGameState('gameover', 'dart');
-    
-    // No longer show the in-game modal, let React handle it
+    // Use the consolidated death handler with dart-specific options
+    this.handlePlayerDeath('dart', {
+      applyTint: true,
+      tintColor: 0x0000ff, // Blue tint for tranquilizer dart
+      fadeOut: false
+    });
   }
   
   update(): void {
@@ -1936,9 +1877,12 @@ export default class GameScene extends Phaser.Scene {
     // Start countdown
     let countdown = 3;
     
-    // Create a timer event that fires every second
+    // Calculate delay based on duration (default 3000ms for 3 seconds)
+    const delayPerCount = Math.floor(3000 / countdown);
+    
+    // Create a timer event that fires every second (or adjusted based on duration)
     const countdownTimer = this.time.addEvent({
-      delay: 1000,
+      delay: delayPerCount,
       callback: () => {
         countdown--;
         if (countdown > 0) {
@@ -1969,7 +1913,6 @@ export default class GameScene extends Phaser.Scene {
             callbackScope: this,
             loop: true
           });
-          console.log(`Dart timer started for this round with frequency ${this.dartFrequency}ms`);
           
           // Notify that the game is in playing state
           this.notifyGameState('playing');
@@ -2072,20 +2015,16 @@ export default class GameScene extends Phaser.Scene {
   
   // Helper method to clean up modal elements
   private cleanupModalElements(): void {
-    console.log(`Cleaning up ${this.modalElements.length} modal elements`);
     this.modalElements.forEach(element => {
-      if (element && element.active) {
-        element.destroy();
-      }
+      element.destroy();
     });
     this.modalElements = [];
   }
   
-  // Helper method to recreate player if needed
-  private recreatePlayer(): void {
-    console.log('Recreating player');
-    // Create player (goat) at the start position
-    this.player = this.physics.add.sprite(this.PLAYER_START_X, this.PLAYER_START_Y, 'goat_standing');
+  // Helper method to set up the player with common configuration
+  private setupPlayer(x: number, y: number): void {
+    // Create player (goat) at the specified position
+    this.player = this.physics.add.sprite(x, y, 'goat_standing');
     
     // Set up player physics with current gravity setting
     this.player.setBounce(0.1);
@@ -2117,10 +2056,29 @@ export default class GameScene extends Phaser.Scene {
     this.player.setSize(28, 26);
     this.player.setOffset(10, 14);
     
-    // Set up collisions again
+    // Set up collisions with platforms and walls
     this.physics.add.collider(this.player, this.platforms);
     this.physics.add.collider(this.player, this.walls);
     
+    // Set up collision with darts
+    this.setupPlayerColliders();
+  }
+  
+  // Helper method to recreate player if needed
+  private recreatePlayer(): void {
+    console.log('Recreating player');
+    
+    // Destroy existing player if it exists
+    if (this.player) {
+      this.player.destroy();
+    }
+    
+    // Use the common setup method
+    this.setupPlayer(this.PLAYER_START_X, this.PLAYER_START_Y);
+  }
+  
+  // Set up all player colliders
+  private setupPlayerColliders(): void {
     // Recreate collision with darts
     this.physics.add.overlap(
       this.player, 
@@ -2210,23 +2168,13 @@ export default class GameScene extends Phaser.Scene {
     _platform: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Physics.Arcade.Body | Phaser.Physics.Arcade.StaticBody | Phaser.Tilemaps.Tile
   ): void {
     console.log('Player hit a dangerous platform');
-    if (this.gameOver) return; // Prevent multiple triggers
     
-    // Player hit a dangerous platform, game over for this round
-    this.gameOver = true;
-    this.player.setTint(0xff0000);
-    this.player.setVelocity(0, 0);
-    
-    // Stop the dartTimer
-    this.dartTimer.remove();
-    
-    // Clear all darts
-    this.darts.clear(true, true);
-    
-    // No longer show the in-game modal, let React handle it
-    
-    // Notify the React component that the game is over with death type
-    this.notifyGameState('gameover', 'spike');
+    // Use the consolidated death handler with spike-specific options
+    this.handlePlayerDeath('spike', {
+      applyTint: true,
+      tintColor: 0xff0000, // Red tint for spike death
+      fadeOut: false
+    });
   }
   
   // Utility method to communicate with the React component
@@ -2250,6 +2198,44 @@ export default class GameScene extends Phaser.Scene {
       });
     }
     console.log(`Game state updated: ${status}${deathType ? `, death type: ${deathType}` : ''}`);
+  }
+  
+  // Consolidated method for handling player death with different death types
+  private handlePlayerDeath(deathType: 'dart' | 'spike' | 'fall', options?: {
+    applyTint?: boolean,
+    tintColor?: number,
+    fadeOut?: boolean
+  }): void {
+    if (this.gameOver || this.gameWon) return; // Prevent multiple triggers
+    
+    // Common death handling
+    this.gameOver = true;
+    this.player.setVelocity(0, 0);
+    this.dartTimer.remove();
+    this.darts.clear(true, true);
+    
+    // Apply optional visual effects
+    if (options?.applyTint) {
+      this.player.setTint(options.tintColor || 0xff0000);
+    }
+    
+    if (options?.fadeOut) {
+      this.player.body.moves = false;
+      this.tweens.add({
+        targets: this.player,
+        alpha: 0,
+        y: '+=200',
+        duration: 1000,
+        ease: 'Power2'
+      });
+      this.cameras.main.shake(500, 0.02);
+    } else {
+      // Small camera shake for non-fadeout deaths
+      this.cameras.main.shake(300, 0.01);
+    }
+    
+    // Notify game state
+    this.notifyGameState('gameover', deathType);
   }
 
   // Create a particle effect when a dart is blocked by a shield
@@ -2380,36 +2366,11 @@ export default class GameScene extends Phaser.Scene {
     
     console.log('Player fell through a gap!');
     
-    // Type assertion to ensure we have the correct types
-    const playerSprite = _player as Phaser.Types.Physics.Arcade.SpriteWithDynamicBody;
-    
-    // Set game over state
-    this.gameOver = true;
-    
-    // Stop player movement and inputs
-    playerSprite.setVelocity(0, 0);
-    playerSprite.body.moves = false; // Freeze the goat completely
-    
-    // Stop the dartTimer
-    this.dartTimer.remove();
-    
-    // Clear all darts
-    this.darts.clear(true, true);
-    
-    // Create falling effect - fade out the goat
-    this.tweens.add({
-      targets: playerSprite,
-      alpha: 0,
-      y: '+=200',
-      duration: 1000,
-      ease: 'Power2'
+    // Use the consolidated death handler with fall-specific options
+    this.handlePlayerDeath('fall', {
+      applyTint: false,
+      fadeOut: true
     });
-    
-    // Small camera shake effect
-    this.cameras.main.shake(500, 0.02);
-    
-    // Dispatch game over event with death type
-    this.notifyGameState('gameover', 'fall');
   }
 
   // Add a new method to handle live item placement without restarting the level
