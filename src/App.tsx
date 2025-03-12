@@ -1,4 +1,3 @@
-// import { createClient } from '@supabase/supabase-js'
 import { useEffect, useState, useCallback, useRef } from 'react'
 import Phaser from 'phaser'
 import './App.css'
@@ -17,18 +16,6 @@ import {
   GameMode, 
   PlayerRole 
 } from './shared/types';
-
-// Initialize Supabase client
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || process.env.REACT_APP_SUPABASE_URL
-const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || process.env.REACT_APP_SUPABASE_ANON_KEY
-
-// Validate environment variables
-if (!supabaseUrl || !supabaseKey) {
-  console.error('Missing Supabase environment variables. Please check your .env file.')
-}
-
-// Create Supabase client but don't use it yet - will be used in future features
-// const supabase = createClient(supabaseUrl as string, supabaseKey as string)
 
 function App() {
   // Start with 'tutorial' state to show the tutorial modal first
@@ -77,11 +64,9 @@ function App() {
             setupMultiplayerEventListeners();
           } else {
             console.error('Failed to connect to lobby');
-            // TODO: Show error message
           }
         } catch (error) {
           console.error('Error connecting to lobby:', error);
-          // TODO: Show error message
         }
       } else {
         // Creating a new lobby
