@@ -78,6 +78,29 @@ class ServerNetworkMessenger {
   }
   
   /**
+   * Send a message to a specific client by ID
+   */
+  sendToClient(clients: Map<string, {id: string, socket: WebSocket}>, clientId: string, message: any): boolean {
+    const client = clients.get(clientId);
+    if (!client || client.socket.readyState !== WebSocket.OPEN) return false;
+    
+    client.socket.send(JSON.stringify(message));
+    return true;
+  }
+  
+  /**
+   * Broadcast a message to all connected clients
+   */
+  broadcastToAll(clients: Map<string, {id: string, socket: WebSocket}>, message: any): void {
+    const data = JSON.stringify(message);
+    clients.forEach(client => {
+      if (client.socket.readyState === WebSocket.OPEN) {
+        client.socket.send(data);
+      }
+    });
+  }
+  
+  /**
    * Prepare a game snapshot for efficient transmission
    * This could include delta compression or other optimizations
    */

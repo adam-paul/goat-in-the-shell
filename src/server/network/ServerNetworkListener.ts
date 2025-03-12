@@ -1,3 +1,4 @@
+import { WebSocket } from 'ws';
 import { GameStateManager } from "../game-state";
 import { GameLogicProcessor } from "../logic";
 
@@ -8,7 +9,8 @@ type MessageType =
   | 'START_GAME'
   | 'JOIN_LOBBY' 
   | 'CHAT_MESSAGE'
-  | 'AI_COMMAND';
+  | 'AI_COMMAND'
+  | 'PONG';
 
 interface NetworkMessage {
   type: MessageType;
@@ -22,6 +24,49 @@ class ServerNetworkListener {
   constructor(gameState: GameStateManager, gameLogic: GameLogicProcessor) {
     this.gameState = gameState;
     this.gameLogic = gameLogic;
+  }
+  
+  /**
+   * Set up all event listeners for a websocket connection
+   */
+  setupSocketListeners(socket: WebSocket, clientId: string, clients: Map<string, {id: string, socket: WebSocket, isAlive: boolean, lastMessageTime: number}>): void {
+    // Message event handler
+    socket.on('message', (data: Buffer) => {
+      // Update client tracking info
+      const client = clients.get(clientId);
+      if (!client) return;
+      
+      client.lastMessageTime = Date.now();
+      client.isAlive = true;
+      
+      // Process the message
+      try {
+        const message = JSON.parse(data.toString());
+        this.handleMessage(message, clientId);
+      } catch (err) {
+        console.error(`Error processing message from client ${clientId}:`, err);
+      }
+    });
+    
+    // Pong handler for connection health checks
+    socket.on('pong', () => {
+      const client = clients.get(clientId);
+      if (client) client.isAlive = true;
+    });
+    
+    // Close handler for disconnections
+    socket.on('close', () => {
+      this.handleClientDisconnect(clientId);
+      clients.delete(clientId);
+    });
+    
+    // Error handler
+    socket.on('error', (err) => {
+      console.error(`Socket error for client ${clientId}:`, err);
+      socket.terminate();
+      this.handleClientDisconnect(clientId);
+      clients.delete(clientId);
+    });
   }
   
   /**
@@ -53,6 +98,10 @@ class ServerNetworkListener {
         
       case 'AI_COMMAND':
         this.handleAICommand(message.data, clientId);
+        break;
+        
+      case 'PONG':
+        // Handled by the pong event listener
         break;
         
       default:
@@ -138,4 +187,4 @@ class ServerNetworkListener {
   }
 }
 
-export { ServerNetworkListener };
+export { ServerNetworkListener, NetworkMessage, MessageType };
