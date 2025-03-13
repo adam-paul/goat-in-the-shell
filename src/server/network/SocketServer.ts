@@ -501,7 +501,7 @@ class SocketServer {
   }
   
   /**
-   * Ping clients to check for disconnections
+   * Check clients for connection status
    */
   private pingClients() {
     const now = Date.now();
@@ -520,43 +520,12 @@ class SocketServer {
         return;
       }
       
-      // Check if client hasn't responded to previous ping
-      if (!client.isAlive) {
-        console.log(`SERVER: Client ${clientId} ping timeout. Terminating connection.`);
-        client.socket.terminate();
-        this.handleDisconnect(clientId, 1006, 'Ping timeout');
-        return;
-      }
-      
       // Check if client has been inactive for too long (5 minutes)
       if (now - client.lastMessageTime > 5 * 60 * 1000) {
         console.log(`SERVER: Client ${clientId} inactive for too long. Terminating connection.`);
         client.socket.terminate();
         this.handleDisconnect(clientId, 1006, 'Inactivity timeout');
         return;
-      }
-      
-      // Mark as not alive until we get pong response
-      client.isAlive = false;
-      
-      // Send WebSocket ping (protocol level)
-      try {
-        client.socket.ping();
-      } catch (err) {
-        console.error(`SERVER: Error sending WebSocket ping to client ${clientId}:`, err);
-      }
-      
-      // Also send application ping message
-      try {
-        console.log(`SERVER: Sending ping to client ${clientId}`);
-        client.socket.send(JSON.stringify({ 
-          type: MESSAGE_TYPES.PING,
-          timestamp: now
-        }));
-      } catch (err) {
-        console.error(`SERVER: Failed to send ping to client ${clientId}:`, err);
-        client.socket.terminate();
-        this.handleDisconnect(clientId, 1006, 'Failed to send ping');
       }
     });
   }

@@ -56,18 +56,21 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
     const ws = new WebSocket(serverUrl);
     socketRef.current = ws;
     
+    // Set up ping interval for keeping the connection alive
+    let pingInterval: NodeJS.Timeout | null = null;
+    
     // Basic connection handlers
     ws.onopen = () => {
       console.log('SOCKET: WebSocket connection established');
       setConnected(true);
       
-      // Send an initial ping after connection
-      setTimeout(() => {
+      // Start ping interval to keep connection alive
+      pingInterval = setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) {
-          console.log('SOCKET: Sending initial ping');
+          console.log('SOCKET: Sending ping');
           ws.send(JSON.stringify({ type: MESSAGE_TYPES.PING, timestamp: Date.now() }));
         }
-      }, 1000);
+      }, 30000); // Send ping every 30 seconds
     };
     
     ws.onclose = (event) => {
@@ -78,6 +81,11 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
       });
       setConnected(false);
       socketRef.current = null;
+      
+      // Clear ping interval when connection closes
+      if (pingInterval) {
+        clearInterval(pingInterval);
+      }
     };
     
     ws.onerror = (error) => {
@@ -91,6 +99,13 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
     return () => {
       console.log('SOCKET: Cleaning up WebSocket connection');
       socketEvents.destroy();
+      
+      // Clear ping interval
+      if (pingInterval) {
+        clearInterval(pingInterval);
+      }
+      
+      // Close websocket
       if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
         ws.close();
       }

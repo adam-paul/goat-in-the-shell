@@ -22,17 +22,6 @@ class SocketEvents {
         const message = JSON.parse(event.data) as NetworkMessage;
         console.log('SOCKET EVENTS: Received message:', message);
         
-        // Handle ping messages automatically
-        if (message.type === MESSAGE_TYPES.PING) {
-          console.log('SOCKET EVENTS: Received ping, sending pong');
-          if (this.socket?.readyState === WebSocket.OPEN) {
-            this.socket.send(JSON.stringify({ 
-              type: MESSAGE_TYPES.PONG, 
-              timestamp: Date.now() 
-            }));
-          }
-        }
-        
         // Process event handlers
         this.processMessage(message);
       } catch (error) {
