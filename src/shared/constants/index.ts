@@ -84,7 +84,8 @@ export const MESSAGE_TYPES = {
   EVENT: 'EVENT',
   ERROR: 'ERROR',
   PING: 'PING',
-  PONG: 'PONG'
+  PONG: 'PONG',
+  REQUEST_INITIAL_STATE: 'REQUEST_INITIAL_STATE'
 };
 
 // Event types

@@ -14,6 +14,7 @@ export interface SocketContextType {
   sendStartGame: () => boolean;
   sendChatMessage: (message: string, lobbyId: string) => boolean;
   sendAICommand: (command: string) => boolean;
+  requestInitialState: () => boolean;
 }
 
 // Create the context with default values
@@ -26,7 +27,8 @@ const SocketContext = createContext<SocketContextType>({
   sendPlaceItem: () => false,
   sendStartGame: () => false,
   sendChatMessage: () => false,
-  sendAICommand: () => false
+  sendAICommand: () => false,
+  requestInitialState: () => false
 });
 
 // Hook to use socket throughout the app
@@ -186,6 +188,12 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
     return sendMessage(MESSAGE_TYPES.AI_COMMAND, { command });
   };
   
+  // Request initial game state from server
+  const requestInitialState = () => {
+    console.log('SOCKET: Requesting initial game state');
+    return sendMessage(MESSAGE_TYPES.REQUEST_INITIAL_STATE);
+  };
+  
   return (
     <SocketContext.Provider value={{
       connected,
@@ -196,7 +204,8 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
       sendPlaceItem,
       sendStartGame,
       sendChatMessage,
-      sendAICommand
+      sendAICommand,
+      requestInitialState
     }}>
       {children}
     </SocketContext.Provider>
