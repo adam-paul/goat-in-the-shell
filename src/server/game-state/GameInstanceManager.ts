@@ -10,6 +10,8 @@ export interface GameInstance {
   isActive: boolean;
   startTime: number;
   lastUpdateTime: number;
+  updatePlayerActivity: (playerId: string) => void; // Method to update player activity
+  playerLastActivity?: Record<string, number>; // Track player activity
 }
 
 export class GameInstanceManager {
@@ -42,6 +44,11 @@ export class GameInstanceManager {
     
     // Create the new game instance
     const instanceId = uuidv4();
+    
+    // Track player activity
+    const playerLastActivity: Record<string, number> = {};
+    players.forEach(id => playerLastActivity[id] = Date.now());
+    
     const instance: GameInstance = {
       id: instanceId,
       lobbyId,
@@ -49,7 +56,15 @@ export class GameInstanceManager {
       players: [...players],
       isActive: false,
       startTime: 0,
-      lastUpdateTime: Date.now()
+      lastUpdateTime: Date.now(),
+      playerLastActivity,
+      
+      // Method to update player activity timestamp
+      updatePlayerActivity(playerId: string): void {
+        if (this.playerLastActivity && this.players.includes(playerId)) {
+          this.playerLastActivity[playerId] = Date.now();
+        }
+      }
     };
     
     // Store the instance

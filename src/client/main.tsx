@@ -2,7 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App'
-import { NetworkProvider } from './network/NetworkProvider'
+import { SocketProvider } from './network'
 
 // Font loading detection
 const root = document.documentElement;
@@ -26,9 +26,9 @@ Promise.race([fontPromise, timeout])
     // Render the app
     createRoot(document.getElementById('root')!).render(
       <StrictMode>
-        <NetworkProvider>
+        <SocketProvider>
           <App />
-        </NetworkProvider>
+        </SocketProvider>
       </StrictMode>,
     );
   });

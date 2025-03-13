@@ -3,6 +3,14 @@ import { useState, useRef, useEffect } from 'react';
 import { AIService } from '../services/AIService';
 import { ParameterManager } from '../game/parameters';
 import { ParameterModification, PrompterControlsProps } from '../../shared/types';
+import { gameEvents } from '../utils/GameEventBus';
+
+// Type for player position
+interface PlayerPosition {
+  x: number;
+  y: number;
+  isOnGround?: boolean;
+}
 
 const PrompterControls: React.FC<PrompterControlsProps> = ({ onPlaceObstacle, disabled }) => {
   const [promptText, setPromptText] = useState<string>('');
@@ -19,24 +27,28 @@ const PrompterControls: React.FC<PrompterControlsProps> = ({ onPlaceObstacle, di
     }
   }, []);
   
-  // Notify Phaser game when input focus changes
+  // Notify game when input focus changes
   useEffect(() => {
-    // Dispatch events to notify the game about input focus state
-    const notifyFocusState = (focused: boolean) => {
-      window.dispatchEvent(new CustomEvent('command-input-focus', {
-        detail: { focused }
-      }));
-    };
+    // Notify game about input focus state
+    gameEvents.publish('COMMAND_INPUT_FOCUS', { focused: isFocused });
     
-    // Initial notification
-    notifyFocusState(isFocused);
-    
-    // Effect cleanup
     return () => {
       // Make sure to notify that input is not focused when component unmounts
-      notifyFocusState(false);
+      gameEvents.publish('COMMAND_INPUT_FOCUS', { focused: false });
     };
   }, [isFocused]);
+  
+  // Helper to get player position
+  const getPlayerPosition = (): PlayerPosition => {
+    // Request player position from game via event bus
+    // In a real implementation, this would be stored in the store or retrieved via a specific request
+    // For now we'll use default values if not available
+    return {
+      x: window.playerPosition?.x || 800,
+      y: window.playerPosition?.y || 400,
+      isOnGround: window.playerPosition?.isOnGround || false
+    };
+  };
   
   // Process known obstacle commands locally
   const processLocalCommand = (command: string): { handled: boolean; response?: string } => {
@@ -45,52 +57,45 @@ const PrompterControls: React.FC<PrompterControlsProps> = ({ onPlaceObstacle, di
     
     // Handle known obstacle commands locally
     if (normalizedCommand === 'darts' || normalizedCommand === 'dart wall') {
-      const playerX = window.playerPosition?.x || 800;
-      const playerY = window.playerPosition?.y || 400;
-      onPlaceObstacle('dart_wall', playerX + 300, playerY);
+      const playerPosition = getPlayerPosition();
+      onPlaceObstacle('dart_wall', playerPosition.x + 300, playerPosition.y);
       return { 
         handled: true, 
-        response: `Creating dart wall ahead of player at position (${playerX + 300}, ${playerY})` 
+        response: `Creating dart wall ahead of player at position (${playerPosition.x + 300}, ${playerPosition.y})` 
       };
     } 
     else if (normalizedCommand === 'platform') {
-      const playerX = window.playerPosition?.x || 800;
-      const playerY = window.playerPosition?.y || 400;
-      const isOnGround = window.playerPosition?.isOnGround || false;
-      const yOffset = isOnGround ? 0 : 100;
-      onPlaceObstacle('platform', playerX + 200, playerY + yOffset);
+      const playerPosition = getPlayerPosition();
+      const yOffset = playerPosition.isOnGround ? 0 : 100;
+      onPlaceObstacle('platform', playerPosition.x + 200, playerPosition.y + yOffset);
       return { 
         handled: true, 
-        response: `Creating platform ahead of player at position (${playerX + 200}, ${playerY + yOffset})` 
+        response: `Creating platform ahead of player at position (${playerPosition.x + 200}, ${playerPosition.y + yOffset})` 
       };
     }
     else if (normalizedCommand === 'spike') {
-      const playerX = window.playerPosition?.x || 800;
-      const playerY = window.playerPosition?.y || 400;
-      const isOnGround = window.playerPosition?.isOnGround || false;
-      const yOffset = isOnGround ? 0 : 100;
-      onPlaceObstacle('spike', playerX + 250, playerY + yOffset);
+      const playerPosition = getPlayerPosition();
+      const yOffset = playerPosition.isOnGround ? 0 : 100;
+      onPlaceObstacle('spike', playerPosition.x + 250, playerPosition.y + yOffset);
       return { 
         handled: true, 
-        response: `Creating spike ahead of player at position (${playerX + 250}, ${playerY + yOffset})` 
+        response: `Creating spike ahead of player at position (${playerPosition.x + 250}, ${playerPosition.y + yOffset})` 
       };
     }
     else if (normalizedCommand === 'oscillator') {
-      const playerX = window.playerPosition?.x || 800;
-      const playerY = window.playerPosition?.y || 400;
-      onPlaceObstacle('oscillator', playerX + 200, playerY - 50);
+      const playerPosition = getPlayerPosition();
+      onPlaceObstacle('oscillator', playerPosition.x + 200, playerPosition.y - 50);
       return { 
         handled: true, 
-        response: `Creating moving platform ahead of player at position (${playerX + 200}, ${playerY - 50})` 
+        response: `Creating moving platform ahead of player at position (${playerPosition.x + 200}, ${playerPosition.y - 50})` 
       };
     }
     else if (normalizedCommand === 'shield') {
-      const playerX = window.playerPosition?.x || 800;
-      const playerY = window.playerPosition?.y || 400;
-      onPlaceObstacle('shield', playerX + 150, playerY);
+      const playerPosition = getPlayerPosition();
+      onPlaceObstacle('shield', playerPosition.x + 150, playerPosition.y);
       return { 
         handled: true, 
-        response: `Creating shield ahead of player at position (${playerX + 150}, ${playerY})` 
+        response: `Creating shield ahead of player at position (${playerPosition.x + 150}, ${playerPosition.y})` 
       };
     }
     else if (normalizedCommand === 'help') {
