@@ -207,14 +207,30 @@ export default class BasicGameScene extends Phaser.Scene {
     
     // Also try to get items from a deeply nested state structure
     try {
-      if (gameState.state && gameState.state.items && Array.isArray(gameState.state.items)) {
-        gameState.state.items.forEach((item: any) => {
-          if (item.position) {
-            this.placeItem(item.type, item.position.x, item.position.y);
-          } else if (item.x !== undefined && item.y !== undefined) {
-            this.placeItem(item.type, item.x, item.y);
-          }
-        });
+      // Handle different state structures that might come from server
+      const possibleItemSources = [
+        gameState.state?.items,
+        gameState.gameState?.items,
+        gameState.state?.gameState?.items,
+        gameState.state?.obstacles,
+        gameState.payload?.state?.items,
+        gameState.payload?.items
+      ];
+      
+      // Process each possible source
+      for (const items of possibleItemSources) {
+        if (items && Array.isArray(items)) {
+          items.forEach((item: any) => {
+            // Handle different item formats
+            const itemType = item.type;
+            const x = item.position?.x ?? item.x;
+            const y = item.position?.y ?? item.y;
+            
+            if (itemType && x !== undefined && y !== undefined) {
+              this.placeItem(itemType, x, y);
+            }
+          });
+        }
       }
     } catch (error) {
       console.error('Error processing nested game state items:', error);
@@ -296,17 +312,7 @@ export default class BasicGameScene extends Phaser.Scene {
         );
         break;
       }
-      case 'dart_wall': {
-        this.itemPreview = this.add.rectangle(
-          worldPoint.x, 
-          worldPoint.y, 
-          20, 
-          100, 
-          0xff0000, 
-          0.5
-        );
-        break;
-      }
+      // Removed dart_wall case since it's not a placeable item
       default: {
         // Default fallback preview
         this.itemPreview = this.add.rectangle(
@@ -389,29 +395,7 @@ export default class BasicGameScene extends Phaser.Scene {
           gameObject = this.add.rectangle(x, y, 50, 100, 0xFF9800);
           break;
         }
-        case 'dart_wall': {
-          // Create a red vertical wall that shoots darts
-          const dartWall = this.add.rectangle(x, y, 20, 100, 0xff0000);
-          
-          // Add some visual detail to make it look like a "dart wall"
-          // Create with appropriate parameters for Phaser 3 Grid
-          const dartPattern = this.add.grid(
-            x, y,      // position
-            20, 100,   // width, height
-            10, 10,    // cellWidth, cellHeight
-            0xdd0000   // fillColor
-          );
-          
-          // Group them together
-          const container = this.add.container(x, y, [dartWall, dartPattern]);
-          container.setSize(20, 100);
-          
-          // Move the container back to the target position (containers reset position)
-          container.setPosition(x, y);
-          
-          gameObject = container;
-          break;
-        }
+        // Removed dart_wall case since it's not a placeable item
         default: {
           // Default yellow rectangle as a fallback
           gameObject = this.add.rectangle(x, y, 50, 50, 0xffaa00);
