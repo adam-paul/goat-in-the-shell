@@ -8,6 +8,16 @@
 - NEVER, EVER, FOR ANY REASON, IN ANY CIRCUMSTANCE WHATSOEVER, ARE YOU EVER ALLOWED TO IMPLEMENT ANYTHING EVEN RESEMBLING "FALLBACK" "SAFETY" CODE
 - IF YOU EVER IMPLEMENT FALLBACK MECHANISMS OR FALLBACK CODE WITHOUT BEING ASKED, MY CODEBASE WILL BE DELETED, I WILL LOSE MY JOB AND POSSIBLY BE KILLED 
 
+## Debugging Best Practices
+- **Look for Simple Causes First**: Before adding complex error handling or extensive logging, look for simple structural issues like React StrictMode double mounting or component lifecycle problems
+- **Avoid Overengineering Solutions**: Don't add layers of error handling, timeouts, and safeguards when a simple root cause might exist
+- **Understand the Full Code Flow**: Follow the complete execution path, including framework behavior like React's rendering lifecycle
+- **Pattern Recognition**: Learn to recognize telltale patterns - like repeated initialize/cleanup sequences that might indicate framework behavior rather than code issues
+- **Don't Get Lost in Details**: Stepping back to look at the big picture can reveal obvious issues that detailed investigation might miss
+- **Question Framework Defaults**: Development tools like React StrictMode can cause unexpected behaviors that don't manifest in production
+- **Test Simple Hypotheses**: When facing mysterious issues, test simple solutions (like removing StrictMode) before complex ones
+- **Watch for Double Mount Issues**: Especially with hooks that establish connections or subscriptions, React's development behaviors can cause problems
+
 ## Commands
 - `npm run dev` - Start client development server
 - `npm run server:dev` - Start server development with auto-reload
