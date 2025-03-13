@@ -39,8 +39,8 @@ class SocketServer {
     // Initialize WebSocket server
     this.setupWebSocketServer();
     
-    // Start ping interval
-    this.startPingInterval(5000);
+    // Start health check interval (every 30 seconds)
+    this.startPingInterval(30000);
   }
   
   /**
@@ -505,11 +505,11 @@ class SocketServer {
    */
   private pingClients() {
     const now = Date.now();
-    console.log(`SERVER: Running health check on ${this.clients.size} connected clients...`);
+    // Only log when there's a potential issue
+    const clientCount = this.clients.size;
     
-    if (this.clients.size === 0) {
-      console.log('SERVER: No clients connected.');
-      return;
+    if (clientCount === 0) {
+      return; // No logging needed when no clients are connected
     }
     
     this.clients.forEach((client, clientId) => {
