@@ -82,7 +82,9 @@ export const MESSAGE_TYPES = {
   AI_COMMAND: 'AI_COMMAND',
   COMMAND_RESULT: 'COMMAND_RESULT',
   EVENT: 'EVENT',
-  ERROR: 'ERROR'
+  ERROR: 'ERROR',
+  PING: 'PING',
+  PONG: 'PONG'
 };
 
 // Event types

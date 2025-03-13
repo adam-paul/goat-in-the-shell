@@ -3,6 +3,8 @@ import React, { useEffect, useRef } from 'react';
 import Phaser from 'phaser';
 import { GameMode, PlayerRole } from '../../shared/types';
 import { useGameStore } from '../store/gameStore';
+import { useSocket } from '../network';
+import { gameEvents } from '../utils/GameEventBus';
 
 interface GameRendererProps {
   containerClassName?: string;
@@ -18,6 +20,9 @@ const GameRenderer: React.FC<GameRendererProps> = ({ containerClassName = 'game-
     playerRole,
     handlePlaceItem 
   } = useGameStore();
+  
+  // Get socket
+  const socket = useSocket();
 
   // Initialize Phaser game
   const initGame = (gameMode: GameMode, role: PlayerRole) => {
@@ -37,7 +42,6 @@ const GameRenderer: React.FC<GameRendererProps> = ({ containerClassName = 'game-
     }
     
     // Create a new Phaser game configuration
-    // Note: In the new architecture, physics will be handled by the server
     const config: Phaser.Types.Core.GameConfig = {
       type: Phaser.CANVAS,
       width: 1200,
@@ -46,8 +50,6 @@ const GameRenderer: React.FC<GameRendererProps> = ({ containerClassName = 'game-
         mode: Phaser.Scale.FIT,
         autoCenter: Phaser.Scale.CENTER_BOTH
       },
-      // We'll create a new renderer-only scene
-      // The scene will connect to the server for state updates
       scene: [], // Will be replaced with our client-side scene
       parent: containerClassName,
       canvas: document.createElement('canvas'),
@@ -62,7 +64,6 @@ const GameRenderer: React.FC<GameRendererProps> = ({ containerClassName = 'game-
         mouse: true,
         touch: true
       },
-      // No physics in client-side renderer
       physics: {
         default: 'arcade',
         arcade: {
@@ -75,20 +76,13 @@ const GameRenderer: React.FC<GameRendererProps> = ({ containerClassName = 'game-
     // Create the game instance
     const newGame = new Phaser.Game(config);
     gameInstanceRef.current = newGame;
-    
-    // Pass configuration to the scene
-    // This will be handled differently in the new architecture
-    // using direct state instead of events
-    setTimeout(() => {
-      const event = new CustomEvent('game-mode-config', {
-        detail: {
-          mode: gameMode,
-          playerRole: role,
-          isMultiplayer: gameMode === 'multiplayer'
-        }
-      });
-      window.dispatchEvent(event);
-    }, 500);
+
+    // Notify the game scene about the current mode and role
+    gameEvents.publish('GAME_CONFIG', {
+      mode: gameMode,
+      playerRole: role,
+      isMultiplayer: gameMode === 'multiplayer'
+    });
   };
 
   // Initialize the game on component mount
@@ -104,37 +98,49 @@ const GameRenderer: React.FC<GameRendererProps> = ({ containerClassName = 'game-
     };
   }, []);
   
-  // Listen for placement confirmations from the renderer
+  // Set up event bus for placement confirmations
   useEffect(() => {
-    const handleConfirmPlacement = (event: Event) => {
-      const placementEvent = event as CustomEvent<{type: string, x: number, y: number}>;
-      
-      // Use the store's handlePlaceItem to update state and notify the server
-      handlePlaceItem(placementEvent.detail.x, placementEvent.detail.y);
+    const placementHandler = (data: { type: string, x: number, y: number }) => {
+      handlePlaceItem(data.x, data.y);
     };
     
-    window.addEventListener('confirm-placement', handleConfirmPlacement);
+    const unsubPlacement = gameEvents.subscribe<{ type: string, x: number, y: number }>(
+      'PLACEMENT_CONFIRMED', 
+      placementHandler
+    );
     
-    return () => {
-      window.removeEventListener('confirm-placement', handleConfirmPlacement);
-    };
+    return () => unsubPlacement();
   }, [handlePlaceItem]);
   
-  // Listen for reset game events
+  // Set up event bus for game resets
   useEffect(() => {
-    const handleResetGame = (event: Event) => {
-      const resetEvent = event as CustomEvent<{mode: GameMode}>;
-      
-      // Reinitialize the game with the specified mode
-      initGame(resetEvent.detail.mode, playerRole);
+    const resetHandler = (data: { mode: GameMode }) => {
+      initGame(data.mode, playerRole);
     };
     
-    window.addEventListener('reset-game', handleResetGame);
+    const unsubReset = gameEvents.subscribe<{ mode: GameMode }>(
+      'GAME_RESET', 
+      resetHandler
+    );
     
-    return () => {
-      window.removeEventListener('reset-game', handleResetGame);
-    };
+    return () => unsubReset();
   }, [playerRole]);
+  
+  // Set up event bus for player input
+  useEffect(() => {
+    const playerInputHandler = (input: unknown) => {
+      if (socket.connected) {
+        socket.sendPlayerInput(input);
+      }
+    };
+    
+    const unsubPlayerInput = gameEvents.subscribe(
+      'PLAYER_INPUT', 
+      playerInputHandler
+    );
+    
+    return () => unsubPlayerInput();
+  }, [socket]);
 
   // Return the container for Phaser to render into
   return <div id={containerClassName} />;

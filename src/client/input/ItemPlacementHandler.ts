@@ -1,17 +1,16 @@
 // src/client/input/ItemPlacementHandler.ts
 import { useEffect } from 'react';
-import { useNetwork } from '../network/NetworkProvider';
+import { useSocket } from '../network';
 import { useGameStore } from '../store/gameStore';
 import { ItemType } from '../../shared/types';
-
-// Position type is already handled by the game engine
+import { gameEvents } from '../utils/GameEventBus';
 
 /**
  * Custom hook to handle item placement interactions
  */
 export const useItemPlacementHandler = () => {
-  // Get network and game store for state/communication
-  const network = useNetwork();
+  // Get socket and game store for state/communication
+  const socket = useSocket();
   const { 
     gameStatus,
     selectedItem,
@@ -26,49 +25,21 @@ export const useItemPlacementHandler = () => {
       return;
     }
     
-    // Event handler for placement confirmation
-    const handlePlaceItemAtPosition = (x: number, y: number) => {
-      // Validate the placement position
-      if (isValidPlacementPosition(selectedItem, x, y)) {
-        // Place the item using the store action
-        handlePlaceItem(x, y);
-        
-        // If in multiplayer, send placement to server
-        if (network.isConnected()) {
-          network.sendMessage('place_item', {
-            type: selectedItem,
-            x,
-            y
-          });
-        }
+    // Publish placement mode start event
+    gameEvents.publish('PLACEMENT_MODE_START', { itemType: selectedItem });
+    
+    // Event handler for placement confirmation from Phaser
+    const handlePlaceItemAtPosition = (data: {x: number, y: number, type: string}) => {
+      const { x, y } = data;
+      
+      // Place the item using the store action
+      handlePlaceItem(x, y);
+      
+      // If in multiplayer, send placement to server
+      if (socket.connected) {
+        socket.sendPlaceItem(selectedItem, x, y);
       }
     };
-    
-    // Mouse click handler for placement
-    const handleClick = (event: MouseEvent) => {
-      // Get the canvas element
-      const canvas = document.querySelector('canvas');
-      if (!canvas) return;
-      
-      // Get canvas bounds
-      const rect = canvas.getBoundingClientRect();
-      
-      // Convert click position to game coordinates
-      const scaleX = canvas.width / rect.width;
-      const scaleY = canvas.height / rect.height;
-      
-      const x = (event.clientX - rect.left) * scaleX;
-      const y = (event.clientY - rect.top) * scaleY;
-      
-      // Place the item at the position
-      handlePlaceItemAtPosition(x, y);
-    };
-    
-    // Add click listener to the canvas
-    const canvas = document.querySelector('canvas');
-    if (canvas) {
-      canvas.addEventListener('click', handleClick);
-    }
     
     // Handle escape key to cancel placement
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -77,36 +48,25 @@ export const useItemPlacementHandler = () => {
       }
     };
     
+    // Subscribe to placement confirmations from Phaser
+    const unsubscribePlacement = gameEvents.subscribe<{x: number, y: number, type: string}>(
+      'PLACEMENT_CONFIRMED', 
+      handlePlaceItemAtPosition
+    );
+    
     // Add escape key listener
     window.addEventListener('keydown', handleKeyDown);
     
     // Clean up listeners
     return () => {
-      if (canvas) {
-        canvas.removeEventListener('click', handleClick);
-      }
+      unsubscribePlacement();
       window.removeEventListener('keydown', handleKeyDown);
+      // Notify Phaser that we're exiting placement mode
+      gameEvents.publish('PLACEMENT_MODE_END', {});
     };
-  }, [gameStatus, selectedItem, handlePlaceItem, handleCancelPlacement, network]);
+  }, [gameStatus, selectedItem, handlePlaceItem, handleCancelPlacement, socket]);
   
   return null;
 };
-
-/**
- * Validates if the placement position is valid for the item type
- */
-function isValidPlacementPosition(_itemType: ItemType, x: number, y: number): boolean {
-  // This is a simplified version - the server will do full validation
-  // In the real implementation, we'd check against game world boundaries
-  // and existing objects
-  
-  // Basic boundary check (assuming 1200x800 game world)
-  if (x < 0 || x > 1200 || y < 0 || y > 800) {
-    return false;
-  }
-  
-  // For now, always return true - server will validate
-  return true;
-}
 
 export default useItemPlacementHandler;

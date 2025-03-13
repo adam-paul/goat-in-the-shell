@@ -1,6 +1,7 @@
 // src/client/input/InputHandler.ts
-import { useEffect } from 'react';
-import { useNetwork } from '../network/NetworkProvider';
+import { useEffect, useState } from 'react';
+import { useSocket } from '../network';
+import { gameEvents } from '../utils/GameEventBus';
 
 // Input state definition
 interface InputState {
@@ -25,12 +26,29 @@ const initialInputState: InputState = {
  * @returns Object with active input state
  */
 export const useInputHandler = () => {
-  // Get the network context for sending input to server
-  const network = useNetwork();
+  // Get the socket context for sending input to server
+  const socket = useSocket();
+  
+  // Track command input focus so we don't control the game when typing
+  const [isCommandInputFocused, setIsCommandInputFocused] = useState(false);
+  
+  // Subscribe to command input focus state
+  useEffect(() => {
+    const handleCommandInputFocus = (data: { focused: boolean }) => {
+      setIsCommandInputFocused(data.focused);
+    };
+    
+    const unsubscribe = gameEvents.subscribe<{ focused: boolean }>(
+      'COMMAND_INPUT_FOCUS', 
+      handleCommandInputFocus
+    );
+    
+    return unsubscribe;
+  }, []);
   
   // Set up keyboard event listeners
   useEffect(() => {
-    let inputState: InputState = { ...initialInputState };
+    const inputState: InputState = { ...initialInputState };
     
     // Track last sent state to reduce network traffic
     let lastSentState: InputState = { ...initialInputState };
@@ -49,10 +67,8 @@ export const useInputHandler = () => {
     // Function to send input state to server
     const sendInputToServer = () => {
       if (hasInputChanged()) {
-        // Send input state to server if connected
-        network.sendMessage('client_state', {
-          input: { ...inputState }
-        });
+        // Publish to game event bus for Phaser
+        gameEvents.publish('PLAYER_INPUT', inputState);
         
         // Update last sent state
         lastSentState = { ...inputState };
@@ -64,6 +80,9 @@ export const useInputHandler = () => {
     
     // Keydown event handler
     const handleKeyDown = (event: KeyboardEvent) => {
+      // Skip if command input is focused
+      if (isCommandInputFocused) return;
+      
       // Prevent default browser actions for game keys
       if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space', 
            'KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(event.code)) {
@@ -93,15 +112,15 @@ export const useInputHandler = () => {
           break;
       }
       
-      // Only dispatch event if we're connected
-      if (network.isConnected()) {
-        // Send input state to server immediately on keydown
-        sendInputToServer();
-      }
+      // Send input state immediately on keydown
+      sendInputToServer();
     };
     
     // Keyup event handler
     const handleKeyUp = (event: KeyboardEvent) => {
+      // Skip if command input is focused
+      if (isCommandInputFocused) return;
+      
       // Update input state based on key released
       switch (event.code) {
         case 'ArrowLeft':
@@ -125,11 +144,8 @@ export const useInputHandler = () => {
           break;
       }
       
-      // Only dispatch event if we're connected
-      if (network.isConnected()) {
-        // Send input state to server immediately on keyup
-        sendInputToServer();
-      }
+      // Send input state immediately on keyup
+      sendInputToServer();
     };
     
     // Add event listeners
@@ -142,7 +158,7 @@ export const useInputHandler = () => {
       window.removeEventListener('keyup', handleKeyUp);
       clearInterval(intervalId);
     };
-  }, [network]);
+  }, [isCommandInputFocused]);
   
   return null;
 };

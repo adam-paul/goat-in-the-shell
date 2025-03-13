@@ -132,6 +132,7 @@ export interface GameInstanceInfo {
 export interface NetworkMessage {
   type: string;
   payload?: any;
+  data?: any;  // Support both payload and data formats
   timestamp?: number;
 }
 

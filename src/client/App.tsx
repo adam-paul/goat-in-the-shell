@@ -5,11 +5,11 @@ import './App.css';
 // Import components from new structure
 import GameRenderer from './rendering/GameRenderer';
 import { useGameStore } from './store/gameStore';
-import { useNetwork } from './network/NetworkProvider';
+import { useSocket } from './network'; // Updated import
 import useInputHandler from './input/InputHandler';
 import useItemPlacementHandler from './input/ItemPlacementHandler';
 
-// Import components from the new component structure
+// Import components from the component structure
 import DeathModal from './components/DeathModal';
 import ItemSelectionPanel from './components/ItemSelectionPanel';
 import TutorialModal from './components/TutorialModal';
@@ -35,7 +35,7 @@ function App() {
   } = useGameStore();
   
   // Use network context for multiplayer functionality
-  const network = useNetwork();
+  const socket = useSocket();
   
   // Use our custom hooks for input handling
   useInputHandler();
@@ -64,7 +64,7 @@ function App() {
         setPlayerRole('goat'); // Player who joins is the goat by default
         
         try {
-          const connected = await network.connect(joinLobbyCode, 'goat');
+          const connected = await socket.connect(joinLobbyCode, 'goat');
           if (connected) {
             setGameStatus('lobby');
           }
@@ -79,7 +79,7 @@ function App() {
         setPlayerRole('prompter'); // Player who creates is the prompter by default
         
         try {
-          const connected = await network.connect(generatedCode, 'prompter');
+          const connected = await socket.connect(generatedCode, 'prompter');
           if (connected) {
             setGameStatus('lobby');
           }
@@ -88,23 +88,19 @@ function App() {
         }
       }
     }
-  }, [network]);
+  }, [socket]);
 
   // Handle lobby cancel
   const handleCancelLobby = useCallback(() => {
-    network.disconnect();
+    socket.disconnect();
     useGameStore.getState().setGameStatus('modeSelect');
-  }, [network]);
+  }, [socket]);
 
   // Handle placing obstacles from the prompter
   const handlePlaceObstacle = useCallback((type: string, x: number, y: number) => {
     // In multiplayer mode, send the command to other players via network
-    if (currentGameMode === 'multiplayer' && network.isConnected()) {
-      network.sendMessage('command', {
-        type,
-        x,
-        y
-      });
+    if (currentGameMode === 'multiplayer') {
+      socket.sendPlaceItem(type, x, y);
     }
     
     // Notify the game renderer to place the item without restarting the level
@@ -112,7 +108,7 @@ function App() {
       detail: { type, x, y }
     });
     window.dispatchEvent(event);
-  }, [currentGameMode, network]);
+  }, [currentGameMode, socket]);
 
   // Get placement info helper function
   const getPlacementInfo = (item: any) => {
@@ -254,19 +250,15 @@ function App() {
         />
       )}
       
-      {/* Multiplayer status indicator */}
-      {currentGameMode === 'multiplayer' && gameStatus !== 'modeSelect' && gameStatus !== 'lobby' && (
-        <div className={`multiplayer-status ${network.isConnected() ? 'status-connected' : 'status-disconnected'}`}>
-          <div className="status-indicator">
-            <span className={`status-dot ${network.isConnected() ? 'dot-connected' : 'dot-disconnected'}`}></span>
-            <span style={{ fontWeight: 'bold' }}>
-              {network.isConnected() ? 'Connected' : 'Disconnected'}
-            </span>
-          </div>
-          <div>Role: <span className="player-role">{playerRole === 'goat' ? 'Escape Goat' : 'Shell Commander'}</span></div>
-          <div>Lobby: <span className="lobby-code">{lobbyCode}</span></div>
+      {/* WebSocket status indicator - always visible */}
+      <div className={`multiplayer-status ${socket.connected ? 'status-connected' : 'status-disconnected'}`}>
+        <div className="status-indicator">
+          <span className={`status-dot ${socket.connected ? 'dot-connected' : 'dot-disconnected'}`}></span>
+          <span style={{ fontWeight: 'bold' }}>
+            WebSocket: {socket.connected ? 'Connected' : 'Disconnected'}
+          </span>
         </div>
-      )}
+      </div>
       
       {/* Restart button and prompter toggle always visible below the game */}
       <div className="game-controls">
@@ -289,6 +281,7 @@ function App() {
             {showPrompter ? 'Hide Command Terminal' : 'Show Command Terminal'}
           </button>
         )}
+        
       </div>
       
       <footer className="game-footer">
