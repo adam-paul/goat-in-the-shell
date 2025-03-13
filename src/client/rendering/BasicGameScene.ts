@@ -226,11 +226,99 @@ export default class BasicGameScene extends Phaser.Scene {
     this.itemPlacementMode = true;
     this.itemToPlace = itemType;
     
-    // Create item preview
-    this.itemPreview = this.add.rectangle(0, 0, 100, 20, 0x0088ff, 0.5);
+    // Create item preview based on the selected item type
+    this.createItemPreview(itemType);
     
     // Update preview position on mouse move
     this.input.on('pointermove', this.updateItemPreview, this);
+  }
+  
+  private createItemPreview(itemType: string): void {
+    // Remove existing preview if there is one
+    if (this.itemPreview) {
+      this.itemPreview.destroy();
+      this.itemPreview = undefined;
+    }
+    
+    // Get initial position
+    const pointer = this.input.activePointer;
+    const worldPoint = pointer ? 
+      this.cameras.main.getWorldPoint(pointer.x, pointer.y) : 
+      { x: 400, y: 300 };
+    
+    console.log(`Creating item preview for ${itemType}`);
+    
+    // Create different previews based on item type
+    switch(itemType) {
+      case 'platform': {
+        this.itemPreview = this.add.rectangle(
+          worldPoint.x, 
+          worldPoint.y, 
+          100, 
+          20, 
+          0x00ff00, 
+          0.5
+        );
+        break;
+      }
+      case 'spike': {
+        // Create a rectangle for spike preview
+        this.itemPreview = this.add.rectangle(
+          worldPoint.x,
+          worldPoint.y,
+          100,
+          20,
+          0xff0000,
+          0.5
+        );
+        break;
+      }
+      case 'moving':
+      case 'oscillator': {
+        this.itemPreview = this.add.rectangle(
+          worldPoint.x, 
+          worldPoint.y, 
+          100, 
+          20, 
+          0x0000ff, 
+          0.5
+        );
+        break;
+      }
+      case 'shield': {
+        this.itemPreview = this.add.rectangle(
+          worldPoint.x, 
+          worldPoint.y, 
+          50, 
+          100, 
+          0xFF9800, 
+          0.5
+        );
+        break;
+      }
+      case 'dart_wall': {
+        this.itemPreview = this.add.rectangle(
+          worldPoint.x, 
+          worldPoint.y, 
+          20, 
+          100, 
+          0xff0000, 
+          0.5
+        );
+        break;
+      }
+      default: {
+        // Default fallback preview
+        this.itemPreview = this.add.rectangle(
+          worldPoint.x, 
+          worldPoint.y, 
+          50, 
+          50, 
+          0xffff00, 
+          0.5
+        );
+      }
+    }
   }
   
   private updateItemPreview(pointer: Phaser.Input.Pointer): void {
@@ -262,29 +350,70 @@ export default class BasicGameScene extends Phaser.Scene {
     try {
       switch(type) {
         case 'platform': {
+          // Create a platform from the platform texture
           gameObject = this.platforms.create(x, y, 'platform')
             .setScale(2, 0.5)
             .refreshBody();
           break;
         }
         case 'spike': {
-          gameObject = this.add.triangle(x, y, 0, 20, 10, 0, 20, 20, 0xff0000);
+          // Create a rectangle for spike
+          const spike = this.add.rectangle(
+            x, y,
+            100, 20,
+            0xff0000
+          );
+          gameObject = spike;
           break;
         }
         case 'moving':
         case 'oscillator': {
-          gameObject = this.add.rectangle(x, y, 100, 20, 0x00ffff);
+          // Create a blue rectangle for moving platforms
+          const movingPlatform = this.add.rectangle(x, y, 100, 20, 0x0000ff);
+          
+          // Add oscillation animation
+          this.tweens.add({
+            targets: movingPlatform,
+            x: x + 100,   // Move horizontally 
+            duration: 2000,
+            yoyo: true,
+            repeat: -1,
+            ease: 'Sine.easeInOut'
+          });
+          
+          gameObject = movingPlatform;
           break;
         }
         case 'shield': {
-          gameObject = this.add.rectangle(x, y, 50, 100, 0x8800ff);
+          // Create an orange shield rectangle
+          gameObject = this.add.rectangle(x, y, 50, 100, 0xFF9800);
           break;
         }
         case 'dart_wall': {
-          gameObject = this.add.rectangle(x, y, 20, 100, 0xff0000);
+          // Create a red vertical wall that shoots darts
+          const dartWall = this.add.rectangle(x, y, 20, 100, 0xff0000);
+          
+          // Add some visual detail to make it look like a "dart wall"
+          // Create with appropriate parameters for Phaser 3 Grid
+          const dartPattern = this.add.grid(
+            x, y,      // position
+            20, 100,   // width, height
+            10, 10,    // cellWidth, cellHeight
+            0xdd0000   // fillColor
+          );
+          
+          // Group them together
+          const container = this.add.container(x, y, [dartWall, dartPattern]);
+          container.setSize(20, 100);
+          
+          // Move the container back to the target position (containers reset position)
+          container.setPosition(x, y);
+          
+          gameObject = container;
           break;
         }
         default: {
+          // Default yellow rectangle as a fallback
           gameObject = this.add.rectangle(x, y, 50, 50, 0xffaa00);
         }
       }
