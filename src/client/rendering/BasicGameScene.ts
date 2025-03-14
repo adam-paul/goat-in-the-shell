@@ -13,6 +13,14 @@ export default class BasicGameScene extends Phaser.Scene {
   private endPoint!: Phaser.GameObjects.Rectangle;
   private placedItems: Array<{type: string, x: number, y: number, gameObject: Phaser.GameObjects.GameObject}> = [];
   
+  // Custom physics groups for placed items
+  private customStaticGroups?: {
+    spikes: Phaser.Physics.Arcade.StaticGroup;
+    shields: Phaser.Physics.Arcade.StaticGroup;
+    oscillators: Phaser.Physics.Arcade.StaticGroup;
+    dartWalls: Phaser.Physics.Arcade.StaticGroup;
+  };
+  
   // Preview for item placement
   private itemPreview?: Phaser.GameObjects.Rectangle;
   private itemPlacementMode: boolean = false;
@@ -956,6 +964,33 @@ export default class BasicGameScene extends Phaser.Scene {
     try {
       // Get tilt parameter for items that can be tilted
       const tilt = getParameterValue('tilt');
+
+      // Create a custom static physics group for each item type if needed
+      if (!this.customStaticGroups) {
+        this.customStaticGroups = {
+          spikes: this.physics.add.staticGroup(),
+          shields: this.physics.add.staticGroup(),
+          oscillators: this.physics.add.staticGroup(),
+          dartWalls: this.physics.add.staticGroup()
+        };
+        
+        // Add colliders with the player for these groups if goatSprite exists
+        if (this.goatSprite) {
+          const sprite = this.goatSprite.getSprite();
+          
+          // Add collision with shields (blocks movement)
+          this.physics.add.collider(sprite, this.customStaticGroups.shields);
+          
+          // Add collision with spikes (causes death)
+          this.physics.add.collider(sprite, this.customStaticGroups.spikes, this.handleSpikeCollision, undefined, this);
+          
+          // Add collision with oscillators (platforms that move)
+          this.physics.add.collider(sprite, this.customStaticGroups.oscillators);
+          
+          // Add collision with dart walls
+          this.physics.add.collider(sprite, this.customStaticGroups.dartWalls);
+        }
+      }
       
       switch(type) {
         case 'platform': {
@@ -987,9 +1022,8 @@ export default class BasicGameScene extends Phaser.Scene {
           
           // Create a dangerous platform that looks similar to regular platforms (identical to original)
           try {
-            const dangerousPlatform = this.physics.add.sprite(x, y, 'dangerous_platform');
-            dangerousPlatform.setImmovable(true);
-            (dangerousPlatform.body as Phaser.Physics.Arcade.Body).allowGravity = false;
+            // Create using the spikes group to ensure collisions
+            const dangerousPlatform = this.customStaticGroups.spikes.create(x, y, 'dangerous_platform') as Phaser.Physics.Arcade.Sprite;
             
             // Scale according to parameters (just as in original)
             const widthScale = width / 100; // Default texture width is 100
@@ -1002,23 +1036,32 @@ export default class BasicGameScene extends Phaser.Scene {
               dangerousPlatform.refreshBody();
             }
             
-            // Note: In original, there was a collision handler for player death, but
-            // we're just handling visuals in this scene
-            
             gameObject = dangerousPlatform;
             console.log(`Dangerous platform created with width=${width}, height=${height}, tilt=${tilt}`);
           } catch (error) {
             console.error('Error creating spike:', error);
-            // Fallback to a simple rectangle if sprite creation fails (just like original)
+            // Fallback to a simple rectangle if sprite creation fails but still add to physics
+            const width = getParameterValue('spike_width');
+            const height = getParameterValue('spike_height');
+            
+            // Create a physics-enabled rectangle
+            const spikeBody = this.customStaticGroups.spikes.create(x, y, 'dangerous_platform') as Phaser.Physics.Arcade.Sprite;
+            spikeBody.setVisible(false); // Hide the sprite
+            spikeBody.setDisplaySize(width, height); // Set collision size
+            spikeBody.refreshBody();
+            
+            // Create visual rectangle without physics
             const spike = this.add.rectangle(x, y, width, height, 0xff0000);
             
-            // Apply tilt to the fallback rectangle
+            // Apply tilt to both
             if (tilt !== 0) {
               spike.setRotation(Phaser.Math.DegToRad(tilt));
+              spikeBody.setRotation(Phaser.Math.DegToRad(tilt));
+              spikeBody.refreshBody();
             }
             
-            gameObject = spike;
-            console.log('Fallback dangerous platform created');
+            gameObject = spike; // Store the visual part
+            console.log('Fallback dangerous platform created with physics body');
           }
           break;
         }
@@ -1030,10 +1073,8 @@ export default class BasicGameScene extends Phaser.Scene {
           const distance = getParameterValue('oscillator_distance');
           
           try {
-            // Create oscillating platform using the regular platform texture (as in original)
-            const movingPlatform = this.physics.add.sprite(x, y, 'platform');
-            movingPlatform.setImmovable(true);
-            (movingPlatform.body as Phaser.Physics.Arcade.Body).allowGravity = false;
+            // Create oscillating platform using the regular platform texture with physics
+            const movingPlatform = this.customStaticGroups.oscillators.create(x, y, 'platform') as Phaser.Physics.Arcade.Sprite;
             
             // Scale according to parameters
             const widthScale = width / 100; // Default texture width is 100
@@ -1060,17 +1101,31 @@ export default class BasicGameScene extends Phaser.Scene {
             console.log(`Oscillating platform created with width=${width}, height=${height}, distance=${distance}`);
           } catch (error) {
             console.error('Error creating oscillator:', error);
-            // Fallback to blue rectangle as in original
+            
+            // Fallback to blue rectangle with physics
+            const width = getParameterValue('oscillator_width');
+            const height = getParameterValue('oscillator_height');
+            const distance = getParameterValue('oscillator_distance');
+            
+            // Create a physics body for collision
+            const physicsBody = this.customStaticGroups.oscillators.create(x, y, 'platform') as Phaser.Physics.Arcade.Sprite;
+            physicsBody.setVisible(false);
+            physicsBody.setDisplaySize(width, height);
+            physicsBody.refreshBody();
+            
+            // Create visual representation
             const movingPlatform = this.add.rectangle(x, y, width, height, 0x0000ff);
             
-            // Apply tilt to fallback rectangle
+            // Apply tilt to both
             if (tilt !== 0) {
               movingPlatform.setRotation(Phaser.Math.DegToRad(tilt));
+              physicsBody.setRotation(Phaser.Math.DegToRad(tilt));
+              physicsBody.refreshBody();
             }
             
-            // Add oscillation to fallback
+            // Animate both body and visual
             this.tweens.add({
-              targets: movingPlatform,
+              targets: [movingPlatform, physicsBody],
               x: x + distance,
               duration: 2000,
               yoyo: true,
@@ -1079,7 +1134,7 @@ export default class BasicGameScene extends Phaser.Scene {
             });
             
             gameObject = movingPlatform;
-            console.log('Fallback oscillating platform created');
+            console.log('Fallback oscillating platform created with physics');
           }
           break;
         }
@@ -1089,28 +1144,33 @@ export default class BasicGameScene extends Phaser.Scene {
           const height = getParameterValue('shield_height');
           
           try {
-            // Create a shield block using platform texture
-            // This matches the original which used a platform sprite with tint
-            const shieldBlock = this.physics.add.sprite(x, y, 'platform')
-              .setDisplaySize(width, height) // Set size based on parameters
-              .setTint(0xFF9800);            // Orange color
+            // Create a shield block using platform texture with collisions
+            const shieldBlock = this.customStaticGroups.shields.create(x, y, 'platform') as Phaser.Physics.Arcade.Sprite;
             
-            // Set physics properties to match original
-            shieldBlock.setImmovable(true);
-            (shieldBlock.body as Phaser.Physics.Arcade.Body).allowGravity = false;
-            
-            // Note: In real implementation, would add collision with player and darts
-            // but we're just handling visuals in this scene
+            // Set display properties
+            shieldBlock.setDisplaySize(width, height).setTint(0xFF9800);
+            shieldBlock.refreshBody();
             
             gameObject = shieldBlock;
             console.log(`Shield block created with width=${width}, height=${height}`);
           } catch (error) {
             console.error('Error creating shield block:', error);
-            // Fallback to simple rectangle just like original implementation
+            
+            // Fallback to simple rectangle with physics
+            const width = getParameterValue('shield_width');
+            const height = getParameterValue('shield_height');
+            
+            // Create physics body
+            const shieldBody = this.customStaticGroups.shields.create(x, y, 'platform') as Phaser.Physics.Arcade.Sprite;
+            shieldBody.setVisible(false);
+            shieldBody.setDisplaySize(width, height);
+            shieldBody.refreshBody();
+            
+            // Create visual rectangle
             const shield = this.add.rectangle(x, y, width, height, 0xFF9800);
             
             gameObject = shield;
-            console.log('Fallback shield block created');
+            console.log('Fallback shield block created with physics');
           }
           break;
         }
@@ -1119,30 +1179,35 @@ export default class BasicGameScene extends Phaser.Scene {
           const height = getParameterValue('dart_wall_height');
           
           try {
-            // Create a vertical wall using wall texture
-            const wall = this.physics.add.sprite(x, y, 'wall');
-            wall.setImmovable(true);
-            (wall.body as Phaser.Physics.Arcade.Body).allowGravity = false;
+            // Create a vertical wall using wall texture with physics
+            const wall = this.customStaticGroups.dartWalls.create(x, y, 'wall') as Phaser.Physics.Arcade.Sprite;
             
             // Scale to match parameter height
             const heightScale = height / 100; // Default texture height is 100
             wall.setScale(1, heightScale).refreshBody();
             
-            // Note: In the original, darts would be created and shot from wall
-            // but we're just handling visuals in this scene
-            
             gameObject = wall;
             console.log(`Dart wall created with height=${height}`);
           } catch (error) {
             console.error('Error creating dart wall:', error);
-            // Fallback to a simple rectangle as in original
+            
+            // Fallback with physics
+            const height = getParameterValue('dart_wall_height');
+            
+            // Create physics body
+            const wallBody = this.customStaticGroups.dartWalls.create(x, y, 'wall') as Phaser.Physics.Arcade.Sprite;
+            wallBody.setVisible(false);
+            wallBody.setDisplaySize(20, height);
+            wallBody.refreshBody();
+            
+            // Create visual wall
             const wall = this.add.rectangle(x, y, 20, height, 0x800000);
             
             // Add dart launcher indicators
             const wallDetails = this.add.graphics();
             wallDetails.fillStyle(0x600000);
             
-            // Add three circular dart launchers on the wall (visually similar to original)
+            // Add three circular dart launchers on the wall
             const dartPositions = [0.25, 0.5, 0.75]; // Positions along the height
             dartPositions.forEach(pos => {
               wallDetails.fillCircle(x + 8, y - (height/2) + (height * pos), 3);
@@ -1151,7 +1216,7 @@ export default class BasicGameScene extends Phaser.Scene {
             // Group them
             const container = this.add.container(0, 0, [wall, wallDetails]);
             gameObject = container;
-            console.log('Fallback dart wall created');
+            console.log('Fallback dart wall created with physics');
           }
           break;
         }
@@ -1175,11 +1240,47 @@ export default class BasicGameScene extends Phaser.Scene {
     }
   }
   
+  /**
+   * Handle collision with spikes
+   */
+  private handleSpikeCollision(): void {
+    if (this.gameWon || this.gameOver || !this.gameStarted) return;
+    
+    console.log('Player hit a spike!');
+    this.gameOver = true;
+    
+    // Apply visual effect to goat
+    if (this.goatSprite) {
+      this.goatSprite.setTint(0xff0000); // Red tint
+      
+      // Shake the camera slightly
+      this.cameras.main.shake(300, 0.02);
+    }
+    
+    // Notify game status change
+    gameEvents.publish('GAME_STATUS_CHANGE', {
+      status: 'gameover',
+      deathType: 'spike'
+    });
+    
+    // Update game status
+    this.gameStatus = 'gameover';
+  }
+  
   private clearPlacedItems(): void {
+    // Clear all placed items
     this.placedItems.forEach(item => {
       item.gameObject.destroy();
     });
     this.placedItems = [];
+    
+    // Clear physics groups for custom items if they exist
+    if (this.customStaticGroups) {
+      this.customStaticGroups.spikes.clear(true, true);
+      this.customStaticGroups.shields.clear(true, true);
+      this.customStaticGroups.oscillators.clear(true, true);
+      this.customStaticGroups.dartWalls.clear(true, true);
+    }
   }
   
   update(): void {
@@ -1246,5 +1347,15 @@ export default class BasicGameScene extends Phaser.Scene {
     
     // Clear all placed items
     this.clearPlacedItems();
+    
+    // Clean up custom physics groups
+    if (this.customStaticGroups) {
+      Object.values(this.customStaticGroups).forEach(group => {
+        if (group) {
+          group.destroy();
+        }
+      });
+      this.customStaticGroups = undefined;
+    }
   }
 }
