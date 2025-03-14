@@ -90,6 +90,7 @@ class GameStateManager {
     // Initialize game world with default platforms
     this.gameWorld = {
       platforms: [],
+      dartWalls: [],
       startPoint: { x: 80, y: 650 },
       endPoint: { x: 2320, y: 120 },
       worldBounds: { width: 2400, height: 800 }
@@ -245,6 +246,35 @@ class GameStateManager {
       };
       
       this.gameWorld.platforms.push(platform);
+    });
+    
+    // Create vertical dart walls as in the original implementation
+    const dartWallPositions = [
+      // Left section
+      { x: 400, y: 700 },
+      { x: 600, y: 500 },
+      { x: 800, y: 650 },
+      { x: 300, y: 350 },
+      { x: 900, y: 450 },
+      
+      // Right section
+      { x: 1400, y: 600 },
+      { x: 1600, y: 650 },
+      { x: 1800, y: 500 },
+      { x: 2000, y: 400 },
+      { x: 2200, y: 300 }
+    ];
+    
+    // Create each dart wall
+    dartWallPositions.forEach((pos, index) => {
+      const dartWall = {
+        id: `dart_wall_initial_${index}`,
+        position: { x: pos.x, y: pos.y },
+        height: this.parameters.dart_wall_height || 100,
+        isStatic: true
+      };
+      
+      this.gameWorld.dartWalls.push(dartWall);
     });
   }
   

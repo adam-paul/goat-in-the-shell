@@ -32,6 +32,12 @@ export interface GameWorld {
     rotation: number;
     isStatic: boolean;
   }>;
+  dartWalls: Array<{
+    id: string;
+    position: { x: number; y: number };
+    height: number;
+    isStatic: boolean;
+  }>;
   startPoint: { x: number; y: number };
   endPoint: { x: number; y: number };
   worldBounds: {

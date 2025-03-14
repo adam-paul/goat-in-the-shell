@@ -130,7 +130,7 @@ class PhysicsEngine {
   }
   
   /**
-   * Create platforms from game world data
+   * Create platforms and dart walls from game world data
    */
   private createPlatformsFromGameWorld(gameWorld: any): void {
     // Create platforms based on game world data
@@ -153,6 +153,32 @@ class PhysicsEngine {
         );
         
         Matter.Composite.add(this.engine.world, platformBody);
+      });
+    }
+    
+    // Create dart walls based on game world data
+    if (gameWorld.dartWalls && Array.isArray(gameWorld.dartWalls)) {
+      gameWorld.dartWalls.forEach((wall: any) => {
+        const wallBody = Matter.Bodies.rectangle(
+          wall.position.x,
+          wall.position.y,
+          20, // Fixed width for walls (20px)
+          wall.height,
+          {
+            isStatic: wall.isStatic,
+            label: wall.id || `dart_wall_${Math.random().toString(36).substring(2, 9)}`,
+            collisionFilter: {
+              category: CATEGORIES.WALL,
+              mask: CATEGORIES.PLAYER | CATEGORIES.DART
+            },
+            plugin: {
+              itemType: 'dart_wall',
+              lastDartTime: 0
+            }
+          }
+        );
+        
+        Matter.Composite.add(this.engine.world, wallBody);
       });
     }
     

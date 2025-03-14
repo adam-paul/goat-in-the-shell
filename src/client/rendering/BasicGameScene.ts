@@ -6,6 +6,7 @@ import { getParameterValue } from '../game/parameters';
 export default class BasicGameScene extends Phaser.Scene {
   // World elements
   private platforms!: Phaser.Physics.Arcade.StaticGroup;
+  private walls!: Phaser.Physics.Arcade.StaticGroup;
   private startPoint!: Phaser.GameObjects.Rectangle;
   private endPoint!: Phaser.GameObjects.Rectangle;
   private placedItems: Array<{type: string, x: number, y: number, gameObject: Phaser.GameObjects.GameObject}> = [];
@@ -260,8 +261,20 @@ export default class BasicGameScene extends Phaser.Scene {
    * Update the game world based on server data
    */
   private updateWorldFromServer(gameWorld: any): void {
-    // Clear existing platforms
+    // Clear existing platforms and walls
     this.platforms.clear(true, true);
+    
+    // Create walls group if it doesn't exist
+    if (!this.walls) {
+      this.walls = this.physics.add.staticGroup();
+    } else {
+      this.walls.clear(true, true);
+    }
+    
+    // Create dart textures if not already done
+    if (!this.textures.exists('wall')) {
+      this.createWallTexture();
+    }
     
     // Update world bounds if provided
     if (gameWorld.worldBounds) {
@@ -316,6 +329,59 @@ export default class BasicGameScene extends Phaser.Scene {
         }
       });
     }
+    
+    // Create dart walls from server data
+    if (gameWorld.dartWalls && Array.isArray(gameWorld.dartWalls)) {
+      gameWorld.dartWalls.forEach((wall: any) => {
+        const wallSprite = this.walls.create(
+          wall.position.x,
+          wall.position.y,
+          'wall'
+        ) as Phaser.Physics.Arcade.Sprite;
+        
+        // Scale the wall to match server dimensions
+        // Default texture height is 100
+        const heightScale = wall.height / 100;
+        wallSprite.setScale(1, heightScale).refreshBody();
+      });
+    }
+  }
+  
+  /**
+   * Create a wall texture for dart walls
+   */
+  private createWallTexture(): void {
+    const graphics = this.make.graphics({ x: 0, y: 0 });
+    
+    // Draw a simple wall texture
+    graphics.fillStyle(0x808080); // Gray color
+    graphics.fillRect(0, 0, 20, 100);
+    
+    // Add some brick-like details
+    graphics.lineStyle(1, 0x606060); // Darker gray for mortar lines
+    
+    // Horizontal lines
+    for (let i = 0; i < 5; i++) {
+      graphics.moveTo(0, 20 * i);
+      graphics.lineTo(20, 20 * i);
+    }
+    
+    // Vertical lines for bricks (staggered pattern)
+    for (let i = 0; i < 5; i++) {
+      const offsetY = i * 20;
+      if (i % 2 === 0) {
+        graphics.moveTo(10, offsetY);
+        graphics.lineTo(10, offsetY + 20);
+      } else {
+        graphics.moveTo(0, offsetY);
+        graphics.lineTo(0, offsetY + 20);
+        graphics.moveTo(20, offsetY);
+        graphics.lineTo(20, offsetY + 20);
+      }
+    }
+
+    graphics.generateTexture('wall', 20, 100);
+    graphics.destroy();
   }
   
   /**
