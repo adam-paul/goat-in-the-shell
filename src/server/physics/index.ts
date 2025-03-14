@@ -83,14 +83,14 @@ class PhysicsEngine {
     // Add collision event handling
     Matter.Events.on(this.engine, 'collisionStart', this.handleCollisionStart.bind(this));
     
+    // Request game world data from GameStateManager
+    const gameWorld = gameState.getGameWorld();
+    
     // Add world bounds
     this.createWorldBounds();
     
-    // Add ground platforms with gaps
-    this.createGroundSegments();
-    
-    // Create initial platforms layout (matching the original game)
-    this.createInitialPlatforms();
+    // Create physics bodies from game world data
+    this.createPlatformsFromGameWorld(gameWorld);
     
     // Create death zone at bottom
     this.createDeathZone();
@@ -130,133 +130,58 @@ class PhysicsEngine {
   }
   
   /**
-   * Create segmented ground platforms with gaps
+   * Create platforms from game world data
    */
-  private createGroundSegments(): void {
-    const segmentWidth = 200;
-    const gapWidth = 100;
-    const groundY = 768;
-    
-    const totalSegments = Math.ceil(WORLD_WIDTH / (segmentWidth + gapWidth)) + 1;
-    
-    for (let i = 0; i < totalSegments; i++) {
-      const segmentX = i * (segmentWidth + gapWidth) + (segmentWidth / 2);
-      
-      const groundSegment = Matter.Bodies.rectangle(
-        segmentX, 
-        groundY, 
-        segmentWidth, 
-        20, 
-        {
-          isStatic: true,
-          label: `ground_segment_${i}`,
-          collisionFilter: {
-            category: CATEGORIES.PLATFORM,
-            mask: CATEGORIES.DEFAULT | CATEGORIES.PLAYER | CATEGORIES.DART
+  private createPlatformsFromGameWorld(gameWorld: any): void {
+    // Create platforms based on game world data
+    if (gameWorld.platforms && Array.isArray(gameWorld.platforms)) {
+      gameWorld.platforms.forEach((platform: any) => {
+        const platformBody = Matter.Bodies.rectangle(
+          platform.position.x,
+          platform.position.y,
+          platform.width,
+          platform.height,
+          {
+            isStatic: platform.isStatic,
+            label: platform.id || `platform_${Math.random().toString(36).substring(2, 9)}`,
+            angle: platform.rotation || 0,
+            collisionFilter: {
+              category: CATEGORIES.PLATFORM,
+              mask: CATEGORIES.DEFAULT | CATEGORIES.PLAYER | CATEGORIES.DART
+            }
           }
-        }
-      );
-      
-      Matter.Composite.add(this.engine.world, groundSegment);
+        );
+        
+        Matter.Composite.add(this.engine.world, platformBody);
+      });
     }
-  }
-  
-  /**
-   * Create initial platforms matching original level design
-   */
-  private createInitialPlatforms(): void {
-    // Define platform positions matching the original implementation
-    const platformPositions = [
-      // Left section - initial platforms
-      // Lower level platforms
-      { x: 200, y: 650 },
-      { x: 400, y: 550 },
-      { x: 600, y: 600 },
-      { x: 800, y: 500 },
-      
-      // Middle level platforms
-      { x: 150, y: 450 },
-      { x: 350, y: 350 },
-      { x: 550, y: 400 },
-      { x: 750, y: 300 },
-      { x: 950, y: 350 },
-      
-      // Upper level platforms
-      { x: 300, y: 200 },
-      { x: 500, y: 150 },
-      { x: 700, y: 200 },
-      { x: 900, y: 150 },
-      { x: 1100, y: 200 },
-      
-      // Right section - extending platforms (from 1200 to 2400)
-      // Lower level platforms
-      { x: 1300, y: 650 },
-      { x: 1500, y: 550 },
-      { x: 1700, y: 600 },
-      { x: 1900, y: 500 },
-      { x: 2100, y: 550 },
-      
-      // Middle level platforms
-      { x: 1350, y: 450 },
-      { x: 1550, y: 350 },
-      { x: 1750, y: 400 },
-      { x: 1950, y: 300 },
-      { x: 2150, y: 400 },
-      
-      // Upper level platforms leading to finish
-      { x: 1400, y: 250 },
-      { x: 1600, y: 200 },
-      { x: 1800, y: 150 },
-      { x: 2000, y: 180 },
-      { x: 2200, y: 150 }
-    ];
     
-    // Create each platform
-    platformPositions.forEach((pos, index) => {
-      const platform = Matter.Bodies.rectangle(
-        pos.x, 
-        pos.y, 
-        this.parameters.platform_width, 
-        this.parameters.platform_height,
+    // Create start and finish areas
+    if (gameWorld.startPoint) {
+      // Start point is just for visuals, no physics needed
+      console.log(`Start point set at (${gameWorld.startPoint.x}, ${gameWorld.startPoint.y})`);
+    }
+    
+    if (gameWorld.endPoint) {
+      // Create finish area with collision sensor
+      const finishArea = Matter.Bodies.rectangle(
+        gameWorld.endPoint.x, 
+        gameWorld.endPoint.y, 
+        50, 
+        50,
         {
           isStatic: true,
-          label: `platform_initial_${index}`,
+          isSensor: true, // Doesn't physically block but detects collisions
+          label: 'finish_area',
           collisionFilter: {
-            category: CATEGORIES.PLATFORM,
-            mask: CATEGORIES.DEFAULT | CATEGORIES.PLAYER | CATEGORIES.DART
+            category: CATEGORIES.DEFAULT,
+            mask: CATEGORIES.PLAYER
           }
         }
       );
       
-      Matter.Composite.add(this.engine.world, platform);
-    });
-    
-    // Create start and finish points (matching original)
-    // These are just visual markers in the original, not physical bodies
-    const startX = 80;
-    const startY = 650;
-    
-    const finishX = 2320;
-    const finishY = 120;
-    
-    // Create finish area with collision sensor
-    const finishArea = Matter.Bodies.rectangle(
-      finishX, finishY, 50, 50,
-      {
-        isStatic: true,
-        isSensor: true, // Doesn't physically block but detects collisions
-        label: 'finish_area',
-        collisionFilter: {
-          category: CATEGORIES.DEFAULT,
-          mask: CATEGORIES.PLAYER
-        },
-        render: {
-          fillStyle: '#ff0000' // Red
-        }
-      }
-    );
-    
-    Matter.Composite.add(this.engine.world, finishArea);
+      Matter.Composite.add(this.engine.world, finishArea);
+    }
   }
   
   /**

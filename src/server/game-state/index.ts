@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { GameStatus, DeathType } from '../../shared/types';
+import { GameStatus, DeathType, GameWorld } from '../../shared/types';
 import { gameEvents } from './GameEvents';
 
 // Define types for our game entities
@@ -75,6 +75,7 @@ class GameStateManager {
   private lastUpdateTime: number;
   private gameStatus: GameStatus;
   private parameters: Partial<GameParameters>;
+  private gameWorld: GameWorld;
   
   constructor() {
     this.players = new Map();
@@ -85,6 +86,17 @@ class GameStateManager {
     this.lastUpdateTime = Date.now();
     this.gameStatus = 'tutorial';
     this.parameters = {};
+    
+    // Initialize game world with default platforms
+    this.gameWorld = {
+      platforms: [],
+      startPoint: { x: 80, y: 650 },
+      endPoint: { x: 2320, y: 120 },
+      worldBounds: { width: 2400, height: 800 }
+    };
+    
+    // Create initial world platform layout
+    this.initializeGameWorld();
     
     // Create a default lobby
     const defaultLobby: Lobby = {
@@ -153,6 +165,90 @@ class GameStateManager {
   }
   
   /**
+   * Initialize game world with default platforms
+   */
+  private initializeGameWorld(): void {
+    // Create ground segments
+    const segmentWidth = 200;
+    const gapWidth = 100;
+    const groundY = 768;
+    
+    const totalSegments = Math.ceil(this.gameWorld.worldBounds.width / (segmentWidth + gapWidth)) + 1;
+    
+    for (let i = 0; i < totalSegments; i++) {
+      const segmentX = i * (segmentWidth + gapWidth) + (segmentWidth / 2);
+      this.gameWorld.platforms.push({
+        id: `ground_segment_${i}`,
+        position: { x: segmentX, y: groundY },
+        width: segmentWidth,
+        height: 20,
+        rotation: 0,
+        isStatic: true
+      });
+    }
+    
+    // Define platform positions matching the original implementation
+    const platformPositions = [
+      // Left section - initial platforms
+      // Lower level platforms
+      { x: 200, y: 650 },
+      { x: 400, y: 550 },
+      { x: 600, y: 600 },
+      { x: 800, y: 500 },
+      
+      // Middle level platforms
+      { x: 150, y: 450 },
+      { x: 350, y: 350 },
+      { x: 550, y: 400 },
+      { x: 750, y: 300 },
+      { x: 950, y: 350 },
+      
+      // Upper level platforms
+      { x: 300, y: 200 },
+      { x: 500, y: 150 },
+      { x: 700, y: 200 },
+      { x: 900, y: 150 },
+      { x: 1100, y: 200 },
+      
+      // Right section - extending platforms (from 1200 to 2400)
+      // Lower level platforms
+      { x: 1300, y: 650 },
+      { x: 1500, y: 550 },
+      { x: 1700, y: 600 },
+      { x: 1900, y: 500 },
+      { x: 2100, y: 550 },
+      
+      // Middle level platforms
+      { x: 1350, y: 450 },
+      { x: 1550, y: 350 },
+      { x: 1750, y: 400 },
+      { x: 1950, y: 300 },
+      { x: 2150, y: 400 },
+      
+      // Upper level platforms leading to finish
+      { x: 1400, y: 250 },
+      { x: 1600, y: 200 },
+      { x: 1800, y: 150 },
+      { x: 2000, y: 180 },
+      { x: 2200, y: 150 }
+    ];
+    
+    // Create each platform
+    platformPositions.forEach((pos, index) => {
+      const platform = {
+        id: `platform_initial_${index}`,
+        position: { x: pos.x, y: pos.y },
+        width: this.parameters.platform_width || 100,
+        height: this.parameters.platform_height || 20,
+        rotation: 0,
+        isStatic: true
+      };
+      
+      this.gameWorld.platforms.push(platform);
+    });
+  }
+  
+  /**
    * Get the complete game state
    */
   getState(): any {
@@ -164,7 +260,8 @@ class GameStateManager {
       projectiles: Array.from(this.projectiles.values()),
       lobbies: Array.from(this.lobbies.values()),
       gameStatus: this.gameStatus,
-      parameters: this.parameters
+      parameters: this.parameters,
+      gameWorld: this.gameWorld // Include game world data
     };
   }
   
@@ -194,8 +291,16 @@ class GameStateManager {
       items: lobbyItems,
       projectiles: Array.from(this.projectiles.values()),
       gameStatus: this.gameStatus,
-      parameters: this.parameters
+      parameters: this.parameters,
+      gameWorld: this.gameWorld // Include game world data
     };
+  }
+  
+  /**
+   * Get the game world data
+   */
+  getGameWorld(): GameWorld {
+    return this.gameWorld;
   }
   
   /**

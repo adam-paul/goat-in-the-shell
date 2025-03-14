@@ -71,7 +71,7 @@ class SocketServer {
         
       socket.on('error', (err) => this.handleError(clientId, err));
       
-      // Send initial welcome message
+      // Send initial welcome message with game world data
       this.sendMessage(clientId, {
         type: MESSAGE_TYPES.INITIAL_STATE,
         payload: {
@@ -81,7 +81,8 @@ class SocketServer {
             gravity: 1.0,
             moveSpeed: 5.0,
             jumpForce: 10.0,
-          }
+          },
+          gameWorld: this.gameState.getGameWorld() // Include game world data
         }
       });
     });
@@ -476,12 +477,13 @@ class SocketServer {
       if (instance) {
         const state = instance.state.getState();
         
-        // Send state update
+        // Send state update including game world
         this.sendMessage(clientId, {
           type: MESSAGE_TYPES.STATE_UPDATE,
           payload: {
             state: state,
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            gameWorld: instance.state.getGameWorld() // Include game world data
           }
         });
         return;
@@ -495,7 +497,8 @@ class SocketServer {
       type: MESSAGE_TYPES.STATE_UPDATE,
       payload: {
         state: globalState,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        gameWorld: this.gameState.getGameWorld() // Include game world data
       }
     });
   }
