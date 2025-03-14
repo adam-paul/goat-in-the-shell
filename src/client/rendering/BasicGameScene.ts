@@ -121,11 +121,6 @@ export default class BasicGameScene extends Phaser.Scene {
     // Create platforms group
     this.platforms = this.physics.add.staticGroup();
     
-    // Create ground platform
-    this.platforms.create(1200, 780, 'platform')
-      .setScale(24, 1)
-      .refreshBody();
-    
     // Create segmented ground with gaps
     const segmentWidth = 200; 
     const gapWidth = 100; 
