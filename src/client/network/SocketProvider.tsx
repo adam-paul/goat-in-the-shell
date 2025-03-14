@@ -156,6 +156,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
         payload,
         timestamp: Date.now()
       };
+      console.log(`SOCKET: Sending message ${type}:`, payload);
       socketRef.current.send(JSON.stringify(message));
       return true;
     } catch (err) {
@@ -166,6 +167,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
   
   // Specialized message senders
   const sendPlayerInput = (input: unknown) => {
+    console.log('SOCKET: Sending player input:', input);
     return sendMessage(MESSAGE_TYPES.PLAYER_INPUT, input);
   };
   

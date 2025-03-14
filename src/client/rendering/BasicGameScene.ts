@@ -84,6 +84,10 @@ export default class BasicGameScene extends Phaser.Scene {
     // Set up physics for collisions
     this.setupPhysics();
     
+    // Pause physics until game starts
+    this.physics.pause();
+    console.log('Physics paused until countdown completes');
+    
     // Set up event listeners for game state from server
     this.setupEventListeners();
   }
@@ -265,12 +269,23 @@ export default class BasicGameScene extends Phaser.Scene {
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
       if (this.itemPlacementMode && this.itemPreview) {
         const worldPoint = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
+        
+        // Publish placement confirmation
         gameEvents.publish('PLACEMENT_CONFIRMED', {
           type: this.itemToPlace,
           x: worldPoint.x,
           y: worldPoint.y
         });
+        
+        // Exit placement mode
         this.exitPlacementMode();
+        
+        // Explicitly trigger item placed event to start countdown
+        console.log('Item placed, triggering countdown');
+        gameEvents.publish('ITEM_PLACED', {
+          type: this.itemToPlace,
+          position: worldPoint
+        });
       }
     });
     
@@ -345,7 +360,9 @@ export default class BasicGameScene extends Phaser.Scene {
   }
   
   /**
-   * Handle player input
+   * Handle player input - THIS IS ONLY FOR VISUAL FEEDBACK
+   * The server is the source of truth for physics and game state.
+   * This method provides immediate visual feedback while waiting for server updates.
    */
   private handlePlayerInput(data: any): void {
     // Skip if game is not active or no goat sprite
@@ -356,36 +373,40 @@ export default class BasicGameScene extends Phaser.Scene {
     
     const onGround = sprite.body.touching.down || sprite.body.blocked.down;
     
-    // Handle left/right movement
+    // LOCAL VISUAL FEEDBACK ONLY - not actual movement
+    // The server will update the real position in the next state update
+    console.log('Local visual feedback for input:', data);
+    
+    // Handle left/right animation only (server controls actual movement)
     if (data.left) {
-      sprite.setVelocityX(-200);
+      // Just update animation and facing direction for immediate feedback
       this.goatSprite.update(
         sprite.x, sprite.y, 
-        sprite.body.velocity.x, sprite.body.velocity.y,
+        -200, // Simulate leftward velocity for animation only
+        sprite.body.velocity.y,
         onGround, true // Force facing left
       );
     } else if (data.right) {
-      sprite.setVelocityX(200);
+      // Just update animation and facing direction for immediate feedback
       this.goatSprite.update(
         sprite.x, sprite.y, 
-        sprite.body.velocity.x, sprite.body.velocity.y,
+        200, // Simulate rightward velocity for animation only
+        sprite.body.velocity.y,
         onGround, false // Force facing right
       );
     } else {
-      // Slow down when not pressing left/right
-      sprite.setVelocityX(sprite.body.velocity.x * 0.9);
+      // Reset to idle animation
       this.goatSprite.update(
         sprite.x, sprite.y, 
-        sprite.body.velocity.x, sprite.body.velocity.y,
+        0, // No horizontal velocity
+        sprite.body.velocity.y,
         onGround,
         sprite.flipX // Maintain current facing direction
       );
     }
     
-    // Handle jump
-    if ((data.jump || data.up) && onGround) {
-      sprite.setVelocityY(-500); // Strong upward force for jump
-    }
+    // Jump is handled entirely by the server
+    // We'll update sprite position when server sends the next state update
   }
   
   private updateGameState(gameState: any): void {
@@ -448,6 +469,9 @@ export default class BasicGameScene extends Phaser.Scene {
           
           // Update our goat sprite position if available
           if (this.goatSprite && player.position && !this.gameOver && !this.gameWon) {
+            console.log(`Updating goat position from server: (${player.position.x}, ${player.position.y}), v:(${player.velocity?.x || 0}, ${player.velocity?.y || 0})`);
+            
+            // Update goat sprite
             this.goatSprite.update(
               player.position.x,
               player.position.y,
@@ -456,6 +480,13 @@ export default class BasicGameScene extends Phaser.Scene {
               player.onGround || false,
               player.facingLeft || false
             );
+            
+            // If using Phaser physics body, update that too
+            const sprite = this.goatSprite.getSprite();
+            if (sprite.body) {
+              // Use server-provided velocity
+              sprite.setVelocity(player.velocity?.x || 0, player.velocity?.y || 0);
+            }
           }
         }
       });

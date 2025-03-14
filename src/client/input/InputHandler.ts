@@ -83,6 +83,12 @@ export const useInputHandler = () => {
   
   // Set up keyboard event listeners
   useEffect(() => {
+    console.log('Setting up input handlers, command input focused:', isCommandInputFocused);
+    
+    // Initialize input state
+    inputStateRef.current = { ...initialInputState };
+    lastSentStateRef.current = { ...initialInputState };
+    
     // Function to check if input state has changed
     const hasInputChanged = () => {
       const inputState = inputStateRef.current;
@@ -99,30 +105,31 @@ export const useInputHandler = () => {
     
     // Function to send input state to server
     const sendInputToServer = () => {
-      if (hasInputChanged()) {
-        const inputState = inputStateRef.current;
-        
-        // Publish to game event bus for Phaser
-        gameEvents.publish('PLAYER_INPUT', inputState);
-        
-        // Send to server if connected
-        if (socket.connected) {
-          const inputToSend = {
-            left: inputState.left,
-            right: inputState.right,
-            jump: inputState.jump || inputState.up, // Treat up as jump too
-            timestamp: Date.now()
-          };
-          socket.sendPlayerInput(inputToSend);
-        }
-        
-        // Update last sent state
-        lastSentStateRef.current = { ...inputState };
+      if (!hasInputChanged()) return;
+      
+      const inputState = inputStateRef.current;
+      console.log('Input state changed, sending to server:', JSON.stringify(inputState));
+      
+      // Publish to game event bus for Phaser
+      gameEvents.publish('PLAYER_INPUT', { ...inputState });
+      
+      // Send to server if connected
+      if (socket.connected) {
+        const inputToSend = {
+          left: inputState.left,
+          right: inputState.right,
+          jump: inputState.jump || inputState.up, // Treat up as jump too
+          timestamp: Date.now()
+        };
+        socket.sendPlayerInput(inputToSend);
       }
+      
+      // Update last sent state
+      lastSentStateRef.current = { ...inputState };
     };
     
-    // Set up polling interval for sending input state
-    const intervalId = setInterval(sendInputToServer, 50); // 20 times per second
+    // DON'T poll for input changes - only send on actual key events
+    // This avoids duplicate messages
     
     // Keydown event handler
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -135,31 +142,51 @@ export const useInputHandler = () => {
         event.preventDefault();
       }
       
+      let changed = false;
+      
       // Update input state based on key pressed
       switch (event.code) {
         case 'ArrowLeft':
         case 'KeyA':
-          inputStateRef.current.left = true;
+          if (!inputStateRef.current.left) {
+            inputStateRef.current.left = true;
+            changed = true;
+          }
           break;
         case 'ArrowRight':
         case 'KeyD':
-          inputStateRef.current.right = true;
+          if (!inputStateRef.current.right) {
+            inputStateRef.current.right = true;
+            changed = true;
+          }
           break;
         case 'ArrowUp':
         case 'KeyW':
-          inputStateRef.current.up = true;
+          if (!inputStateRef.current.up) {
+            inputStateRef.current.up = true;
+            changed = true;
+          }
           break;
         case 'ArrowDown':
         case 'KeyS':
-          inputStateRef.current.down = true;
+          if (!inputStateRef.current.down) {
+            inputStateRef.current.down = true;
+            changed = true;
+          }
           break;
         case 'Space':
-          inputStateRef.current.jump = true;
+          if (!inputStateRef.current.jump) {
+            inputStateRef.current.jump = true;
+            changed = true;
+          }
           break;
       }
       
-      // Send input state immediately on keydown
-      sendInputToServer();
+      // Only send input if state actually changed
+      if (changed) {
+        console.log('Key down event changed state:', event.code);
+        sendInputToServer();
+      }
     };
     
     // Keyup event handler
@@ -167,31 +194,51 @@ export const useInputHandler = () => {
       // Skip if command input is focused
       if (isCommandInputFocused) return;
       
+      let changed = false;
+      
       // Update input state based on key released
       switch (event.code) {
         case 'ArrowLeft':
         case 'KeyA':
-          inputStateRef.current.left = false;
+          if (inputStateRef.current.left) {
+            inputStateRef.current.left = false;
+            changed = true;
+          }
           break;
         case 'ArrowRight':
         case 'KeyD':
-          inputStateRef.current.right = false;
+          if (inputStateRef.current.right) {
+            inputStateRef.current.right = false;
+            changed = true;
+          }
           break;
         case 'ArrowUp':
         case 'KeyW':
-          inputStateRef.current.up = false;
+          if (inputStateRef.current.up) {
+            inputStateRef.current.up = false;
+            changed = true;
+          }
           break;
         case 'ArrowDown':
         case 'KeyS':
-          inputStateRef.current.down = false;
+          if (inputStateRef.current.down) {
+            inputStateRef.current.down = false;
+            changed = true;
+          }
           break;
         case 'Space':
-          inputStateRef.current.jump = false;
+          if (inputStateRef.current.jump) {
+            inputStateRef.current.jump = false;
+            changed = true;
+          }
           break;
       }
       
-      // Send input state immediately on keyup
-      sendInputToServer();
+      // Only send input if state actually changed
+      if (changed) {
+        console.log('Key up event changed state:', event.code);
+        sendInputToServer();
+      }
     };
     
     // Add event listeners
@@ -202,7 +249,6 @@ export const useInputHandler = () => {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
-      clearInterval(intervalId);
     };
   }, [isCommandInputFocused, socket.connected]);
   
