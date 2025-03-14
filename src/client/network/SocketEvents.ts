@@ -64,8 +64,29 @@ class SocketEvents {
     const { type, payload, data } = message;
     const messageData = payload || data;
     
-    // First publish to the game event bus for any game components
-    gameEvents.publish(type, messageData);
+    // Handle special case for item placement to trigger countdown
+    if (type === 'EVENT' && messageData?.eventType === 'ITEM_PLACED') {
+      // First trigger the item placement event for rendering
+      gameEvents.publish('ITEM_PLACED', messageData);
+      
+      // Then publish the message to the game event bus
+      gameEvents.publish(type, messageData);
+    } 
+    // Handle game state transition for countdown
+    else if (type === 'GAME_STARTED' || 
+        (type === 'EVENT' && messageData?.eventType === 'GAME_STARTED')) {
+      // First publish to the game event bus for state update
+      gameEvents.publish(type, messageData);
+      
+      // Then trigger countdown after item placement is confirmed
+      // Even if this is triggered by a server event, it won't start the countdown twice
+      // because the countdown manager checks its own state
+      gameEvents.publish('START_COUNTDOWN', { duration: 3000 });
+    }
+    else {
+      // For all other events, just publish to the game event bus
+      gameEvents.publish(type, messageData);
+    }
     
     // Then call any registered handlers for this message type
     const handlers = this.eventHandlers[type];

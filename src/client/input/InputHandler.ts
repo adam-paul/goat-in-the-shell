@@ -1,5 +1,5 @@
 // src/client/input/InputHandler.ts
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useSocket } from '../network';
 import { gameEvents } from '../utils/GameEventBus';
 
@@ -32,6 +32,13 @@ export const useInputHandler = () => {
   // Track command input focus so we don't control the game when typing
   const [isCommandInputFocused, setIsCommandInputFocused] = useState(false);
   
+  // Track game state
+  const [gameActive, setGameActive] = useState(false);
+  const inputStateRef = useRef<InputState>({ ...initialInputState });
+  
+  // Track last sent state to reduce network traffic
+  const lastSentStateRef = useRef<InputState>({ ...initialInputState });
+  
   // Subscribe to command input focus state
   useEffect(() => {
     const handleCommandInputFocus = (data: { focused: boolean }) => {
@@ -46,15 +53,41 @@ export const useInputHandler = () => {
     return unsubscribe;
   }, []);
   
+  // Subscribe to game state changes
+  useEffect(() => {
+    const handleGameStarted = () => {
+      setGameActive(true);
+    };
+    
+    const handleGameEnded = (data: { status: string }) => {
+      if (data.status === 'win' || data.status === 'gameover') {
+        setGameActive(false);
+      }
+    };
+    
+    const startSubscription = gameEvents.subscribe(
+      'GAME_STARTED',
+      handleGameStarted
+    );
+    
+    const statusSubscription = gameEvents.subscribe(
+      'GAME_STATUS_CHANGE',
+      handleGameEnded
+    );
+    
+    return () => {
+      startSubscription();
+      statusSubscription();
+    };
+  }, []);
+  
   // Set up keyboard event listeners
   useEffect(() => {
-    const inputState: InputState = { ...initialInputState };
-    
-    // Track last sent state to reduce network traffic
-    let lastSentState: InputState = { ...initialInputState };
-    
     // Function to check if input state has changed
     const hasInputChanged = () => {
+      const inputState = inputStateRef.current;
+      const lastSentState = lastSentStateRef.current;
+      
       return (
         inputState.left !== lastSentState.left ||
         inputState.right !== lastSentState.right ||
@@ -67,6 +100,8 @@ export const useInputHandler = () => {
     // Function to send input state to server
     const sendInputToServer = () => {
       if (hasInputChanged()) {
+        const inputState = inputStateRef.current;
+        
         // Publish to game event bus for Phaser
         gameEvents.publish('PLAYER_INPUT', inputState);
         
@@ -82,7 +117,7 @@ export const useInputHandler = () => {
         }
         
         // Update last sent state
-        lastSentState = { ...inputState };
+        lastSentStateRef.current = { ...inputState };
       }
     };
     
@@ -104,22 +139,22 @@ export const useInputHandler = () => {
       switch (event.code) {
         case 'ArrowLeft':
         case 'KeyA':
-          inputState.left = true;
+          inputStateRef.current.left = true;
           break;
         case 'ArrowRight':
         case 'KeyD':
-          inputState.right = true;
+          inputStateRef.current.right = true;
           break;
         case 'ArrowUp':
         case 'KeyW':
-          inputState.up = true;
+          inputStateRef.current.up = true;
           break;
         case 'ArrowDown':
         case 'KeyS':
-          inputState.down = true;
+          inputStateRef.current.down = true;
           break;
         case 'Space':
-          inputState.jump = true;
+          inputStateRef.current.jump = true;
           break;
       }
       
@@ -136,22 +171,22 @@ export const useInputHandler = () => {
       switch (event.code) {
         case 'ArrowLeft':
         case 'KeyA':
-          inputState.left = false;
+          inputStateRef.current.left = false;
           break;
         case 'ArrowRight':
         case 'KeyD':
-          inputState.right = false;
+          inputStateRef.current.right = false;
           break;
         case 'ArrowUp':
         case 'KeyW':
-          inputState.up = false;
+          inputStateRef.current.up = false;
           break;
         case 'ArrowDown':
         case 'KeyS':
-          inputState.down = false;
+          inputStateRef.current.down = false;
           break;
         case 'Space':
-          inputState.jump = false;
+          inputStateRef.current.jump = false;
           break;
       }
       
@@ -169,7 +204,7 @@ export const useInputHandler = () => {
       window.removeEventListener('keyup', handleKeyUp);
       clearInterval(intervalId);
     };
-  }, [isCommandInputFocused]);
+  }, [isCommandInputFocused, socket.connected]);
   
   return null;
 };

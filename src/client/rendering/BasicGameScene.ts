@@ -1,7 +1,9 @@
 import Phaser from 'phaser';
 import { gameEvents } from '../utils/GameEventBus';
-import { ItemType } from '../../shared/types';
+import { ItemType, GameStatus } from '../../shared/types';
 import { getParameterValue } from '../game/parameters';
+import GoatSprite from './GoatSprite';
+import CountdownManager from './CountdownManager';
 
 export default class BasicGameScene extends Phaser.Scene {
   // World elements
@@ -18,6 +20,27 @@ export default class BasicGameScene extends Phaser.Scene {
   
   // World dimensions
   private worldWidth: number = 2400;
+  
+  // Player goat sprite
+  private goatSprite?: GoatSprite;
+  private clientId?: string;
+  
+  // Game state tracking
+  private gameStatus: GameStatus = 'select';
+  private gameStarted: boolean = false;
+  private gameOver: boolean = false;
+  private gameWon: boolean = false;
+  
+  // Countdown manager
+  private countdownManager!: CountdownManager;
+  
+  // Physics colliders
+  private platformsCollider?: Phaser.Physics.Arcade.Collider;
+  private wallsCollider?: Phaser.Physics.Arcade.Collider;
+  
+  // Constants from original implementation
+  private readonly PLAYER_START_X: number = 80;
+  private readonly PLAYER_START_Y: number = 650;
   
   constructor() {
     super('BasicGameScene');
@@ -40,16 +63,114 @@ export default class BasicGameScene extends Phaser.Scene {
     // Initialize platforms group (will be populated from server data)
     this.platforms = this.physics.add.staticGroup();
     
+    // Initialize walls group
+    this.walls = this.physics.add.staticGroup();
+    
     // Create placeholder for start/end points (will be updated from server)
     this.startPoint = this.add.rectangle(80, 650, 50, 50, 0x00ff00);
     this.endPoint = this.add.rectangle(2320, 120, 50, 50, 0xff0000);
     
-    // Set up camera
+    // Create goat sprite at the start position
+    this.goatSprite = new GoatSprite(this, this.PLAYER_START_X, this.PLAYER_START_Y);
+    
+    // Initialize countdown manager
+    this.countdownManager = new CountdownManager(this);
+    
+    // Set up camera to follow the goat sprite
     this.cameras.main.setBounds(0, 0, this.worldWidth, 800);
+    this.cameras.main.startFollow(this.goatSprite.getSprite(), true, 0.1, 0.1);
     this.cameras.main.setZoom(1);
+    
+    // Set up physics for collisions
+    this.setupPhysics();
     
     // Set up event listeners for game state from server
     this.setupEventListeners();
+  }
+  
+  /**
+   * Set up physics collisions
+   */
+  private setupPhysics(): void {
+    // Skip if there's no goat sprite
+    if (!this.goatSprite) return;
+    
+    // Set up collisions between goat and platforms/walls
+    this.platformsCollider = this.physics.add.collider(this.goatSprite.getSprite(), this.platforms);
+    this.wallsCollider = this.physics.add.collider(this.goatSprite.getSprite(), this.walls);
+    
+    // Set up overlap with end point to detect level completion
+    this.physics.add.overlap(
+      this.goatSprite.getSprite(),
+      this.endPoint,
+      this.handleEndPointCollision,
+      undefined,
+      this
+    );
+    
+    // Create invisible death zone at the bottom of the world
+    const deathZone = this.add.zone(this.worldWidth / 2, 1000, this.worldWidth, 100);
+    this.physics.world.enable(deathZone);
+    (deathZone.body as Phaser.Physics.Arcade.Body).setAllowGravity(false);
+    (deathZone.body as Phaser.Physics.Arcade.Body).setImmovable(true);
+    
+    // Set up death zone collision
+    this.physics.add.overlap(
+      this.goatSprite.getSprite(),
+      deathZone,
+      this.handleDeathZoneCollision,
+      undefined,
+      this
+    );
+  }
+  
+  /**
+   * Handle collision with end point (level completion)
+   */
+  private handleEndPointCollision(): void {
+    if (this.gameWon || this.gameOver || !this.gameStarted) return;
+    
+    console.log('Player reached the end point, level complete!');
+    this.gameWon = true;
+    
+    // Notify game status change
+    gameEvents.publish('GAME_STATUS_CHANGE', { status: 'win' });
+    
+    // Update game status
+    this.gameStatus = 'win';
+  }
+  
+  /**
+   * Handle collision with death zone (falling off the world)
+   */
+  private handleDeathZoneCollision(): void {
+    if (this.gameWon || this.gameOver || !this.gameStarted) return;
+    
+    console.log('Player fell through the gap!');
+    this.gameOver = true;
+    
+    // Apply visual effect to goat
+    if (this.goatSprite) {
+      this.tweens.add({
+        targets: this.goatSprite.getSprite(),
+        alpha: 0,
+        y: '+=200',
+        duration: 1000,
+        ease: 'Power2'
+      });
+      
+      // Shake the camera slightly
+      this.cameras.main.shake(300, 0.01);
+    }
+    
+    // Notify game status change
+    gameEvents.publish('GAME_STATUS_CHANGE', {
+      status: 'gameover',
+      deathType: 'fall'
+    });
+    
+    // Update game status
+    this.gameStatus = 'gameover';
   }
   
   private createPlatformTexture(): void {
@@ -190,6 +311,81 @@ export default class BasicGameScene extends Phaser.Scene {
         }
       }
     });
+    
+    // Listen for countdown completion
+    gameEvents.subscribe('COUNTDOWN_COMPLETE', () => {
+      this.startGame();
+    });
+    
+    // Listen for player input
+    gameEvents.subscribe('PLAYER_INPUT', (data: any) => {
+      this.handlePlayerInput(data);
+    });
+    
+    // Listen for item placement completion
+    gameEvents.subscribe('ITEM_PLACED', () => {
+      // Start countdown after item is placed
+      gameEvents.publish('START_COUNTDOWN', { duration: 3000 });
+    });
+  }
+  
+  /**
+   * Start the game after countdown completes
+   */
+  private startGame(): void {
+    console.log('Starting game after countdown');
+    this.gameStarted = true;
+    this.gameStatus = 'playing';
+    
+    // Resume physics
+    this.physics.resume();
+    
+    // Notify the game event bus that the game has started
+    gameEvents.publish('GAME_STARTED', {});
+  }
+  
+  /**
+   * Handle player input
+   */
+  private handlePlayerInput(data: any): void {
+    // Skip if game is not active or no goat sprite
+    if (!this.gameStarted || this.gameWon || this.gameOver || !this.goatSprite) return;
+    
+    const sprite = this.goatSprite.getSprite();
+    if (!sprite.body) return; // Skip if physics body isn't available
+    
+    const onGround = sprite.body.touching.down || sprite.body.blocked.down;
+    
+    // Handle left/right movement
+    if (data.left) {
+      sprite.setVelocityX(-200);
+      this.goatSprite.update(
+        sprite.x, sprite.y, 
+        sprite.body.velocity.x, sprite.body.velocity.y,
+        onGround, true // Force facing left
+      );
+    } else if (data.right) {
+      sprite.setVelocityX(200);
+      this.goatSprite.update(
+        sprite.x, sprite.y, 
+        sprite.body.velocity.x, sprite.body.velocity.y,
+        onGround, false // Force facing right
+      );
+    } else {
+      // Slow down when not pressing left/right
+      sprite.setVelocityX(sprite.body.velocity.x * 0.9);
+      this.goatSprite.update(
+        sprite.x, sprite.y, 
+        sprite.body.velocity.x, sprite.body.velocity.y,
+        onGround,
+        sprite.flipX // Maintain current facing direction
+      );
+    }
+    
+    // Handle jump
+    if ((data.jump || data.up) && onGround) {
+      sprite.setVelocityY(-500); // Strong upward force for jump
+    }
   }
   
   private updateGameState(gameState: any): void {
@@ -205,6 +401,29 @@ export default class BasicGameScene extends Phaser.Scene {
     if (gameState.state) state = gameState.state;
     if (gameState.payload?.state) state = gameState.payload.state;
     
+    // Store client ID if provided
+    if (state.clientId) {
+      this.clientId = state.clientId;
+    }
+    
+    // Update game status if provided
+    if (state.gameStatus) {
+      this.gameStatus = state.gameStatus;
+      
+      // Update game start state based on status
+      if (state.gameStatus === 'playing') {
+        this.gameStarted = true;
+        this.gameOver = false;
+        this.gameWon = false;
+      } else if (state.gameStatus === 'gameover') {
+        this.gameOver = true;
+        this.gameStarted = false;
+      } else if (state.gameStatus === 'win') {
+        this.gameWon = true;
+        this.gameStarted = false;
+      }
+    }
+    
     // Handle the game world data (platforms, start/end points)
     if (state.gameWorld) {
       this.updateWorldFromServer(state.gameWorld);
@@ -212,19 +431,32 @@ export default class BasicGameScene extends Phaser.Scene {
     
     // Handle players from state
     if (state.players && Array.isArray(state.players)) {
-      // Implementation for rendering players would go here
-      // This would include drawing the goat character at the server-determined position
-      // For now, we'll just log player positions
+      // Process each player
       state.players.forEach((player: any) => {
-        console.log(`Player ${player.id} at (${player.position?.x}, ${player.position?.y})`);
+        if (!player) return;
+        
+        // Check if this is our player
+        const isLocalPlayer = player.id === this.clientId;
         
         // Update player position in window for debugging
-        if (player.id === state.clientId) {
+        if (isLocalPlayer) {
           window.playerPosition = {
             x: player.position?.x,
             y: player.position?.y,
             isOnGround: player.onGround
           };
+          
+          // Update our goat sprite position if available
+          if (this.goatSprite && player.position && !this.gameOver && !this.gameWon) {
+            this.goatSprite.update(
+              player.position.x,
+              player.position.y,
+              player.velocity?.x || 0,
+              player.velocity?.y || 0,
+              player.onGround || false,
+              player.facingLeft || false
+            );
+          }
         }
       });
     }
@@ -253,7 +485,7 @@ export default class BasicGameScene extends Phaser.Scene {
       });
     }
     
-    // Process the rest of the game state
+    // Process projectiles and other state info
     this.processGameState(state);
   }
   
@@ -889,5 +1121,60 @@ export default class BasicGameScene extends Phaser.Scene {
         this.itemPreview.setPosition(worldPoint.x, worldPoint.y);
       }
     }
+    
+    // Update goat sprite if game is running
+    if (this.gameStarted && this.goatSprite && !this.gameOver && !this.gameWon) {
+      const sprite = this.goatSprite.getSprite();
+      if (!sprite.body) return; // Skip if physics body isn't available
+      
+      const onGround = sprite.body.touching.down || sprite.body.blocked.down;
+      
+      // Update animations based on current state
+      this.goatSprite.update(
+        sprite.x, sprite.y,
+        sprite.body.velocity.x, sprite.body.velocity.y,
+        onGround,
+        sprite.flipX
+      );
+      
+      // Publish player position to event bus for network synchronization
+      gameEvents.publish('PLAYER_POSITION_UPDATE', {
+        x: sprite.x,
+        y: sprite.y,
+        velocityX: sprite.body.velocity.x,
+        velocityY: sprite.body.velocity.y,
+        onGround: onGround,
+        facingLeft: sprite.flipX
+      });
+    }
+  }
+  
+  /**
+   * Clean up resources when scene is shut down
+   */
+  shutdown(): void {
+    // Clean up the countdown manager
+    if (this.countdownManager) {
+      this.countdownManager.destroy();
+    }
+    
+    // Clean up the goat sprite
+    if (this.goatSprite) {
+      this.goatSprite.destroy();
+    }
+    
+    // Clear all event listeners
+    // This is important to prevent memory leaks
+    gameEvents.clear('SERVER_STATE_UPDATE');
+    gameEvents.clear('PLACEMENT_MODE_START');
+    gameEvents.clear('PLACEMENT_MODE_EXIT');
+    gameEvents.clear('PARAMETER_UPDATED');
+    gameEvents.clear('PARAMETERS_BATCH_UPDATED');
+    gameEvents.clear('COUNTDOWN_COMPLETE');
+    gameEvents.clear('PLAYER_INPUT');
+    gameEvents.clear('ITEM_PLACED');
+    
+    // Clear all placed items
+    this.clearPlacedItems();
   }
 }
