@@ -6,6 +6,7 @@ import { getParameterValue } from '../game/parameters';
 export default class BasicGameScene extends Phaser.Scene {
   // World elements
   private platforms!: Phaser.Physics.Arcade.StaticGroup;
+  private walls!: Phaser.Physics.Arcade.StaticGroup;
   private startPoint!: Phaser.GameObjects.Rectangle;
   private endPoint!: Phaser.GameObjects.Rectangle;
   private placedItems: Array<{type: string, x: number, y: number, gameObject: Phaser.GameObjects.GameObject}> = [];
@@ -36,8 +37,12 @@ export default class BasicGameScene extends Phaser.Scene {
     // Create a blue sky background
     this.add.rectangle(this.worldWidth / 2, 400, this.worldWidth, 800, 0x87CEEB);
     
-    // Create basic world elements
-    this.createWorldElements();
+    // Initialize platforms group (will be populated from server data)
+    this.platforms = this.physics.add.staticGroup();
+    
+    // Create placeholder for start/end points (will be updated from server)
+    this.startPoint = this.add.rectangle(80, 650, 50, 50, 0x00ff00);
+    this.endPoint = this.add.rectangle(2320, 120, 50, 50, 0xff0000);
     
     // Set up camera
     this.cameras.main.setBounds(0, 0, this.worldWidth, 800);
@@ -117,91 +122,7 @@ export default class BasicGameScene extends Phaser.Scene {
     wallGraphics.destroy();
   }
   
-  private createWorldElements(): void {
-    // Create platforms group
-    this.platforms = this.physics.add.staticGroup();
-    
-    // Create segmented ground with gaps
-    const segmentWidth = 200; 
-    const gapWidth = 100; 
-    const groundY = 768; 
-    
-    const totalSegments = Math.ceil(this.worldWidth / (segmentWidth + gapWidth)) + 1;
-    
-    // Create ground segments with gaps between them
-    for (let i = 0; i < totalSegments; i++) {
-      const segmentX = i * (segmentWidth + gapWidth) + (segmentWidth / 2);
-      const groundSegment = this.platforms.create(segmentX, groundY, 'platform') as Phaser.Physics.Arcade.Sprite;
-      groundSegment.setScale(segmentWidth / 100, 1).refreshBody();
-    }
-    
-    // Create the same platform layout as in the old GameScene
-    
-    // Left section - initial platforms
-    // Lower level platforms
-    this.platforms.create(200, 650, 'platform');
-    this.platforms.create(400, 550, 'platform');
-    this.platforms.create(600, 600, 'platform');
-    this.platforms.create(800, 500, 'platform');
-    
-    // Middle level platforms
-    this.platforms.create(150, 450, 'platform');
-    this.platforms.create(350, 350, 'platform');
-    this.platforms.create(550, 400, 'platform');
-    this.platforms.create(750, 300, 'platform');
-    this.platforms.create(950, 350, 'platform');
-    
-    // Upper level platforms
-    this.platforms.create(300, 200, 'platform');
-    this.platforms.create(500, 150, 'platform');
-    this.platforms.create(700, 200, 'platform');
-    this.platforms.create(900, 150, 'platform');
-    this.platforms.create(1100, 200, 'platform');
-    
-    // Right section - extending platforms (from 1200 to 2400)
-    // Lower level platforms
-    this.platforms.create(1300, 650, 'platform');
-    this.platforms.create(1500, 550, 'platform');
-    this.platforms.create(1700, 600, 'platform');
-    this.platforms.create(1900, 500, 'platform');
-    this.platforms.create(2100, 550, 'platform');
-    
-    // Middle level platforms
-    this.platforms.create(1350, 450, 'platform');
-    this.platforms.create(1550, 350, 'platform');
-    this.platforms.create(1750, 400, 'platform');
-    this.platforms.create(1950, 300, 'platform');
-    this.platforms.create(2150, 400, 'platform');
-    
-    // Upper level platforms leading to finish
-    this.platforms.create(1400, 250, 'platform');
-    this.platforms.create(1600, 200, 'platform');
-    this.platforms.create(1800, 150, 'platform');
-    this.platforms.create(2000, 180, 'platform');
-    this.platforms.create(2200, 150, 'platform');
-    
-    // Create start point (green rectangle)
-    this.startPoint = this.add.rectangle(80, 650, 50, 50, 0x00ff00);
-    
-    // Add START text above the start position
-    this.add.text(80, 610, 'START', {
-      fontSize: '18px',
-      color: '#ffffff',
-      fontFamily: 'Arial',
-      fontStyle: 'bold'
-    }).setOrigin(0.5);
-    
-    // Create end point (red rectangle)
-    this.endPoint = this.add.rectangle(2320, 120, 50, 50, 0xff0000);
-    
-    // Add FINISH text above the red box
-    this.add.text(2320, 80, 'FINISH', {
-      fontSize: '22px',
-      color: '#ffffff',
-      fontFamily: 'Arial',
-      fontStyle: 'bold'
-    }).setOrigin(0.5);
-  }
+  // World is now created dynamically from server data
   
   private setupEventListeners(): void {
     // Listen for game state updates from server
@@ -278,28 +199,241 @@ export default class BasicGameScene extends Phaser.Scene {
     // We'll treat any state update as a full refresh for simplicity
     this.clearPlacedItems();
     
-    // Handle items from server state
-    if (gameState.items && Array.isArray(gameState.items)) {
-      gameState.items.forEach((item: any) => {
+    // Find the correct state data structure
+    // This handles different ways the state might be nested
+    let state = gameState;
+    if (gameState.state) state = gameState.state;
+    if (gameState.payload?.state) state = gameState.payload.state;
+    
+    // Handle the game world data (platforms, start/end points)
+    if (state.gameWorld) {
+      this.updateWorldFromServer(state.gameWorld);
+    }
+    
+    // Handle players from state
+    if (state.players && Array.isArray(state.players)) {
+      // Implementation for rendering players would go here
+      // This would include drawing the goat character at the server-determined position
+      // For now, we'll just log player positions
+      state.players.forEach((player: any) => {
+        console.log(`Player ${player.id} at (${player.position?.x}, ${player.position?.y})`);
+        
+        // Update player position in window for debugging
+        if (player.id === state.clientId) {
+          window.playerPosition = {
+            x: player.position?.x,
+            y: player.position?.y,
+            isOnGround: player.onGround
+          };
+        }
+      });
+    }
+    
+    // Handle items from state 
+    if (state.items && Array.isArray(state.items)) {
+      state.items.forEach((item: any) => {
         if (item.position) {
+          // Place the item with all its properties
           this.placeItem(item.type, item.position.x, item.position.y);
+          
+          // Apply rotation if specified
+          if (item.rotation && item.rotation !== 0) {
+            // Find the placed item and apply rotation
+            const placedItem = this.placedItems.find(p => 
+              p.x === item.position.x && p.y === item.position.y && p.type === item.type
+            );
+            if (placedItem && placedItem.gameObject) {
+              (placedItem.gameObject as Phaser.GameObjects.Rectangle).rotation = item.rotation;
+            }
+          }
         } else if (item.x !== undefined && item.y !== undefined) {
-          // Handle different formats of item position
+          // Alternative format
           this.placeItem(item.type, item.x, item.y);
         }
       });
     }
     
-    // Also try to get items from a deeply nested state structure
+    // Process the rest of the game state
+    this.processGameState(state);
+  }
+  
+  /**
+   * Update the game world based on server data
+   */
+  private updateWorldFromServer(gameWorld: any): void {
+    // Clear existing platforms and walls
+    this.platforms.clear(true, true);
+    
+    // Create walls group if it doesn't exist
+    if (!this.walls) {
+      this.walls = this.physics.add.staticGroup();
+    } else {
+      this.walls.clear(true, true);
+    }
+    
+    // Create dart textures if not already done
+    if (!this.textures.exists('wall')) {
+      this.createWallTexture();
+    }
+    
+    // Update world bounds if provided
+    if (gameWorld.worldBounds) {
+      this.worldWidth = gameWorld.worldBounds.width;
+      this.physics.world.setBounds(0, 0, gameWorld.worldBounds.width, gameWorld.worldBounds.height);
+      this.cameras.main.setBounds(0, 0, gameWorld.worldBounds.width, gameWorld.worldBounds.height);
+    }
+    
+    // Update start and end points
+    if (gameWorld.startPoint) {
+      this.startPoint.setPosition(gameWorld.startPoint.x, gameWorld.startPoint.y);
+      
+      // Add START text above the start position
+      this.add.text(gameWorld.startPoint.x, gameWorld.startPoint.y - 40, 'START', {
+        fontSize: '18px',
+        color: '#ffffff',
+        fontFamily: 'Arial',
+        fontStyle: 'bold'
+      }).setOrigin(0.5);
+    }
+    
+    if (gameWorld.endPoint) {
+      this.endPoint.setPosition(gameWorld.endPoint.x, gameWorld.endPoint.y);
+      
+      // Add FINISH text above the end position
+      this.add.text(gameWorld.endPoint.x, gameWorld.endPoint.y - 40, 'FINISH', {
+        fontSize: '22px',
+        color: '#ffffff',
+        fontFamily: 'Arial',
+        fontStyle: 'bold'
+      }).setOrigin(0.5);
+    }
+    
+    // Create platforms from server data
+    if (gameWorld.platforms && Array.isArray(gameWorld.platforms)) {
+      gameWorld.platforms.forEach((platform: any) => {
+        const platformSprite = this.platforms.create(
+          platform.position.x, 
+          platform.position.y, 
+          'platform'
+        ) as Phaser.Physics.Arcade.Sprite;
+        
+        // Scale the platform to match server dimensions
+        const widthScale = platform.width / 100; // Default texture width is 100
+        const heightScale = platform.height / 20; // Default texture height is 20
+        platformSprite.setScale(widthScale, heightScale).refreshBody();
+        
+        // Apply rotation if specified
+        if (platform.rotation && platform.rotation !== 0) {
+          platformSprite.setRotation(platform.rotation);
+          platformSprite.refreshBody();
+        }
+      });
+    }
+    
+    // Create dart walls from server data
+    if (gameWorld.dartWalls && Array.isArray(gameWorld.dartWalls)) {
+      gameWorld.dartWalls.forEach((wall: any) => {
+        const wallSprite = this.walls.create(
+          wall.position.x,
+          wall.position.y,
+          'wall'
+        ) as Phaser.Physics.Arcade.Sprite;
+        
+        // Scale the wall to match server dimensions
+        // Default texture height is 100
+        const heightScale = wall.height / 100;
+        wallSprite.setScale(1, heightScale).refreshBody();
+      });
+    }
+  }
+  
+  /**
+   * Create a wall texture for dart walls
+   */
+  private createWallTexture(): void {
+    const graphics = this.make.graphics({ x: 0, y: 0 });
+    
+    // Draw a simple wall texture
+    graphics.fillStyle(0x808080); // Gray color
+    graphics.fillRect(0, 0, 20, 100);
+    
+    // Add some brick-like details
+    graphics.lineStyle(1, 0x606060); // Darker gray for mortar lines
+    
+    // Horizontal lines
+    for (let i = 0; i < 5; i++) {
+      graphics.moveTo(0, 20 * i);
+      graphics.lineTo(20, 20 * i);
+    }
+    
+    // Vertical lines for bricks (staggered pattern)
+    for (let i = 0; i < 5; i++) {
+      const offsetY = i * 20;
+      if (i % 2 === 0) {
+        graphics.moveTo(10, offsetY);
+        graphics.lineTo(10, offsetY + 20);
+      } else {
+        graphics.moveTo(0, offsetY);
+        graphics.lineTo(0, offsetY + 20);
+        graphics.moveTo(20, offsetY);
+        graphics.lineTo(20, offsetY + 20);
+      }
+    }
+
+    graphics.generateTexture('wall', 20, 100);
+    graphics.destroy();
+  }
+  
+  /**
+   * Handle projectiles and other state info from the server
+   */
+  private processGameState(state: any): void {
+    // Handle projectiles (darts) from state
+    if (state.projectiles && Array.isArray(state.projectiles)) {
+      state.projectiles.forEach((projectile: any) => {
+        if (projectile.type === 'dart' && projectile.position) {
+          // Render darts as small rectangles
+          const dart = this.add.rectangle(
+            projectile.position.x,
+            projectile.position.y,
+            20, // Width
+            6,  // Height
+            0x303030 // Dark gray
+          );
+          
+          // Store the dart in placedItems so it gets cleaned up on the next update
+          this.placedItems.push({
+            type: 'dart',
+            x: projectile.position.x,
+            y: projectile.position.y,
+            gameObject: dart
+          });
+        }
+      });
+    }
+    
+    // Update game status if provided
+    if (state.gameStatus) {
+      console.log(`Game status: ${state.gameStatus}`);
+      
+      // Handle specific game status events
+      switch (state.gameStatus) {
+        case 'gameover':
+          // Handle game over state
+          break;
+        case 'win':
+          // Handle win state
+          break;
+      }
+    }
+    
+    // Also try fallback modes for legacy state formats
     try {
       // Handle different state structures that might come from server
       const possibleItemSources = [
-        gameState.state?.items,
-        gameState.gameState?.items,
-        gameState.state?.gameState?.items,
-        gameState.state?.obstacles,
-        gameState.payload?.state?.items,
-        gameState.payload?.items
+        state.gameState?.items,
+        state.obstacles,
+        state.payload?.items
       ];
       
       // Process each possible source

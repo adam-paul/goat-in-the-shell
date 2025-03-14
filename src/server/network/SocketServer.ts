@@ -71,7 +71,7 @@ class SocketServer {
         
       socket.on('error', (err) => this.handleError(clientId, err));
       
-      // Send initial welcome message
+      // Send initial welcome message with game world data
       this.sendMessage(clientId, {
         type: MESSAGE_TYPES.INITIAL_STATE,
         payload: {
@@ -81,7 +81,8 @@ class SocketServer {
             gravity: 1.0,
             moveSpeed: 5.0,
             jumpForce: 10.0,
-          }
+          },
+          gameWorld: this.gameState.getGameWorld() // Include game world data
         }
       });
     });
@@ -306,8 +307,8 @@ class SocketServer {
   private handlePlayerInput(clientId: string, data: any) {
     // Get the game instance this player belongs to
     const instance = this.instanceManager.getInstanceByPlayer(clientId);
-    if (!instance || !instance.isActive) {
-      console.warn(`CLIENT: ${clientId} not in an active game instance`);
+    if (!instance) {
+      console.warn(`CLIENT: ${clientId} not in a game instance`);
       return;
     }
     
@@ -319,6 +320,34 @@ class SocketServer {
     
     // Apply the input to the instance's game state
     instance.state.applyPlayerInput(data, clientId);
+    
+    // Send state update to client faster for better responsiveness (50ms)
+    // on input received. This helps reduce perceived latency.
+    const stateBroadcast = setInterval(() => {
+      this.broadcastGameState(instance);
+    }, 50);
+    
+    // Stop the fast update after 200ms
+    setTimeout(() => {
+      clearInterval(stateBroadcast);
+    }, 200);
+  }
+  
+  /**
+   * Broadcast the current game state to all clients in an instance
+   */
+  private broadcastGameState(instance: any): void {
+    // Get the game state
+    const state = instance.state.getState();
+    
+    // Send state update to all clients
+    this.broadcastToInstance(instance.id, {
+      type: MESSAGE_TYPES.STATE_UPDATE,
+      payload: {
+        state,
+        timestamp: Date.now()
+      }
+    });
   }
   
   /**
@@ -448,12 +477,13 @@ class SocketServer {
       if (instance) {
         const state = instance.state.getState();
         
-        // Send state update
+        // Send state update including game world
         this.sendMessage(clientId, {
           type: MESSAGE_TYPES.STATE_UPDATE,
           payload: {
             state: state,
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            gameWorld: instance.state.getGameWorld() // Include game world data
           }
         });
         return;
@@ -467,7 +497,8 @@ class SocketServer {
       type: MESSAGE_TYPES.STATE_UPDATE,
       payload: {
         state: globalState,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        gameWorld: this.gameState.getGameWorld() // Include game world data
       }
     });
   }

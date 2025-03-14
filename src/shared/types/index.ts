@@ -21,6 +21,32 @@ export type DeathType = 'dart' | 'spike' | 'fall' | null;
 export type ItemType = 'platform' | 'spike' | 'moving' | 'shield' | 'dart_wall';
 
 /**
+ * Game world structure for synchronizing between server and client
+ */
+export interface GameWorld {
+  platforms: Array<{
+    id: string;
+    position: { x: number; y: number };
+    width: number;
+    height: number;
+    rotation: number;
+    isStatic: boolean;
+  }>;
+  dartWalls: Array<{
+    id: string;
+    position: { x: number; y: number };
+    height: number;
+    isStatic: boolean;
+  }>;
+  startPoint: { x: number; y: number };
+  endPoint: { x: number; y: number };
+  worldBounds: {
+    width: number;
+    height: number;
+  };
+}
+
+/**
  * Options for obstacles that can be placed by the prompter
  */
 export interface ItemOption {

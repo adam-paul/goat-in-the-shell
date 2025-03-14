@@ -128,8 +128,16 @@ export class GameInstanceManager {
     // Update each active instance
     for (const [id, instance] of this.instances) {
       if (instance.isActive) {
+        // Update instance state
         instance.state.update(deltaTime);
         instance.lastUpdateTime = now;
+        
+        // Every 100ms (10fps), emit a state update event
+        if (now % 100 < 16) { // This ensures we emit at ~10Hz rate
+          // We'll let the socket server handle broadcasting
+          // The event system or direct calls could broadcast this state
+          // to clients in the future
+        }
       }
     }
   }
