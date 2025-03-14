@@ -278,27 +278,100 @@ export default class BasicGameScene extends Phaser.Scene {
     // We'll treat any state update as a full refresh for simplicity
     this.clearPlacedItems();
     
-    // Handle items from server state
-    if (gameState.items && Array.isArray(gameState.items)) {
-      gameState.items.forEach((item: any) => {
+    // Find the correct state data structure
+    // This handles different ways the state might be nested
+    let state = gameState;
+    if (gameState.state) state = gameState.state;
+    if (gameState.payload?.state) state = gameState.payload.state;
+    
+    // Handle players from state
+    if (state.players && Array.isArray(state.players)) {
+      // Implementation for rendering players would go here
+      // This would include drawing the goat character at the server-determined position
+      // For now, we'll just log player positions
+      state.players.forEach((player: any) => {
+        console.log(`Player ${player.id} at (${player.position?.x}, ${player.position?.y})`);
+        
+        // Update player position in window for debugging
+        if (player.id === state.clientId) {
+          window.playerPosition = {
+            x: player.position?.x,
+            y: player.position?.y,
+            isOnGround: player.onGround
+          };
+        }
+      });
+    }
+    
+    // Handle items from state 
+    if (state.items && Array.isArray(state.items)) {
+      state.items.forEach((item: any) => {
         if (item.position) {
+          // Place the item with all its properties
           this.placeItem(item.type, item.position.x, item.position.y);
+          
+          // Apply rotation if specified
+          if (item.rotation && item.rotation !== 0) {
+            // Find the placed item and apply rotation
+            const placedItem = this.placedItems.find(p => 
+              p.x === item.position.x && p.y === item.position.y && p.type === item.type
+            );
+            if (placedItem && placedItem.gameObject) {
+              (placedItem.gameObject as Phaser.GameObjects.Rectangle).rotation = item.rotation;
+            }
+          }
         } else if (item.x !== undefined && item.y !== undefined) {
-          // Handle different formats of item position
+          // Alternative format
           this.placeItem(item.type, item.x, item.y);
         }
       });
     }
     
-    // Also try to get items from a deeply nested state structure
+    // Handle projectiles (darts) from state
+    if (state.projectiles && Array.isArray(state.projectiles)) {
+      state.projectiles.forEach((projectile: any) => {
+        if (projectile.type === 'dart' && projectile.position) {
+          // Render darts as small rectangles
+          const dart = this.add.rectangle(
+            projectile.position.x,
+            projectile.position.y,
+            20, // Width
+            6,  // Height
+            0x303030 // Dark gray
+          );
+          
+          // Store the dart in placedItems so it gets cleaned up on the next update
+          this.placedItems.push({
+            type: 'dart',
+            x: projectile.position.x,
+            y: projectile.position.y,
+            gameObject: dart
+          });
+        }
+      });
+    }
+    
+    // Update game status if provided
+    if (state.gameStatus) {
+      console.log(`Game status: ${state.gameStatus}`);
+      
+      // Handle specific game status events
+      switch (state.gameStatus) {
+        case 'gameover':
+          // Handle game over state
+          break;
+        case 'win':
+          // Handle win state
+          break;
+      }
+    }
+    
+    // Also try fallback modes for legacy state formats
     try {
       // Handle different state structures that might come from server
       const possibleItemSources = [
-        gameState.state?.items,
-        gameState.gameState?.items,
-        gameState.state?.gameState?.items,
-        gameState.state?.obstacles,
-        gameState.payload?.state?.items,
+        state.gameState?.items,
+        state.obstacles,
         gameState.payload?.items
       ];
       

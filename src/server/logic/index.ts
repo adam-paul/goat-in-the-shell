@@ -1,14 +1,59 @@
 import { GameStateManager } from '../game-state';
 import { PhysicsEngine } from '../physics';
+import { gameEvents } from '../game-state/GameEvents';
+import { DeathType } from '../../shared/types';
 
 class GameLogicProcessor {
   private gameState: GameStateManager;
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  private _physics: PhysicsEngine;
+  private physics: PhysicsEngine;
   
   constructor(gameState: GameStateManager, physics: PhysicsEngine) {
     this.gameState = gameState;
-    this._physics = physics;
+    this.physics = physics;
+    
+    // Set up event listeners for game events
+    this.setupEventListeners();
+  }
+  
+  /**
+   * Set up event listeners for game events
+   */
+  private setupEventListeners(): void {
+    // Handle player death
+    gameEvents.subscribe<{
+      playerId: string;
+      cause: DeathType;
+      position: { x: number; y: number };
+    }>('PLAYER_DEATH', (data) => {
+      this.handlePlayerDeath(data.playerId, data.cause);
+    });
+    
+    // Handle player win
+    gameEvents.subscribe<{
+      playerId: string;
+      position: { x: number; y: number };
+    }>('PLAYER_WIN', (data) => {
+      this.handlePlayerWin(data.playerId);
+    });
+  }
+  
+  /**
+   * Handle player death
+   */
+  private handlePlayerDeath(playerId: string, cause: DeathType): void {
+    console.log(`GameLogic: Player ${playerId} died from ${cause}`);
+    
+    // Additional game logic for death can be added here
+    // such as determining if the game is over, etc.
+  }
+  
+  /**
+   * Handle player win
+   */
+  private handlePlayerWin(playerId: string): void {
+    console.log(`GameLogic: Player ${playerId} won!`);
+    
+    // Additional game logic for winning can be added here
   }
   
   /**

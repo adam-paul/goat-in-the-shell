@@ -70,6 +70,17 @@ export const useInputHandler = () => {
         // Publish to game event bus for Phaser
         gameEvents.publish('PLAYER_INPUT', inputState);
         
+        // Send to server if connected
+        if (socket.connected) {
+          const inputToSend = {
+            left: inputState.left,
+            right: inputState.right,
+            jump: inputState.jump || inputState.up, // Treat up as jump too
+            timestamp: Date.now()
+          };
+          socket.sendPlayerInput(inputToSend);
+        }
+        
         // Update last sent state
         lastSentState = { ...inputState };
       }

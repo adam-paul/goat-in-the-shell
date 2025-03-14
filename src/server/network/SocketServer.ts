@@ -306,8 +306,8 @@ class SocketServer {
   private handlePlayerInput(clientId: string, data: any) {
     // Get the game instance this player belongs to
     const instance = this.instanceManager.getInstanceByPlayer(clientId);
-    if (!instance || !instance.isActive) {
-      console.warn(`CLIENT: ${clientId} not in an active game instance`);
+    if (!instance) {
+      console.warn(`CLIENT: ${clientId} not in a game instance`);
       return;
     }
     
@@ -319,6 +319,34 @@ class SocketServer {
     
     // Apply the input to the instance's game state
     instance.state.applyPlayerInput(data, clientId);
+    
+    // Send state update to client faster for better responsiveness (50ms)
+    // on input received. This helps reduce perceived latency.
+    const stateBroadcast = setInterval(() => {
+      this.broadcastGameState(instance);
+    }, 50);
+    
+    // Stop the fast update after 200ms
+    setTimeout(() => {
+      clearInterval(stateBroadcast);
+    }, 200);
+  }
+  
+  /**
+   * Broadcast the current game state to all clients in an instance
+   */
+  private broadcastGameState(instance: any): void {
+    // Get the game state
+    const state = instance.state.getState();
+    
+    // Send state update to all clients
+    this.broadcastToInstance(instance.id, {
+      type: MESSAGE_TYPES.STATE_UPDATE,
+      payload: {
+        state,
+        timestamp: Date.now()
+      }
+    });
   }
   
   /**

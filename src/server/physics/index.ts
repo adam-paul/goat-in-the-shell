@@ -1,15 +1,52 @@
 import Matter from 'matter-js';
 import { GameStateManager, Player, GameItem } from '../game-state';
+import { DeathType } from '../../shared/types';
+import { gameEvents } from '../game-state/GameEvents';
 
 // Constants for physics simulation
 const PHYSICS_UPDATE_RATE = 60; // Updates per second
 const TIME_STEP = 1000 / PHYSICS_UPDATE_RATE;
 const MAX_STEP = 5 * TIME_STEP; // Max step size to prevent spiral of death
 
-// Game physics constants
-const GRAVITY = 0.8;
-const PLAYER_MOVE_FORCE = 0.008;
-const PLAYER_JUMP_FORCE = 0.016;
+// Game physics constants - these are calibrated for Matter.js 
+// to match Phaser's feel from original implementation
+const GRAVITY = 0.9; // Calibrated to match Phaser's 300
+const PLAYER_MOVE_FORCE = 0.012;
+const PLAYER_JUMP_FORCE = 0.025;
+const WORLD_WIDTH = 2400;
+const WORLD_HEIGHT = 800;
+
+// Game parameters (default values)
+const DEFAULT_PARAMETERS = {
+  gravity: GRAVITY,
+  player_move_speed: PLAYER_MOVE_FORCE,
+  player_jump_force: PLAYER_JUMP_FORCE,
+  dart_speed: 5,
+  dart_frequency: 3000, // milliseconds between dart shots
+  platform_width: 100,
+  platform_height: 20,
+  spike_width: 100,
+  spike_height: 20,
+  oscillator_width: 100, 
+  oscillator_height: 20,
+  oscillator_distance: 100,
+  shield_width: 60,
+  shield_height: 60,
+  dart_wall_height: 100,
+  tilt: 0 // degrees
+};
+
+// Custom collision categories (bit flags)
+const CATEGORIES = {
+  DEFAULT: 0x0001,
+  PLAYER: 0x0002,
+  PLATFORM: 0x0004,
+  SPIKE: 0x0008,
+  DART: 0x0010,
+  SHIELD: 0x0020,
+  WALL: 0x0040,
+  DEATH_ZONE: 0x0080
+};
 
 class PhysicsEngine {
   private engine: Matter.Engine;
@@ -17,38 +54,232 @@ class PhysicsEngine {
   private bodies: Map<string, Matter.Body>;
   private lastUpdateTime: number;
   private accumulator: number;
-  
+  private worldBounds: Matter.Body[];
+  private parameters: Record<string, number>;
+  private dartTimer: NodeJS.Timeout | null = null;
+  private lastDartTime: number = 0;
+  private darts: Map<string, {
+    body: Matter.Body;
+    createdAt: number;
+    lifetime: number;
+  }> = new Map();
+
   constructor(gameState: GameStateManager) {
     this.gameState = gameState;
     this.bodies = new Map();
     this.lastUpdateTime = Date.now();
     this.accumulator = 0;
+    this.worldBounds = [];
+    this.parameters = { ...DEFAULT_PARAMETERS };
     
     // Create a Matter.js engine
     this.engine = Matter.Engine.create({
       gravity: {
         x: 0,
-        y: GRAVITY
+        y: this.parameters.gravity
       }
     });
+
+    // Add collision event handling
+    Matter.Events.on(this.engine, 'collisionStart', this.handleCollisionStart.bind(this));
     
-    // Add ground
-    this.addStaticGround();
+    // Add world bounds
+    this.createWorldBounds();
+    
+    // Add ground platforms with gaps
+    this.createGroundSegments();
+    
+    // Create initial platforms layout (matching the original game)
+    this.createInitialPlatforms();
+    
+    // Create death zone at bottom
+    this.createDeathZone();
     
     // Start the engine update loop
     this.startPhysicsLoop();
+    
+    // Start the dart timer
+    this.startDartTimer();
   }
   
   /**
-   * Add the static ground to the physics world
+   * Create world boundaries
    */
-  private addStaticGround(): void {
-    const ground = Matter.Bodies.rectangle(400, 590, 800, 20, {
-      isStatic: true,
-      label: 'ground'
+  private createWorldBounds(): void {
+    // Create invisible walls at the edges of the world (left, right, and top)
+    const leftWall = Matter.Bodies.rectangle(
+      0, WORLD_HEIGHT/2, 10, WORLD_HEIGHT, 
+      { isStatic: true, label: 'leftWall' }
+    );
+    
+    const rightWall = Matter.Bodies.rectangle(
+      WORLD_WIDTH, WORLD_HEIGHT/2, 10, WORLD_HEIGHT, 
+      { isStatic: true, label: 'rightWall' }
+    );
+    
+    const topWall = Matter.Bodies.rectangle(
+      WORLD_WIDTH/2, 0, WORLD_WIDTH, 10, 
+      { isStatic: true, label: 'topWall' }
+    );
+    
+    // Add to world bounds array
+    this.worldBounds = [leftWall, rightWall, topWall];
+    
+    // Add to physics world
+    Matter.Composite.add(this.engine.world, this.worldBounds);
+  }
+  
+  /**
+   * Create segmented ground platforms with gaps
+   */
+  private createGroundSegments(): void {
+    const segmentWidth = 200;
+    const gapWidth = 100;
+    const groundY = 768;
+    
+    const totalSegments = Math.ceil(WORLD_WIDTH / (segmentWidth + gapWidth)) + 1;
+    
+    for (let i = 0; i < totalSegments; i++) {
+      const segmentX = i * (segmentWidth + gapWidth) + (segmentWidth / 2);
+      
+      const groundSegment = Matter.Bodies.rectangle(
+        segmentX, 
+        groundY, 
+        segmentWidth, 
+        20, 
+        {
+          isStatic: true,
+          label: `ground_segment_${i}`,
+          collisionFilter: {
+            category: CATEGORIES.PLATFORM,
+            mask: CATEGORIES.DEFAULT | CATEGORIES.PLAYER | CATEGORIES.DART
+          }
+        }
+      );
+      
+      Matter.Composite.add(this.engine.world, groundSegment);
+    }
+  }
+  
+  /**
+   * Create initial platforms matching original level design
+   */
+  private createInitialPlatforms(): void {
+    // Define platform positions matching the original implementation
+    const platformPositions = [
+      // Left section - initial platforms
+      // Lower level platforms
+      { x: 200, y: 650 },
+      { x: 400, y: 550 },
+      { x: 600, y: 600 },
+      { x: 800, y: 500 },
+      
+      // Middle level platforms
+      { x: 150, y: 450 },
+      { x: 350, y: 350 },
+      { x: 550, y: 400 },
+      { x: 750, y: 300 },
+      { x: 950, y: 350 },
+      
+      // Upper level platforms
+      { x: 300, y: 200 },
+      { x: 500, y: 150 },
+      { x: 700, y: 200 },
+      { x: 900, y: 150 },
+      { x: 1100, y: 200 },
+      
+      // Right section - extending platforms (from 1200 to 2400)
+      // Lower level platforms
+      { x: 1300, y: 650 },
+      { x: 1500, y: 550 },
+      { x: 1700, y: 600 },
+      { x: 1900, y: 500 },
+      { x: 2100, y: 550 },
+      
+      // Middle level platforms
+      { x: 1350, y: 450 },
+      { x: 1550, y: 350 },
+      { x: 1750, y: 400 },
+      { x: 1950, y: 300 },
+      { x: 2150, y: 400 },
+      
+      // Upper level platforms leading to finish
+      { x: 1400, y: 250 },
+      { x: 1600, y: 200 },
+      { x: 1800, y: 150 },
+      { x: 2000, y: 180 },
+      { x: 2200, y: 150 }
+    ];
+    
+    // Create each platform
+    platformPositions.forEach((pos, index) => {
+      const platform = Matter.Bodies.rectangle(
+        pos.x, 
+        pos.y, 
+        this.parameters.platform_width, 
+        this.parameters.platform_height,
+        {
+          isStatic: true,
+          label: `platform_initial_${index}`,
+          collisionFilter: {
+            category: CATEGORIES.PLATFORM,
+            mask: CATEGORIES.DEFAULT | CATEGORIES.PLAYER | CATEGORIES.DART
+          }
+        }
+      );
+      
+      Matter.Composite.add(this.engine.world, platform);
     });
     
-    Matter.Composite.add(this.engine.world, ground);
+    // Create start and finish points (matching original)
+    // These are just visual markers in the original, not physical bodies
+    const startX = 80;
+    const startY = 650;
+    
+    const finishX = 2320;
+    const finishY = 120;
+    
+    // Create finish area with collision sensor
+    const finishArea = Matter.Bodies.rectangle(
+      finishX, finishY, 50, 50,
+      {
+        isStatic: true,
+        isSensor: true, // Doesn't physically block but detects collisions
+        label: 'finish_area',
+        collisionFilter: {
+          category: CATEGORIES.DEFAULT,
+          mask: CATEGORIES.PLAYER
+        },
+        render: {
+          fillStyle: '#ff0000' // Red
+        }
+      }
+    );
+    
+    Matter.Composite.add(this.engine.world, finishArea);
+  }
+  
+  /**
+   * Create death zone at the bottom of the world
+   */
+  private createDeathZone(): void {
+    const deathZone = Matter.Bodies.rectangle(
+      WORLD_WIDTH / 2, 
+      WORLD_HEIGHT + 50, // Below the visible world
+      WORLD_WIDTH, 
+      100,
+      {
+        isStatic: true,
+        isSensor: true, // Doesn't block physically, just detects
+        label: 'death_zone',
+        collisionFilter: {
+          category: CATEGORIES.DEATH_ZONE,
+          mask: CATEGORIES.PLAYER
+        }
+      }
+    );
+    
+    Matter.Composite.add(this.engine.world, deathZone);
   }
   
   /**
@@ -70,6 +301,19 @@ class PhysicsEngine {
   }
   
   /**
+   * Start dart timer for shooting darts from walls
+   */
+  private startDartTimer(): void {
+    if (this.dartTimer) {
+      clearInterval(this.dartTimer);
+    }
+    
+    this.dartTimer = setInterval(() => {
+      this.shootDarts();
+    }, this.parameters.dart_frequency);
+  }
+  
+  /**
    * Update the physics simulation
    */
   update(deltaTime: number): void {
@@ -85,6 +329,12 @@ class PhysicsEngine {
     while (this.accumulator >= TIME_STEP) {
       // Apply forces based on player inputs
       this.applyPlayerForces();
+      
+      // Update special item physics (oscillators)
+      this.updateSpecialItemPhysics();
+      
+      // Update dart physics
+      this.updateDarts();
       
       // Step the physics simulation forward
       Matter.Engine.update(this.engine, TIME_STEP);
@@ -103,22 +353,190 @@ class PhysicsEngine {
     const gameState = this.gameState.getState();
     
     for (const player of gameState.players) {
+      // Skip if player is not alive
+      if (!player.isAlive) continue;
+      
       const body = this.bodies.get(player.id);
       if (!body) continue;
       
       // Apply horizontal movement force
       if (player.lastInput.left) {
-        Matter.Body.applyForce(body, body.position, { x: -PLAYER_MOVE_FORCE, y: 0 });
-      }
-      
-      if (player.lastInput.right) {
-        Matter.Body.applyForce(body, body.position, { x: PLAYER_MOVE_FORCE, y: 0 });
+        // Limit max horizontal velocity
+        if (body.velocity.x > -8) {
+          Matter.Body.applyForce(
+            body, 
+            body.position, 
+            { x: -this.parameters.player_move_speed, y: 0 }
+          );
+        }
+      } else if (player.lastInput.right) {
+        // Limit max horizontal velocity
+        if (body.velocity.x < 8) {
+          Matter.Body.applyForce(
+            body, 
+            body.position, 
+            { x: this.parameters.player_move_speed, y: 0 }
+          );
+        }
+      } else {
+        // Apply friction to slow down when not pressing movement keys
+        Matter.Body.setVelocity(body, {
+          x: body.velocity.x * 0.9,
+          y: body.velocity.y
+        });
       }
       
       // Apply jump force if on ground and jump pressed
       if (player.lastInput.jump && this.isBodyOnGround(body)) {
-        Matter.Body.applyForce(body, body.position, { x: 0, y: -PLAYER_JUMP_FORCE });
+        Matter.Body.setVelocity(body, {
+          x: body.velocity.x,
+          y: -this.parameters.player_jump_force * 20 // Scale to match Phaser physics
+        });
       }
+    }
+  }
+  
+  /**
+   * Update physics for special items like oscillating platforms
+   */
+  private updateSpecialItemPhysics(): void {
+    const gameState = this.gameState.getState();
+    
+    for (const item of gameState.items) {
+      const body = this.bodies.get(item.id);
+      if (!body) continue;
+      
+      // Handle oscillator movement
+      if (item.type === 'oscillator' || item.type === 'moving') {
+        // Use custom properties or default values
+        const distance = item.properties.distance || this.parameters.oscillator_distance;
+        const frequency = item.properties.frequency || 0.001;
+        
+        // Get or initialize phase
+        if (!body.plugin) body.plugin = {};
+        if (!body.plugin.oscillator) {
+          body.plugin.oscillator = {
+            startX: item.position.x,
+            startY: item.position.y,
+            amplitudeX: distance,
+            amplitudeY: 0, // Default to horizontal movement
+            frequency: frequency,
+            phase: 0
+          };
+        }
+        
+        const osc = body.plugin.oscillator;
+        
+        // Update phase
+        osc.phase += 0.016; // Time step increment (60fps)
+        
+        // Calculate new position based on oscillation
+        const newX = osc.startX + Math.sin(osc.phase * osc.frequency) * osc.amplitudeX;
+        const newY = osc.startY + Math.sin(osc.phase * osc.frequency) * osc.amplitudeY;
+        
+        // Update physics body position
+        Matter.Body.setPosition(body, { x: newX, y: newY });
+      }
+    }
+  }
+  
+  /**
+   * Update dart positions and check lifetime
+   */
+  private updateDarts(): void {
+    const now = Date.now();
+    
+    // Check each dart
+    for (const [dartId, dart] of this.darts.entries()) {
+      // Remove darts that have lived too long
+      if (now - dart.createdAt > dart.lifetime) {
+        Matter.Composite.remove(this.engine.world, dart.body);
+        this.darts.delete(dartId);
+        continue;
+      }
+      
+      // Check if dart is out of bounds
+      if (
+        dart.body.position.x < 0 ||
+        dart.body.position.x > WORLD_WIDTH ||
+        dart.body.position.y < 0 ||
+        dart.body.position.y > WORLD_HEIGHT
+      ) {
+        Matter.Composite.remove(this.engine.world, dart.body);
+        this.darts.delete(dartId);
+      }
+    }
+  }
+  
+  /**
+   * Shoot darts from walls
+   */
+  private shootDarts(): void {
+    const gameState = this.gameState.getState();
+    const now = Date.now();
+    
+    // Find all dart walls
+    for (const item of gameState.items) {
+      if (item.type !== 'dart_wall') continue;
+      
+      // Get wall position
+      const wallX = item.position.x;
+      const wallY = item.position.y;
+      const wallHeight = item.properties.height || this.parameters.dart_wall_height;
+      
+      // Create three darts per wall at different heights
+      const positions = [
+        wallY - wallHeight * 0.3, // Top dart
+        wallY,                    // Middle dart
+        wallY + wallHeight * 0.3  // Bottom dart
+      ];
+      
+      positions.forEach((dartY) => {
+        // Create dart body (small rectangle)
+        const dart = Matter.Bodies.rectangle(
+          wallX + 15, // Offset from wall
+          dartY,
+          20, // Dart width
+          6,  // Dart height
+          {
+            label: `dart_${Date.now()}_${Math.random()}`,
+            frictionAir: 0,
+            friction: 0,
+            restitution: 0,
+            isSensor: true, // Doesn't physically block, just detects collisions
+            collisionFilter: {
+              category: CATEGORIES.DART,
+              mask: CATEGORIES.PLAYER | CATEGORIES.PLATFORM | CATEGORIES.SHIELD
+            }
+          }
+        );
+        
+        // Set velocity
+        Matter.Body.setVelocity(dart, {
+          x: -this.parameters.dart_speed,
+          y: 0
+        });
+        
+        // Add to world
+        Matter.Composite.add(this.engine.world, dart);
+        
+        // Track the dart
+        const dartId = `dart_${Date.now()}_${Math.random()}`;
+        this.darts.set(dartId, {
+          body: dart,
+          createdAt: now,
+          lifetime: 10000 // 10 seconds lifetime
+        });
+        
+        // Add to game state for client rendering
+        this.gameState.addProjectile({
+          id: dartId,
+          type: 'dart',
+          position: { x: wallX + 15, y: dartY },
+          velocity: { x: -this.parameters.dart_speed, y: 0 },
+          createdAt: now
+        });
+      });
     }
   }
   
@@ -126,29 +544,141 @@ class PhysicsEngine {
    * Check if a body is touching the ground
    */
   private isBodyOnGround(body: Matter.Body): boolean {
+    // Create a small rectangle below the player to check for collisions
+    const point = { 
+      x: body.position.x, 
+      y: body.position.y + body.bounds.max.y - body.bounds.min.y + 2 // Just below the body
+    };
+    
+    // Query for any bodies at this point
     const bodies = Matter.Query.point(
       Matter.Composite.allBodies(this.engine.world),
-      { x: body.position.x, y: body.position.y + 30 }
+      point
     );
     
-    return bodies.some(b => b.label === 'ground' || b.label.startsWith('platform'));
+    // Filter out the player's own body and non-platform bodies
+    return bodies.some(b => 
+      b !== body && 
+      (b.label.startsWith('platform') || 
+       b.label.startsWith('ground'))
+    );
+  }
+  
+  /**
+   * Handle collision events
+   */
+  private handleCollisionStart(event: Matter.IEventCollision<Matter.Engine>): void {
+    const pairs = event.pairs;
+    
+    for (const pair of pairs) {
+      const bodyA = pair.bodyA;
+      const bodyB = pair.bodyB;
+      
+      // Player-spike collision
+      if (this.isCollisionBetween(bodyA, bodyB, 'player', 'spike')) {
+        const playerId = this.getPlayerIdFromBody(bodyA, bodyB);
+        if (playerId) this.handlePlayerDeath(playerId, 'spike');
+      }
+      
+      // Player-dart collision
+      if (this.isCollisionBetween(bodyA, bodyB, 'player', 'dart')) {
+        const playerId = this.getPlayerIdFromBody(bodyA, bodyB);
+        if (playerId) this.handlePlayerDeath(playerId, 'dart');
+        
+        // Destroy the dart
+        const dartBody = bodyA.label.startsWith('dart') ? bodyA : bodyB;
+        this.removeDart(dartBody);
+      }
+      
+      // Dart-shield collision
+      if (this.isCollisionBetween(bodyA, bodyB, 'dart', 'shield')) {
+        // Destroy the dart
+        const dartBody = bodyA.label.startsWith('dart') ? bodyA : bodyB;
+        this.removeDart(dartBody);
+      }
+      
+      // Player-finish area collision
+      if (this.isCollisionBetween(bodyA, bodyB, 'player', 'finish')) {
+        const playerId = this.getPlayerIdFromBody(bodyA, bodyB);
+        if (playerId) this.handlePlayerWin(playerId);
+      }
+      
+      // Player-death zone collision
+      if (this.isCollisionBetween(bodyA, bodyB, 'player', 'death_zone')) {
+        const playerId = this.getPlayerIdFromBody(bodyA, bodyB);
+        if (playerId) this.handlePlayerDeath(playerId, 'fall');
+      }
+    }
+  }
+  
+  /**
+   * Check if a collision is between two specific types of bodies
+   */
+  private isCollisionBetween(
+    bodyA: Matter.Body, 
+    bodyB: Matter.Body, 
+    typeA: string, 
+    typeB: string
+  ): boolean {
+    return (
+      (bodyA.label.startsWith(typeA) && bodyB.label.startsWith(typeB)) ||
+      (bodyB.label.startsWith(typeA) && bodyA.label.startsWith(typeB))
+    );
+  }
+  
+  /**
+   * Get player ID from a collision between player and another object
+   */
+  private getPlayerIdFromBody(bodyA: Matter.Body, bodyB: Matter.Body): string | null {
+    if (bodyA.label.startsWith('player_')) {
+      return bodyA.label.substring(7); // Remove 'player_' prefix
+    }
+    
+    if (bodyB.label.startsWith('player_')) {
+      return bodyB.label.substring(7); // Remove 'player_' prefix
+    }
+    
+    return null;
+  }
+  
+  /**
+   * Remove a dart from the physics world
+   */
+  private removeDart(dartBody: Matter.Body): void {
+    // Remove from physics engine
+    Matter.Composite.remove(this.engine.world, dartBody);
+    
+    // Remove from dart tracking
+    for (const [dartId, dart] of this.darts.entries()) {
+      if (dart.body === dartBody) {
+        this.darts.delete(dartId);
+        
+        // Also remove from game state for client
+        this.gameState.removeProjectile(dartId);
+        break;
+      }
+    }
   }
   
   /**
    * Create a physics body for a player
    */
   createPlayerBody(player: Player): void {
-    // Create a rectangular body for the player
+    // Create a rectangular body for the player with goat-like dimensions
     const body = Matter.Bodies.rectangle(
       player.position.x,
       player.position.y,
-      30, // width
-      50, // height
+      30, // width - similar to original goat hitbox
+      40, // height - similar to original goat hitbox
       {
         label: `player_${player.id}`,
         friction: 0.01,
         frictionAir: 0.05,
-        restitution: 0.2
+        restitution: 0.2,
+        collisionFilter: {
+          category: CATEGORIES.PLAYER,
+          mask: CATEGORIES.DEFAULT | CATEGORIES.PLATFORM | CATEGORIES.SPIKE | CATEGORIES.DART | CATEGORIES.DEATH_ZONE
+        }
       }
     );
     
@@ -170,30 +700,36 @@ class PhysicsEngine {
         body = Matter.Bodies.rectangle(
           item.position.x,
           item.position.y,
-          item.properties.width || 100,
-          item.properties.height || 20,
+          item.properties.width || this.parameters.platform_width,
+          item.properties.height || this.parameters.platform_height,
           {
             isStatic: true,
             label: `platform_${item.id}`,
-            angle: item.rotation
+            angle: item.rotation || 0,
+            collisionFilter: {
+              category: CATEGORIES.PLATFORM,
+              mask: CATEGORIES.PLAYER | CATEGORIES.DART
+            }
           }
         );
         break;
         
       case 'spike':
-        // Create a triangle shape for spikes
-        const spikeWidth = item.properties.width || 30;
-        
-        body = Matter.Bodies.polygon(
+        // Dangerous platform (rectangle with special collision handling)
+        body = Matter.Bodies.rectangle(
           item.position.x,
           item.position.y,
-          3, // triangle
-          spikeWidth,
+          item.properties.width || this.parameters.spike_width,
+          item.properties.height || this.parameters.spike_height,
           {
             isStatic: true,
             label: `spike_${item.id}`,
-            angle: item.rotation,
-            // Store custom data for collision detection
+            angle: item.rotation || 0,
+            collisionFilter: {
+              category: CATEGORIES.SPIKE,
+              mask: CATEGORIES.PLAYER | CATEGORIES.DART
+            },
+            // Store item type for collisions
             plugin: {
               itemType: 'spike'
             }
@@ -202,33 +738,78 @@ class PhysicsEngine {
         break;
         
       case 'oscillator':
+      case 'moving':
         // Create an oscillating platform
         body = Matter.Bodies.rectangle(
           item.position.x,
           item.position.y,
-          item.properties.width || 100,
-          item.properties.height || 20,
+          item.properties.width || this.parameters.oscillator_width,
+          item.properties.height || this.parameters.oscillator_height,
           {
-            isStatic: false, // Will be moved programmatically
+            isStatic: true, // Will be moved programmatically
             label: `oscillator_${item.id}`,
-            angle: item.rotation,
+            angle: item.rotation || 0,
+            collisionFilter: {
+              category: CATEGORIES.PLATFORM,
+              mask: CATEGORIES.PLAYER | CATEGORIES.DART
+            },
             plugin: {
               itemType: 'oscillator',
               // Store oscillation properties
               oscillator: {
                 startX: item.position.x,
                 startY: item.position.y,
-                amplitudeX: item.properties.amplitudeX || 0,
-                amplitudeY: item.properties.amplitudeY || 100,
+                amplitudeX: item.properties.distance || this.parameters.oscillator_distance,
+                amplitudeY: 0, // By default, only horizontal oscillation
                 frequency: item.properties.frequency || 0.001,
                 phase: 0
               }
             }
           }
         );
+        break;
         
-        // For oscillators, we need to manually move them
-        Matter.Body.setStatic(body, true);
+      case 'shield':
+        // Shield block that blocks darts
+        body = Matter.Bodies.rectangle(
+          item.position.x,
+          item.position.y,
+          item.properties.width || this.parameters.shield_width,
+          item.properties.height || this.parameters.shield_height,
+          {
+            isStatic: true,
+            label: `shield_${item.id}`,
+            collisionFilter: {
+              category: CATEGORIES.SHIELD,
+              mask: CATEGORIES.PLAYER | CATEGORIES.DART
+            },
+            plugin: {
+              itemType: 'shield'
+            }
+          }
+        );
+        break;
+        
+      case 'dart_wall':
+        // Dart wall that shoots darts
+        body = Matter.Bodies.rectangle(
+          item.position.x,
+          item.position.y,
+          20, // Fixed width for walls (20px)
+          item.properties.height || this.parameters.dart_wall_height,
+          {
+            isStatic: true,
+            label: `dart_wall_${item.id}`,
+            collisionFilter: {
+              category: CATEGORIES.WALL,
+              mask: CATEGORIES.PLAYER | CATEGORIES.DART
+            },
+            plugin: {
+              itemType: 'dart_wall',
+              lastDartTime: 0
+            }
+          }
+        );
         break;
         
       default:
@@ -240,7 +821,11 @@ class PhysicsEngine {
           50,
           {
             isStatic: true,
-            label: `item_${item.id}`
+            label: `item_${item.id}`,
+            collisionFilter: {
+              category: CATEGORIES.DEFAULT,
+              mask: CATEGORIES.PLAYER | CATEGORIES.DART
+            }
           }
         );
         break;
@@ -274,7 +859,7 @@ class PhysicsEngine {
     for (const player of gameState.players) {
       const body = this.bodies.get(player.id);
       
-      // Create body if it doesn't exist
+      // Create body if it doesn't exist and player is alive
       if (!body && player.isAlive) {
         this.createPlayerBody(player);
         continue;
@@ -286,10 +871,11 @@ class PhysicsEngine {
         player.position.y = body.position.y;
         player.velocity.x = body.velocity.x;
         player.velocity.y = body.velocity.y;
+        player.onGround = this.isBodyOnGround(body);
       }
     }
     
-    // Check for item-specific physics updates (like oscillators)
+    // Check for item-specific physics updates
     for (const item of gameState.items) {
       const body = this.bodies.get(item.id);
       
@@ -299,74 +885,128 @@ class PhysicsEngine {
         continue;
       }
       
-      // Handle special item types
-      if (item.type === 'oscillator' && body.plugin?.oscillator) {
-        const osc = body.plugin.oscillator;
-        osc.phase += 0.016; // Time step increment
-        
-        // Calculate new position based on oscillation
-        const newX = osc.startX + Math.sin(osc.phase * osc.frequency) * osc.amplitudeX;
-        const newY = osc.startY + Math.sin(osc.phase * osc.frequency) * osc.amplitudeY;
-        
-        Matter.Body.setPosition(body, { x: newX, y: newY });
-      }
-      
       // Update item positions from physics (needed for non-static items)
-      if (!body.isStatic || item.type === 'oscillator') {
+      if (item.type === 'oscillator' || item.type === 'moving') {
         item.position.x = body.position.x;
         item.position.y = body.position.y;
         item.rotation = body.angle;
       }
     }
     
-    // Check for collisions
-    this.checkCollisions();
-  }
-  
-  /**
-   * Check for collisions between physics bodies
-   */
-  private checkCollisions(): void {
-    const pairs = this.engine.pairs.list;
-    
-    for (const pair of pairs) {
-      const bodyA = pair.bodyA;
-      const bodyB = pair.bodyB;
-      
-      // Check for player-spike collisions
-      if (
-        (bodyA.label.startsWith('player_') && bodyB.plugin?.itemType === 'spike') ||
-        (bodyB.label.startsWith('player_') && bodyA.plugin?.itemType === 'spike')
-      ) {
-        const playerId = bodyA.label.startsWith('player_') 
-          ? bodyA.label.substring(7)
-          : bodyB.label.substring(7);
-          
-        this.handlePlayerDeath(playerId, 'spike');
-      }
-      
-      // Check for player falling off screen
-      for (const [playerId, body] of this.bodies.entries()) {
-        if (body.label.startsWith('player_') && body.position.y > 600) {
-          this.handlePlayerDeath(playerId, 'fall');
+    // Update projectile positions (darts)
+    for (const [dartId, dart] of this.darts.entries()) {
+      this.gameState.updateProjectile(dartId, {
+        position: { 
+          x: dart.body.position.x, 
+          y: dart.body.position.y 
+        },
+        velocity: { 
+          x: dart.body.velocity.x, 
+          y: dart.body.velocity.y 
         }
-      }
+      });
     }
   }
   
   /**
    * Handle player death
    */
-  private handlePlayerDeath(playerId: string, cause: string): void {
+  private handlePlayerDeath(playerId: string, cause: DeathType): void {
     const gameState = this.gameState.getState();
-    const player = gameState.players.find((p: any) => p.id === playerId);
+    const players = gameState.players as Array<{
+      id: string;
+      isAlive: boolean;
+      position: { x: number; y: number };
+    }>;
+    
+    const player = players.find(p => p.id === playerId);
     
     if (player && player.isAlive) {
       player.isAlive = false;
       console.log(`Player ${playerId} died from ${cause}`);
       
-      // In a real implementation, this would trigger an event to the game logic
+      // Emit death event to game logic
+      gameEvents.emit('PLAYER_DEATH', {
+        playerId,
+        cause,
+        position: { ...player.position },
+        timestamp: Date.now()
+      });
     }
+  }
+  
+  /**
+   * Handle player win
+   */
+  private handlePlayerWin(playerId: string): void {
+    const gameState = this.gameState.getState();
+    const players = gameState.players as Array<{
+      id: string;
+      isAlive: boolean;
+      position: { x: number; y: number };
+    }>;
+    
+    const player = players.find(p => p.id === playerId);
+    
+    if (player && player.isAlive) {
+      console.log(`Player ${playerId} won!`);
+      
+      // Emit win event to game logic
+      gameEvents.emit('PLAYER_WIN', {
+        playerId,
+        position: { ...player.position },
+        timestamp: Date.now()
+      });
+    }
+  }
+  
+  /**
+   * Update physics parameters
+   */
+  updateParameters(parameters: Record<string, number>): void {
+    // Update stored parameters
+    for (const [key, value] of Object.entries(parameters)) {
+      this.parameters[key] = value;
+    }
+    
+    // Update gravity if changed
+    if (parameters.gravity !== undefined) {
+      this.engine.gravity.y = parameters.gravity;
+    }
+    
+    // Update dart timer if frequency changed
+    if (parameters.dart_frequency !== undefined) {
+      this.startDartTimer(); // Will clear and restart with new frequency
+    }
+    
+    // Log parameter updates
+    console.log('Physics parameters updated:', parameters);
+  }
+  
+  /**
+   * Get current physics parameters
+   */
+  getParameters(): Record<string, number> {
+    return { ...this.parameters };
+  }
+  
+  /**
+   * Clean up resources
+   */
+  cleanup(): void {
+    // Clear dart timer
+    if (this.dartTimer) {
+      clearInterval(this.dartTimer);
+      this.dartTimer = null;
+    }
+    
+    // Clear all bodies
+    Matter.Composite.clear(this.engine.world, false, true);
+    this.bodies.clear();
+    this.darts.clear();
+    
+    // Clear all event listeners
+    Matter.Events.off(this.engine, 'collisionStart');
   }
 }
 
