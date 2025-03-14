@@ -125,20 +125,20 @@ export const GAME_PARAMETERS: Record<string, GameParameter> = {
   // Shield parameters
   shield_height: {
     key: 'shield_height',
-    defaultValue: 100,
-    currentValue: 100,
+    defaultValue: 40,
+    currentValue: 40,
     normalizedValue: 0,
-    min: 50,
-    max: 200,
+    min: 20,
+    max: 80,
     description: 'Controls the height of shield blocks'
   },
   shield_width: {
     key: 'shield_width',
-    defaultValue: 50,
-    currentValue: 50,
+    defaultValue: 40,
+    currentValue: 40,
     normalizedValue: 0,
-    min: 25,
-    max: 100,
+    min: 20,
+    max: 80,
     description: 'Controls the width of shield blocks'
   },
   
