@@ -38,8 +38,15 @@ export class GameEventBus {
    * @param data Event data
    */
   publish<T>(event: string, data: T): void {
+    console.log(`GameEventBus: Publishing event '${event}'`, data);
     if (!this.listeners[event]) return;
-    this.listeners[event].forEach(callback => callback(data));
+    this.listeners[event].forEach(callback => {
+      try {
+        callback(data);
+      } catch (error) {
+        console.error(`Error in event handler for ${event}:`, error);
+      }
+    });
   }
 
   /**

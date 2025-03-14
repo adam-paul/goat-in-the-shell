@@ -1,4 +1,3 @@
-import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App'
@@ -25,10 +24,8 @@ Promise.race([fontPromise, timeout])
     
     // Render the app
     createRoot(document.getElementById('root')!).render(
-      <StrictMode>
-        <SocketProvider>
-          <App />
-        </SocketProvider>
-      </StrictMode>,
+      <SocketProvider>
+        <App />
+      </SocketProvider>
     );
   });

@@ -2,9 +2,11 @@
 import React, { useEffect, useRef } from 'react';
 import Phaser from 'phaser';
 import { GameMode, PlayerRole } from '../../shared/types';
+import { MESSAGE_TYPES } from '../../shared/constants';
 import { useGameStore } from '../store/gameStore';
 import { useSocket } from '../network';
 import { gameEvents } from '../utils/GameEventBus';
+import BasicGameScene from './BasicGameScene';
 
 interface GameRendererProps {
   containerClassName?: string;
@@ -18,7 +20,9 @@ const GameRenderer: React.FC<GameRendererProps> = ({ containerClassName = 'game-
   const { 
     currentGameMode, 
     playerRole,
-    handlePlaceItem 
+    handlePlaceItem,
+    gameState,
+    updateGameState
   } = useGameStore();
   
   // Get socket
@@ -50,9 +54,8 @@ const GameRenderer: React.FC<GameRendererProps> = ({ containerClassName = 'game-
         mode: Phaser.Scale.FIT,
         autoCenter: Phaser.Scale.CENTER_BOTH
       },
-      scene: [], // Will be replaced with our client-side scene
+      scene: [BasicGameScene], // Use our new scene
       parent: containerClassName,
-      canvas: document.createElement('canvas'),
       render: {
         pixelArt: true,
         antialias: false,
@@ -60,14 +63,13 @@ const GameRenderer: React.FC<GameRendererProps> = ({ containerClassName = 'game-
       },
       input: {
         keyboard: true,
-        gamepad: false,
         mouse: true,
         touch: true
       },
       physics: {
         default: 'arcade',
         arcade: {
-          gravity: { y: 0, x: 0 }, // No gravity, physics comes from server
+          gravity: { y: 300, x: 0 }, // Basic gravity for rendering
           debug: false
         }
       }
@@ -101,7 +103,23 @@ const GameRenderer: React.FC<GameRendererProps> = ({ containerClassName = 'game-
   // Set up event bus for placement confirmations
   useEffect(() => {
     const placementHandler = (data: { type: string, x: number, y: number }) => {
+      console.log(`GameRenderer: Got placement confirmation for ${data.type} at (${data.x}, ${data.y})`);
       handlePlaceItem(data.x, data.y);
+      
+      // Also publish this to the server state update bus to ensure the item appears immediately
+      const itemData = {
+        items: [
+          { 
+            type: data.type, 
+            x: data.x, 
+            y: data.y, 
+            id: `local-${Date.now()}` 
+          }
+        ]
+      };
+      
+      // Update the rendering without waiting for server response
+      gameEvents.publish('SERVER_STATE_UPDATE', itemData);
     };
     
     const unsubPlacement = gameEvents.subscribe<{ type: string, x: number, y: number }>(
@@ -141,6 +159,35 @@ const GameRenderer: React.FC<GameRendererProps> = ({ containerClassName = 'game-
     
     return () => unsubPlayerInput();
   }, [socket]);
+  
+  // Set up server state handling
+  useEffect(() => {
+    // Request initial state from server
+    if (socket.connected) {
+      socket.sendMessage(MESSAGE_TYPES.REQUEST_INITIAL_STATE, {});
+    }
+    
+    // Function to handle server state updates
+    const handleServerState = (state: any) => {
+      updateGameState(state);
+      gameEvents.publish('SERVER_STATE_UPDATE', state);
+    };
+    
+    // Set up socket event listener for state updates
+    const handleStateUpdate = (data: any) => {
+      if (data && data.state) {
+        handleServerState(data.state);
+      }
+    };
+    
+    // Subscribe to STATE_UPDATE events from socket
+    const unsubStateUpdate = gameEvents.subscribe(MESSAGE_TYPES.STATE_UPDATE, handleStateUpdate);
+    
+    // Clean up
+    return () => {
+      unsubStateUpdate();
+    };
+  }, [socket.connected, updateGameState]);
 
   // Return the container for Phaser to render into
   return <div id={containerClassName} />;

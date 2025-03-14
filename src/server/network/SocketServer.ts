@@ -137,6 +137,10 @@ class SocketServer {
           this.handleAICommand(clientId, message.payload || message.data);
           break;
           
+        case MESSAGE_TYPES.REQUEST_INITIAL_STATE:
+          this.handleRequestInitialState(clientId);
+          break;
+          
         default:
           console.warn(`SERVER: Unknown message type received from client ${clientId}: ${message.type}`);
           break;
@@ -425,6 +429,45 @@ class SocketServer {
         response: `Processed command: ${command}`,
         success: true,
         parameter_modifications: []
+      }
+    });
+  }
+  
+  /**
+   * Handle request for initial state
+   */
+  private handleRequestInitialState(clientId: string) {
+    console.log(`SERVER: Received request for initial state from client ${clientId}`);
+    
+    const client = this.clients.get(clientId);
+    if (!client) return;
+    
+    // If client is in a game instance, send that instance's state
+    if (client.instanceId) {
+      const instance = this.instanceManager.getInstance(client.instanceId);
+      if (instance) {
+        const state = instance.state.getState();
+        
+        // Send state update
+        this.sendMessage(clientId, {
+          type: MESSAGE_TYPES.STATE_UPDATE,
+          payload: {
+            state: state,
+            timestamp: Date.now()
+          }
+        });
+        return;
+      }
+    }
+    
+    // If not in an instance, send global state
+    const globalState = this.gameState.getState();
+    
+    this.sendMessage(clientId, {
+      type: MESSAGE_TYPES.STATE_UPDATE,
+      payload: {
+        state: globalState,
+        timestamp: Date.now()
       }
     });
   }
