@@ -115,12 +115,21 @@ export const useInputHandler = () => {
       
       // Send to server if connected
       if (socket.connected) {
+        // Explicitly handle jump as either spacebar or up arrow
+        const isJumping = inputState.jump || inputState.up;
+        
         const inputToSend = {
           left: inputState.left,
           right: inputState.right,
-          jump: inputState.jump || inputState.up, // Treat up as jump too
+          jump: isJumping, // Explicitly set jump status
           timestamp: Date.now()
         };
+        
+        // Log jump input specifically for debugging
+        if (isJumping) {
+          console.log('JUMP INPUT detected and sent to server');
+        }
+        
         socket.sendPlayerInput(inputToSend);
       }
       

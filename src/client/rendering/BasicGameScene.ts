@@ -99,13 +99,24 @@ export default class BasicGameScene extends Phaser.Scene {
     // Skip if there's no goat sprite
     if (!this.goatSprite) return;
     
+    const sprite = this.goatSprite.getSprite();
+    
+    // Configure player physics properties (matching original game)
+    sprite.setBounce(0.1);
+    sprite.setCollideWorldBounds(false); // Allow falling off the world
+    
+    // Set player-specific gravity using the correct Arcade Physics type assertion
+    if (sprite.body) {
+      (sprite.body as Phaser.Physics.Arcade.Body).setGravityY(300);
+    }
+    
     // Set up collisions between goat and platforms/walls
-    this.platformsCollider = this.physics.add.collider(this.goatSprite.getSprite(), this.platforms);
-    this.wallsCollider = this.physics.add.collider(this.goatSprite.getSprite(), this.walls);
+    this.platformsCollider = this.physics.add.collider(sprite, this.platforms);
+    this.wallsCollider = this.physics.add.collider(sprite, this.walls);
     
     // Set up overlap with end point to detect level completion
     this.physics.add.overlap(
-      this.goatSprite.getSprite(),
+      sprite,
       this.endPoint,
       this.handleEndPointCollision,
       undefined,
@@ -120,12 +131,14 @@ export default class BasicGameScene extends Phaser.Scene {
     
     // Set up death zone collision
     this.physics.add.overlap(
-      this.goatSprite.getSprite(),
+      sprite,
       deathZone,
       this.handleDeathZoneCollision,
       undefined,
       this
     );
+    
+    console.log('Physics setup complete - player can now jump and collide with platforms');
   }
   
   /**
@@ -360,7 +373,7 @@ export default class BasicGameScene extends Phaser.Scene {
   }
   
   /**
-   * Handle player input - THIS IS ONLY FOR VISUAL FEEDBACK
+   * Handle player input - THIS IS FOR IMMEDIATE VISUAL FEEDBACK
    * The server is the source of truth for physics and game state.
    * This method provides immediate visual feedback while waiting for server updates.
    */
@@ -377,36 +390,52 @@ export default class BasicGameScene extends Phaser.Scene {
     // The server will update the real position in the next state update
     console.log('Local visual feedback for input:', data);
     
-    // Handle left/right animation only (server controls actual movement)
+    // Provide immediate client-side feedback for better responsiveness
+    // This won't affect server-side physics but gives the player immediate feedback
+    
+    // Handle left/right movement for immediate feedback
     if (data.left) {
-      // Just update animation and facing direction for immediate feedback
+      // Apply immediate velocity change for responsive feel
+      sprite.setVelocityX(-200);
       this.goatSprite.update(
         sprite.x, sprite.y, 
-        -200, // Simulate leftward velocity for animation only
+        -200, // Leftward velocity for animation
         sprite.body.velocity.y,
         onGround, true // Force facing left
       );
     } else if (data.right) {
-      // Just update animation and facing direction for immediate feedback
+      // Apply immediate velocity change for responsive feel
+      sprite.setVelocityX(200);
       this.goatSprite.update(
         sprite.x, sprite.y, 
-        200, // Simulate rightward velocity for animation only
+        200, // Rightward velocity for animation
         sprite.body.velocity.y,
         onGround, false // Force facing right
       );
     } else {
-      // Reset to idle animation
+      // Slow down when not pressing left/right
+      sprite.setVelocityX(sprite.body.velocity.x * 0.9);
       this.goatSprite.update(
         sprite.x, sprite.y, 
-        0, // No horizontal velocity
+        sprite.body.velocity.x * 0.9, // Slowing down
         sprite.body.velocity.y,
         onGround,
         sprite.flipX // Maintain current facing direction
       );
     }
     
-    // Jump is handled entirely by the server
-    // We'll update sprite position when server sends the next state update
+    // Handle jump - provide immediate visual feedback
+    if ((data.jump || data.up) && onGround) {
+      console.log('Jump input detected while on ground, applying immediate visual feedback');
+      
+      // Apply immediate upward velocity for responsive feel
+      // This matches the original implementation's jump strength
+      sprite.setVelocityY(-500); 
+      
+      // Make sure the server knows we jumped
+      // (this was already sent in the input handler, just for clarity)
+      console.log('Jump action sent to server');
+    }
   }
   
   private updateGameState(gameState: any): void {
@@ -484,8 +513,18 @@ export default class BasicGameScene extends Phaser.Scene {
             // If using Phaser physics body, update that too
             const sprite = this.goatSprite.getSprite();
             if (sprite.body) {
-              // Use server-provided velocity
+              // Use server-provided position and velocity
+              
+              // First set correct position
+              sprite.setPosition(player.position.x, player.position.y);
+              
+              // Then apply server-provided velocity
               sprite.setVelocity(player.velocity?.x || 0, player.velocity?.y || 0);
+              
+              // Explicitly check for jumping (significant upward velocity)
+              if (player.velocity?.y && player.velocity.y < -50) {
+                console.log('Server indicates player is jumping with velocity:', player.velocity.y);
+              }
             }
           }
         }
