@@ -401,7 +401,7 @@ export default class BasicGameScene extends Phaser.Scene {
     // Provide immediate client-side feedback for better responsiveness
     // This won't affect server-side physics but gives the player immediate feedback
     
-    // Handle left/right movement for immediate feedback
+    // Handle left/right movement for immediate feedback - match original implementation
     if (data.left) {
       // Apply immediate velocity change for responsive feel
       sprite.setVelocityX(-200);
@@ -421,11 +421,11 @@ export default class BasicGameScene extends Phaser.Scene {
         onGround, false // Force facing right
       );
     } else {
-      // Slow down when not pressing left/right
-      sprite.setVelocityX(sprite.body.velocity.x * 0.9);
+      // In the original implementation, the goat comes to a full stop when no keys are pressed
+      sprite.setVelocityX(0);
       this.goatSprite.update(
         sprite.x, sprite.y, 
-        sprite.body.velocity.x * 0.9, // Slowing down
+        0, // Complete stop (no sliding)
         sprite.body.velocity.y,
         onGround,
         sprite.flipX // Maintain current facing direction

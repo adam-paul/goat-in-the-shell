@@ -310,30 +310,25 @@ class PhysicsEngine {
       const body = this.bodies.get(player.id);
       if (!body) continue;
       
-      // Apply horizontal movement force
+      // Apply horizontal movement force - match original implementation behavior
       if (player.lastInput.left) {
-        // Limit max horizontal velocity
-        if (body.velocity.x > -8) {
-          Matter.Body.applyForce(
-            body, 
-            body.position, 
-            { x: -this.parameters.player_move_speed, y: 0 }
-          );
-        }
-      } else if (player.lastInput.right) {
-        // Limit max horizontal velocity
-        if (body.velocity.x < 8) {
-          Matter.Body.applyForce(
-            body, 
-            body.position, 
-            { x: this.parameters.player_move_speed, y: 0 }
-          );
-        }
-      } else {
-        // Apply friction to slow down when not pressing movement keys
+        // Set a fixed leftward velocity instead of applying force
+        // This creates more responsive movement matching original implementation
         Matter.Body.setVelocity(body, {
-          x: body.velocity.x * 0.9,
-          y: body.velocity.y
+          x: -6, // Fixed velocity that feels like -200 in Phaser
+          y: body.velocity.y // Maintain vertical velocity
+        });
+      } else if (player.lastInput.right) {
+        // Set a fixed rightward velocity instead of applying force
+        Matter.Body.setVelocity(body, {
+          x: 6, // Fixed velocity that feels like 200 in Phaser
+          y: body.velocity.y // Maintain vertical velocity
+        });
+      } else {
+        // In original implementation, player comes to a full stop when not pressing keys
+        Matter.Body.setVelocity(body, {
+          x: 0, // Full stop (no sliding)
+          y: body.velocity.y // Maintain vertical velocity
         });
       }
       
