@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { gameEvents } from '../utils/GameEventBus';
 import { ItemType } from '../../shared/types';
+import { getParameterValue } from '../game/parameters';
 
 export default class BasicGameScene extends Phaser.Scene {
   // World elements
@@ -49,7 +50,7 @@ export default class BasicGameScene extends Phaser.Scene {
   private createPlatformTexture(): void {
     const graphics = this.make.graphics({ x: 0, y: 0 });
     
-    // Draw a simple platform texture
+    // Draw a simple platform texture (matching original implementation)
     graphics.fillStyle(0x654321); // Brown color
     graphics.fillRect(0, 0, 100, 20);
     graphics.fillStyle(0x8B4513); // Darker brown for top
@@ -63,6 +64,57 @@ export default class BasicGameScene extends Phaser.Scene {
 
     graphics.generateTexture('platform', 100, 20);
     graphics.destroy();
+    
+    // Also create a spike/dangerous platform texture
+    const spikeGraphics = this.make.graphics({ x: 0, y: 0 });
+    
+    // Create a texture for dangerous platforms with red tint
+    spikeGraphics.fillStyle(0x8B4513); // Base brown color 
+    spikeGraphics.fillRect(0, 0, 100, 20);
+    spikeGraphics.fillStyle(0x954321); // Slightly reddish brown for top
+    spikeGraphics.fillRect(0, 0, 100, 5);
+    
+    // Add some texture details with a reddish tint
+    spikeGraphics.fillStyle(0x7D3027); // Reddish brown for wood grain
+    for (let i: number = 0; i < 5; i++) {
+      spikeGraphics.fillRect(10 + (i * 20), 8, 5, 10);
+    }
+
+    spikeGraphics.generateTexture('dangerous_platform', 100, 20);
+    spikeGraphics.destroy();
+    
+    // Create a wall texture for dart walls
+    const wallGraphics = this.make.graphics({ x: 0, y: 0 });
+    
+    // Draw a simple wall texture
+    wallGraphics.fillStyle(0x808080); // Gray color
+    wallGraphics.fillRect(0, 0, 20, 100);
+    
+    // Add some brick-like details
+    wallGraphics.lineStyle(1, 0x606060); // Darker gray for mortar lines
+    
+    // Horizontal lines
+    for (let i = 0; i < 5; i++) {
+      wallGraphics.moveTo(0, 20 * i);
+      wallGraphics.lineTo(20, 20 * i);
+    }
+    
+    // Vertical lines for bricks (staggered pattern)
+    for (let i = 0; i < 5; i++) {
+      const offsetY = i * 20;
+      if (i % 2 === 0) {
+        wallGraphics.moveTo(10, offsetY);
+        wallGraphics.lineTo(10, offsetY + 20);
+      } else {
+        wallGraphics.moveTo(0, offsetY);
+        wallGraphics.lineTo(0, offsetY + 20);
+        wallGraphics.moveTo(20, offsetY);
+        wallGraphics.lineTo(20, offsetY + 20);
+      }
+    }
+
+    wallGraphics.generateTexture('wall', 20, 100);
+    wallGraphics.destroy();
   }
   
   private createWorldElements(): void {
@@ -184,6 +236,44 @@ export default class BasicGameScene extends Phaser.Scene {
         this.exitPlacementMode();
       }
     });
+    
+    // Listen for parameter updates to refresh preview
+    gameEvents.subscribe('PARAMETER_UPDATED', (data: any) => {
+      // If we're in placement mode with a preview, recreate the preview
+      // to reflect the updated parameter
+      if (this.itemPlacementMode && this.itemPreview && this.itemToPlace) {
+        // Get current position
+        const currentPos = {
+          x: this.itemPreview.x,
+          y: this.itemPreview.y
+        };
+        
+        // Recreate preview with new parameters
+        this.createItemPreview(this.itemToPlace);
+        
+        // Restore position
+        if (this.itemPreview) {
+          this.itemPreview.setPosition(currentPos.x, currentPos.y);
+        }
+      }
+    });
+    
+    // Listen for batch parameter updates
+    gameEvents.subscribe('PARAMETERS_BATCH_UPDATED', () => {
+      if (this.itemPlacementMode && this.itemToPlace) {
+        // Same as above - refresh preview
+        const currentPos = this.itemPreview ? {
+          x: this.itemPreview.x,
+          y: this.itemPreview.y
+        } : { x: 400, y: 300 };
+        
+        this.createItemPreview(this.itemToPlace);
+        
+        if (this.itemPreview) {
+          this.itemPreview.setPosition(currentPos.x, currentPos.y);
+        }
+      }
+    });
   }
   
   private updateGameState(gameState: any): void {
@@ -267,52 +357,112 @@ export default class BasicGameScene extends Phaser.Scene {
     // Create different previews based on item type
     switch(itemType) {
       case 'platform': {
+        // Get platform parameters to match original implementation
+        const width = getParameterValue('platform_width');
+        const height = getParameterValue('platform_height');
+        const tilt = getParameterValue('tilt');
+        
+        // Create platform preview - green semi-transparent rectangle (matching original)
         this.itemPreview = this.add.rectangle(
           worldPoint.x, 
           worldPoint.y, 
-          100, 
-          20, 
-          0x00ff00, 
-          0.5
+          width, 
+          height, 
+          0x00ff00, // Green color matches original
+          0.5       // Semi-transparent
         );
+        
+        // Apply current tilt
+        if (tilt !== 0) {
+          this.itemPreview.setRotation(Phaser.Math.DegToRad(tilt));
+        }
+        
+        console.log(`Created platform preview with width=${width}, height=${height}, tilt=${tilt}`);
         break;
       }
       case 'spike': {
-        // Create a rectangle for spike preview
+        // Get spike parameters to match original implementation
+        const width = getParameterValue('spike_width');
+        const height = getParameterValue('spike_height');
+        const tilt = getParameterValue('tilt');
+        
+        // Create spike preview - red semi-transparent rectangle (matching original)
         this.itemPreview = this.add.rectangle(
           worldPoint.x,
           worldPoint.y,
-          100,
-          20,
-          0xff0000,
-          0.5
+          width,
+          height,
+          0xff0000, // Red color matches original
+          0.5       // Semi-transparent
         );
+        
+        // Apply current tilt
+        if (tilt !== 0) {
+          this.itemPreview.setRotation(Phaser.Math.DegToRad(tilt));
+        }
+        
+        console.log(`Created spike preview with width=${width}, height=${height}, tilt=${tilt}`);
         break;
       }
       case 'moving':
       case 'oscillator': {
+        // Get oscillator parameters to match original implementation
+        const width = getParameterValue('oscillator_width');
+        const height = getParameterValue('oscillator_height');
+        const tilt = getParameterValue('tilt');
+        
+        // Create oscillator preview - blue semi-transparent rectangle (matching original)
         this.itemPreview = this.add.rectangle(
           worldPoint.x, 
           worldPoint.y, 
-          100, 
-          20, 
-          0x0000ff, 
-          0.5
+          width, 
+          height, 
+          0x0000ff, // Blue color matches original
+          0.5       // Semi-transparent
         );
+        
+        // Apply current tilt
+        if (tilt !== 0) {
+          this.itemPreview.setRotation(Phaser.Math.DegToRad(tilt));
+        }
+        
+        console.log(`Created oscillator preview with width=${width}, height=${height}, tilt=${tilt}`);
         break;
       }
       case 'shield': {
+        // Get shield dimensions from parameters
+        const width = getParameterValue('shield_width');
+        const height = getParameterValue('shield_height');
+        
+        // Create shield preview matching original implementation - simple orange rectangle
         this.itemPreview = this.add.rectangle(
           worldPoint.x, 
           worldPoint.y, 
-          50, 
-          100, 
-          0xFF9800, 
-          0.5
+          width, 
+          height, 
+          0xFF9800, // Orange color exactly as in original
+          0.5      // Semi-transparent
         );
+        console.log(`Created shield preview with width=${width}, height=${height}`);
         break;
       }
-      // Removed dart_wall case since it's not a placeable item
+      case 'dart_wall': {
+        // Get dart wall parameters to match original implementation
+        const height = getParameterValue('dart_wall_height');
+        
+        // Create dart wall preview - red semi-transparent rectangle (matching original)
+        this.itemPreview = this.add.rectangle(
+          worldPoint.x, 
+          worldPoint.y, 
+          20, // Fixed width for walls (20px)
+          height, 
+          0xff0000, // Red color matches original
+          0.5       // Semi-transparent
+        );
+        
+        console.log(`Created dart wall preview with height=${height}`);
+        break;
+      }
       default: {
         // Default fallback preview
         this.itemPreview = this.add.rectangle(
@@ -324,6 +474,25 @@ export default class BasicGameScene extends Phaser.Scene {
           0.5
         );
       }
+    }
+    
+    // Add border outline to make the preview more visible
+    if (this.itemPreview) {
+      // Store original fill color
+      const fillColor = (this.itemPreview as Phaser.GameObjects.Rectangle).fillColor;
+      
+      // Add stroke (border)
+      (this.itemPreview as Phaser.GameObjects.Rectangle).setStrokeStyle(2, 0xffffff);
+      
+      // Add a pulsing effect to make the preview more noticeable
+      this.tweens.add({
+        targets: this.itemPreview,
+        alpha: { from: 0.7, to: 0.4 },
+        duration: 800,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut'
+      });
     }
   }
   
@@ -354,48 +523,207 @@ export default class BasicGameScene extends Phaser.Scene {
     let gameObject: Phaser.GameObjects.GameObject;
     
     try {
+      // Get tilt parameter for items that can be tilted
+      const tilt = getParameterValue('tilt');
+      
       switch(type) {
         case 'platform': {
-          // Create a platform from the platform texture
-          gameObject = this.platforms.create(x, y, 'platform')
-            .setScale(2, 0.5)
-            .refreshBody();
+          // Get platform parameters to match original implementation
+          const width = getParameterValue('platform_width');
+          const height = getParameterValue('platform_height');
+          
+          // Create a platform using the platform texture (identical to original)
+          gameObject = this.platforms.create(x, y, 'platform');
+          
+          // Scale according to parameters (just as in original)
+          const widthScale = width / 100; // Default texture width is 100
+          const heightScale = height / 20; // Default texture height is 20
+          (gameObject as Phaser.Physics.Arcade.Sprite).setScale(widthScale, heightScale).refreshBody();
+          
+          // Apply current tilt (matching original)
+          if (tilt !== 0) {
+            (gameObject as Phaser.Physics.Arcade.Sprite).setRotation(Phaser.Math.DegToRad(tilt));
+            (gameObject as Phaser.Physics.Arcade.Sprite).refreshBody();
+          }
+          
+          console.log(`Platform created with width=${width}, height=${height}, tilt=${tilt}`);
           break;
         }
         case 'spike': {
-          // Create a rectangle for spike
-          const spike = this.add.rectangle(
-            x, y,
-            100, 20,
-            0xff0000
-          );
-          gameObject = spike;
+          // Get spike parameters to match original implementation
+          const width = getParameterValue('spike_width');
+          const height = getParameterValue('spike_height');
+          
+          // Create a dangerous platform that looks similar to regular platforms (identical to original)
+          try {
+            const dangerousPlatform = this.physics.add.sprite(x, y, 'dangerous_platform');
+            dangerousPlatform.setImmovable(true);
+            (dangerousPlatform.body as Phaser.Physics.Arcade.Body).allowGravity = false;
+            
+            // Scale according to parameters (just as in original)
+            const widthScale = width / 100; // Default texture width is 100
+            const heightScale = height / 20; // Default texture height is 20
+            dangerousPlatform.setScale(widthScale, heightScale).refreshBody();
+            
+            // Apply current tilt (matching original)
+            if (tilt !== 0) {
+              dangerousPlatform.setRotation(Phaser.Math.DegToRad(tilt));
+              dangerousPlatform.refreshBody();
+            }
+            
+            // Note: In original, there was a collision handler for player death, but
+            // we're just handling visuals in this scene
+            
+            gameObject = dangerousPlatform;
+            console.log(`Dangerous platform created with width=${width}, height=${height}, tilt=${tilt}`);
+          } catch (error) {
+            console.error('Error creating spike:', error);
+            // Fallback to a simple rectangle if sprite creation fails (just like original)
+            const spike = this.add.rectangle(x, y, width, height, 0xff0000);
+            
+            // Apply tilt to the fallback rectangle
+            if (tilt !== 0) {
+              spike.setRotation(Phaser.Math.DegToRad(tilt));
+            }
+            
+            gameObject = spike;
+            console.log('Fallback dangerous platform created');
+          }
           break;
         }
         case 'moving':
         case 'oscillator': {
-          // Create a blue rectangle for moving platforms
-          const movingPlatform = this.add.rectangle(x, y, 100, 20, 0x0000ff);
+          // Get oscillator parameters to match original implementation
+          const width = getParameterValue('oscillator_width');
+          const height = getParameterValue('oscillator_height');
+          const distance = getParameterValue('oscillator_distance');
           
-          // Add oscillation animation
-          this.tweens.add({
-            targets: movingPlatform,
-            x: x + 100,   // Move horizontally 
-            duration: 2000,
-            yoyo: true,
-            repeat: -1,
-            ease: 'Sine.easeInOut'
-          });
-          
-          gameObject = movingPlatform;
+          try {
+            // Create oscillating platform using the regular platform texture (as in original)
+            const movingPlatform = this.physics.add.sprite(x, y, 'platform');
+            movingPlatform.setImmovable(true);
+            (movingPlatform.body as Phaser.Physics.Arcade.Body).allowGravity = false;
+            
+            // Scale according to parameters
+            const widthScale = width / 100; // Default texture width is 100
+            const heightScale = height / 20; // Default texture height is 20
+            movingPlatform.setScale(widthScale, heightScale).refreshBody();
+            
+            // Apply tilt if any
+            if (tilt !== 0) {
+              movingPlatform.setRotation(Phaser.Math.DegToRad(tilt));
+              movingPlatform.refreshBody();
+            }
+            
+            // Add oscillation animation exactly as in original
+            this.tweens.add({
+              targets: movingPlatform,
+              x: x + distance,  // Move by parameter distance
+              duration: 2000,   // 2 second one-way (4 seconds round trip)
+              yoyo: true,       // Back and forth
+              repeat: -1,       // Forever
+              ease: 'Linear'    // Linear movement
+            });
+            
+            gameObject = movingPlatform;
+            console.log(`Oscillating platform created with width=${width}, height=${height}, distance=${distance}`);
+          } catch (error) {
+            console.error('Error creating oscillator:', error);
+            // Fallback to blue rectangle as in original
+            const movingPlatform = this.add.rectangle(x, y, width, height, 0x0000ff);
+            
+            // Apply tilt to fallback rectangle
+            if (tilt !== 0) {
+              movingPlatform.setRotation(Phaser.Math.DegToRad(tilt));
+            }
+            
+            // Add oscillation to fallback
+            this.tweens.add({
+              targets: movingPlatform,
+              x: x + distance,
+              duration: 2000,
+              yoyo: true,
+              repeat: -1,
+              ease: 'Linear'
+            });
+            
+            gameObject = movingPlatform;
+            console.log('Fallback oscillating platform created');
+          }
           break;
         }
         case 'shield': {
-          // Create an orange shield rectangle
-          gameObject = this.add.rectangle(x, y, 50, 100, 0xFF9800);
+          // Get shield parameters to match original implementation
+          const width = getParameterValue('shield_width');
+          const height = getParameterValue('shield_height');
+          
+          try {
+            // Create a shield block using platform texture
+            // This matches the original which used a platform sprite with tint
+            const shieldBlock = this.physics.add.sprite(x, y, 'platform')
+              .setDisplaySize(width, height) // Set size based on parameters
+              .setTint(0xFF9800);            // Orange color
+            
+            // Set physics properties to match original
+            shieldBlock.setImmovable(true);
+            (shieldBlock.body as Phaser.Physics.Arcade.Body).allowGravity = false;
+            
+            // Note: In real implementation, would add collision with player and darts
+            // but we're just handling visuals in this scene
+            
+            gameObject = shieldBlock;
+            console.log(`Shield block created with width=${width}, height=${height}`);
+          } catch (error) {
+            console.error('Error creating shield block:', error);
+            // Fallback to simple rectangle just like original implementation
+            const shield = this.add.rectangle(x, y, width, height, 0xFF9800);
+            
+            gameObject = shield;
+            console.log('Fallback shield block created');
+          }
           break;
         }
-        // Removed dart_wall case since it's not a placeable item
+        case 'dart_wall': {
+          // Get dart wall parameters to match original implementation
+          const height = getParameterValue('dart_wall_height');
+          
+          try {
+            // Create a vertical wall using wall texture
+            const wall = this.physics.add.sprite(x, y, 'wall');
+            wall.setImmovable(true);
+            (wall.body as Phaser.Physics.Arcade.Body).allowGravity = false;
+            
+            // Scale to match parameter height
+            const heightScale = height / 100; // Default texture height is 100
+            wall.setScale(1, heightScale).refreshBody();
+            
+            // Note: In the original, darts would be created and shot from wall
+            // but we're just handling visuals in this scene
+            
+            gameObject = wall;
+            console.log(`Dart wall created with height=${height}`);
+          } catch (error) {
+            console.error('Error creating dart wall:', error);
+            // Fallback to a simple rectangle as in original
+            const wall = this.add.rectangle(x, y, 20, height, 0x800000);
+            
+            // Add dart launcher indicators
+            const wallDetails = this.add.graphics();
+            wallDetails.fillStyle(0x600000);
+            
+            // Add three circular dart launchers on the wall (visually similar to original)
+            const dartPositions = [0.25, 0.5, 0.75]; // Positions along the height
+            dartPositions.forEach(pos => {
+              wallDetails.fillCircle(x + 8, y - (height/2) + (height * pos), 3);
+            });
+            
+            // Group them
+            const container = this.add.container(0, 0, [wall, wallDetails]);
+            gameObject = container;
+            console.log('Fallback dart wall created');
+          }
+          break;
+        }
         default: {
           // Default yellow rectangle as a fallback
           gameObject = this.add.rectangle(x, y, 50, 50, 0xffaa00);
