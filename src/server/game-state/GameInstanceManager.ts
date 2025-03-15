@@ -34,7 +34,7 @@ export class GameInstanceManager {
   /**
    * Create a new game instance for a lobby
    */
-  createInstance(lobbyId: string, players: string[]): GameInstance {
+  createInstance(lobbyId: string, players: string[], playerNames?: Record<string, string>): GameInstance {
     // Check if there's already an instance for this lobby
     const existingInstanceId = this.lobbyToInstanceMap.get(lobbyId);
     if (existingInstanceId) {
@@ -82,8 +82,16 @@ export class GameInstanceManager {
     this.instances.set(instanceId, instance);
     this.lobbyToInstanceMap.set(lobbyId, instanceId);
     
-    // Map all players to this instance
+    // Add all players to the instance's GameStateManager
     players.forEach(playerId => {
+      // Get player name if available
+      const playerName = playerNames?.[playerId] || `Player-${playerId.substring(0, 4)}`;
+      
+      // Add player to the instance's state manager
+      console.log(`INSTANCE MANAGER: Adding player ${playerName} (${playerId}) to instance ${instanceId}'s GameStateManager`);
+      instance.state.addPlayer(playerId, playerName);
+      
+      // Map player to instance
       this.playerToInstanceMap.set(playerId, instanceId);
     });
     
@@ -187,18 +195,31 @@ export class GameInstanceManager {
   
   /**
    * Add a player to a game instance
+   * @param instanceId The game instance to add the player to
+   * @param playerId The player to add
+   * @param playerName The name of the player (optional)
    */
-  addPlayerToInstance(instanceId: string, playerId: string): boolean {
+  addPlayerToInstance(instanceId: string, playerId: string, playerName?: string): boolean {
     const instance = this.instances.get(instanceId);
     if (!instance) return false;
     
-    // Add player to instance
+    // Add player to instance tracking array
     if (!instance.players.includes(playerId)) {
       instance.players.push(playerId);
     }
     
+    // Add player to the instance's GameStateManager - this is critical for item placement!
+    const name = playerName || `Player-${playerId.substring(0, 4)}`;
+    console.log(`INSTANCE MANAGER: Adding player ${name} (${playerId}) to existing instance ${instanceId}'s GameStateManager`);
+    instance.state.addPlayer(playerId, name);
+    
     // Map player to instance
     this.playerToInstanceMap.set(playerId, instanceId);
+    
+    // Initialize player activity tracking
+    if (instance.playerLastActivity) {
+      instance.playerLastActivity[playerId] = Date.now();
+    }
     
     return true;
   }

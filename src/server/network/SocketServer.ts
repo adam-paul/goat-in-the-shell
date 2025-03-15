@@ -261,20 +261,33 @@ class SocketServer {
     // Make sure we have a lobby ID
     const targetLobbyId = client.lobbyId || 'default';
     
-    // Add to game state
+    // Add to global lobby tracking (root GameStateManager)
     this.gameState.addPlayerToLobby(clientId, targetLobbyId, playerName);
     
     // Find or create game instance
     let instance = this.instanceManager.getInstanceByLobby(targetLobbyId);
     
     if (!instance) {
-      // Create new instance
-      instance = this.instanceManager.createInstance(targetLobbyId, [clientId]);
+      // Create new instance with player information
+      const playerNames = { [clientId]: playerName };
+      instance = this.instanceManager.createInstance(targetLobbyId, [clientId], playerNames);
       console.log(`SERVER: Created new game instance ${instance.id} for lobby ${targetLobbyId}`);
+      
+      // Double check player registration
+      if (!instance.state.getPlayer(clientId)) {
+        console.error(`SERVER: Player ${clientId} not found in instance ${instance.id} after creation - doing direct registration`);
+        instance.state.addPlayer(clientId, playerName);
+      }
     } else {
-      // Add to existing instance
-      this.instanceManager.addPlayerToInstance(instance.id, clientId);
+      // Add to existing instance with player name
+      this.instanceManager.addPlayerToInstance(instance.id, clientId, playerName);
       console.log(`SERVER: Added player ${playerName} to existing instance ${instance.id}`);
+      
+      // Double check player registration
+      if (!instance.state.getPlayer(clientId)) {
+        console.error(`SERVER: Player ${clientId} still not registered in instance ${instance.id} - doing direct registration`);
+        instance.state.addPlayer(clientId, playerName);
+      }
     }
     
     // Update client with instance ID
@@ -390,8 +403,23 @@ class SocketServer {
     
     console.log(`SERVER: Player is in instance ${instance.id}, validating placement...`);
     
-    // Validate item placement
-    const isValid = this.gameLogic.validateItemPlacement(data, clientId);
+    // Debug log unique identifiers for the GameStateManager instances
+    console.log(`SERVER: Instance state GameStateManager identity: ${instance.state.constructor.name}@${instance.state.toString().split('\n')[0]}`);
+    console.log(`SERVER: Root GameStateManager identity: ${this.gameState.constructor.name}@${this.gameState.toString().split('\n')[0]}`);
+    
+    // Make sure the player exists in the instance's GameStateManager 
+    // (This should have happened when joining the lobby)
+    if (!instance.state.getPlayer(clientId)) {
+      console.error(`SERVER DEBUG: Player ${clientId} not found in instance ${instance.id}'s GameStateManager, trying to register...`);
+      const playerName = this.clients.get(clientId)?.playerName || `Player-${clientId.substring(0, 4)}`;
+      
+      // Register the player directly in the instance's GameStateManager 
+      instance.state.addPlayer(clientId, playerName);
+      console.log(`SERVER DEBUG: Player ${clientId} manually registered to instance ${instance.id}`);
+    }
+    
+    // Validate item placement with the correct GameStateManager instance
+    const isValid = instance.state.validateItemPlacement(data, clientId);
     console.log(`SERVER: Item placement validation result: ${isValid ? 'VALID' : 'INVALID'}`);
     
     if (isValid) {

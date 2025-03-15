@@ -329,6 +329,64 @@ class GameStateManager {
   }
   
   /**
+   * Get a player by ID
+   */
+  getPlayer(clientId: string): Player | undefined {
+    return this.players.get(clientId);
+  }
+  
+  /**
+   * Validate item placement
+   * Note: This is a duplicate of the logic in GameLogicProcessor but operating
+   * directly on this GameStateManager instance
+   */
+  validateItemPlacement(itemData: any, clientId: string): boolean {
+    console.log(`GAME STATE: Instance validating item placement for ${clientId}`);
+    
+    // Check that the client exists in this GameStateManager
+    if (!this.players.has(clientId)) {
+      console.error(`GAME STATE: Player ${clientId} not found in this GameStateManager`);
+      return false;
+    }
+    
+    // Check that the item type is valid
+    const validItemTypes = ['platform', 'spike', 'oscillator', 'shield', 'dart_wall'];
+    if (!validItemTypes.includes(itemData.type)) {
+      console.error(`GAME STATE: Invalid item type: ${itemData.type}`);
+      return false;
+    }
+    
+    // Check position and bounds
+    if (
+      !itemData.position ||
+      typeof itemData.position.x !== 'number' ||
+      typeof itemData.position.y !== 'number'
+    ) {
+      console.error(`GAME STATE: Missing or invalid position`);
+      return false;
+    }
+    
+    // Check that item position is within valid bounds
+    if (
+      itemData.position.x < 0 ||
+      itemData.position.x > 2400 || 
+      itemData.position.y < 0 ||
+      itemData.position.y > 800
+    ) {
+      console.error(`GAME STATE: Position out of bounds: (${itemData.position.x}, ${itemData.position.y})`);
+      return false;
+    }
+    
+    // Check properties
+    if (!itemData.properties) {
+      console.error(`GAME STATE: Missing properties for item type ${itemData.type}`);
+      return false;
+    }
+    
+    return true;
+  }
+  
+  /**
    * Get the game world data
    */
   getGameWorld(): GameWorld {
@@ -339,6 +397,8 @@ class GameStateManager {
    * Add a new player to the game
    */
   addPlayer(clientId: string, name: string): Player {
+    console.log(`GAME STATE: Adding player ${name} (${clientId}) to GameStateManager instance ${this.constructor.name}@${this.toString().split('\n')[0]}`);
+    
     // Starting position matches the original game's start point
     const player: Player = {
       id: clientId,
@@ -353,6 +413,7 @@ class GameStateManager {
     };
     
     this.players.set(clientId, player);
+    console.log(`GAME STATE: Player registered successfully. Current player count: ${this.players.size}`);
     return player;
   }
   
@@ -476,6 +537,8 @@ class GameStateManager {
   placeItem(itemData: any, clientId: string): GameItem | null {
     console.log(`GAME STATE: Placing item of type ${itemData.type} for client ${clientId}`);
     console.log(`GAME STATE: Item data:`, JSON.stringify(itemData));
+    console.log(`GAME STATE: GameStateManager instance ${this.constructor.name}@${this.toString().split('\n')[0]} has ${this.players.size} players registered`);
+    console.log(`GAME STATE: Registered players: ${Array.from(this.players.keys()).join(', ')}`);
     
     // Validate that the player exists
     if (!this.players.has(clientId)) {

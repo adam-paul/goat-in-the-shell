@@ -60,7 +60,16 @@ class SocketEvents {
     }
     // Handle special case for item placement to trigger countdown
     else if (type === 'EVENT' && payload?.eventType === 'ITEM_PLACED') {
+      console.log('SOCKET EVENT: Received ITEM_PLACED event with data:', JSON.stringify(payload));
+      
       // First trigger the item placement event for rendering
+      // Pass the actual item data needed for rendering
+      if (payload.itemData) {
+        console.log('SOCKET EVENT: Publishing item data for immediate rendering:', payload.itemData);
+        gameEvents.publish('RENDER_PLACED_ITEM', payload.itemData);
+      }
+      
+      // Also publish the original event
       gameEvents.publish('ITEM_PLACED', payload);
       
       // Then publish the message to the game event bus

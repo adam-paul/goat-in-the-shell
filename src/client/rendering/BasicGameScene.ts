@@ -392,6 +392,20 @@ export default class BasicGameScene extends Phaser.Scene {
       this.handlePlayerInput(data);
     });
     
+    // Listen for item placement from server - render immediately!
+    gameEvents.subscribe('RENDER_PLACED_ITEM', (itemData: any) => {
+      console.log('SCENE: Received item to render immediately:', itemData);
+      if (itemData && itemData.position && itemData.type) {
+        this.placeItem(
+          itemData.type,
+          itemData.position.x,
+          itemData.position.y,
+          itemData.id
+        );
+        console.log(`SCENE: Rendered ${itemData.type} at (${itemData.position.x}, ${itemData.position.y})`);
+      }
+    });
+    
     // Listen for item placement completion
     gameEvents.subscribe('ITEM_PLACED', () => {
       // Start countdown after item is placed
