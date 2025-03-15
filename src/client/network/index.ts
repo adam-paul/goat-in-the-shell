@@ -1,5 +1,5 @@
 import { SocketProvider, useSocket } from './SocketProvider';
-import socketEvents, { useSocketEvents } from './SocketEvents';
+import socketEvents from './SocketEvents';
 
 // Initialize socket events with the socket from the provider
 export function initializeSocketEvents(socket: WebSocket) {
@@ -8,6 +8,5 @@ export function initializeSocketEvents(socket: WebSocket) {
 
 export {
   SocketProvider,
-  useSocket,
-  useSocketEvents
+  useSocket
 };
