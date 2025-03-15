@@ -11,7 +11,7 @@ export default class BasicGameScene extends Phaser.Scene {
   private walls!: Phaser.Physics.Arcade.StaticGroup;
   private startPoint!: Phaser.GameObjects.Rectangle;
   private endPoint!: Phaser.GameObjects.Rectangle;
-  private placedItems: Array<{type: string, x: number, y: number, gameObject: Phaser.GameObjects.GameObject}> = [];
+  private placedItems: Array<{id?: string, type: string, x: number, y: number, gameObject: Phaser.GameObjects.GameObject}> = [];
   
   // Custom physics groups for placed items
   private customStaticGroups?: {
@@ -409,7 +409,12 @@ export default class BasicGameScene extends Phaser.Scene {
     this.physics.resume();
     
     // Notify the game event bus that the game has started
+    // This is just for local tracking - server already knows
     gameEvents.publish('GAME_STARTED', {});
+    
+    // Explicitly publish the COUNTDOWN_COMPLETE event to the server
+    // to ensure server knows the countdown is over
+    gameEvents.publish('COUNTDOWN_COMPLETE', { timestamp: Date.now() });
   }
   
   /**
@@ -481,15 +486,17 @@ export default class BasicGameScene extends Phaser.Scene {
   private updateGameState(gameState: any): void {
     console.log('Received game state from server:', gameState);
     
-    // Clear existing items if this is a full state refresh
-    // We'll treat any state update as a full refresh for simplicity
-    this.clearPlacedItems();
-    
     // Find the correct state data structure
     // This handles different ways the state might be nested
     let state = gameState;
     if (gameState.state) state = gameState.state;
     if (gameState.payload?.state) state = gameState.payload.state;
+    
+    // Store previous game status to detect changes
+    const previousStatus = this.gameStatus;
+    
+    // We never clear items during normal gameplay updates
+    // Instead, only track new items that need to be added
     
     // Store client ID if provided
     if (state.clientId) {
@@ -517,6 +524,13 @@ export default class BasicGameScene extends Phaser.Scene {
     // Handle the game world data (platforms, start/end points)
     if (state.gameWorld) {
       this.updateWorldFromServer(state.gameWorld);
+    }
+    
+    // Only clear placed items on game reset or when we're explicitly going back to select mode
+    // This ensures items persist throughout gameplay
+    if (this.gameStatus === 'reset' || this.gameStatus === 'select') {
+      console.log('Clearing all placed items due to reset or new game');
+      this.clearPlacedItems();
     }
     
     // Handle players from state
@@ -571,12 +585,21 @@ export default class BasicGameScene extends Phaser.Scene {
       });
     }
     
-    // Handle items from state 
+    // Handle items from state - maintain a set of placed items by ID
+    // to avoid duplicating items on state updates
     if (state.items && Array.isArray(state.items)) {
+      // Track what IDs we've already placed
+      const existingItemIds = this.placedItems.map(item => item.id);
+      
+      // Process each item from the state
       state.items.forEach((item: any) => {
+        // Skip if this item is already placed (avoid duplicates)
+        if (item.id && existingItemIds.includes(item.id)) {
+          return;
+        }
         if (item.position) {
-          // Place the item with all its properties
-          this.placeItem(item.type, item.position.x, item.position.y);
+          // Place the item with all its properties and ID
+          this.placeItem(item.type, item.position.x, item.position.y, item.id);
           
           // Apply rotation if specified
           if (item.rotation && item.rotation !== 0) {
@@ -590,7 +613,7 @@ export default class BasicGameScene extends Phaser.Scene {
           }
         } else if (item.x !== undefined && item.y !== undefined) {
           // Alternative format
-          this.placeItem(item.type, item.x, item.y);
+          this.placeItem(item.type, item.x, item.y, item.id);
         }
       });
     }
@@ -1001,7 +1024,7 @@ export default class BasicGameScene extends Phaser.Scene {
     this.input.off('pointermove', this.updateItemPreview, this);
   }
   
-  private placeItem(type: string, x: number, y: number): void {
+  private placeItem(type: string, x: number, y: number, id?: string): void {
     console.log(`Placing item: ${type} at (${x}, ${y})`);
     let gameObject: Phaser.GameObjects.GameObject;
     
@@ -1270,8 +1293,9 @@ export default class BasicGameScene extends Phaser.Scene {
         }
       }
       
-      // Store the placed item
+      // Store the placed item with its ID if provided
       this.placedItems.push({
+        id, // Store the server-provided ID to avoid duplicates
         type,
         x,
         y,

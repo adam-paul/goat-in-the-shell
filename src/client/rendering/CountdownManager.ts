@@ -31,6 +31,7 @@ export default class CountdownManager {
    * @param duration Duration of countdown in milliseconds (default: 3000)
    */
   startCountdown(duration: number = 3000): void {
+    console.log(`[CountdownManager] Starting countdown with duration: ${duration}ms`);
     // Remove any existing countdown
     this.clearCountdown();
     

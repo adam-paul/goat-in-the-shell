@@ -79,6 +79,15 @@ class PhysicsEngine {
     // Listen for physics activation events, which might trigger dart shooting
     gameEvents.subscribe('PHYSICS_ACTIVATE', (data: any) => {
       console.log(`[PhysicsEngine] Physics activated for instance ${data.instanceId}, ready for dart shooting`);
+      // Initially pause the physics until the countdown completes
+      this.engine.timing.timeScale = 0;
+      
+      // Schedule physics to start after a delay to match countdown
+      setTimeout(() => {
+        console.log(`[PhysicsEngine] Starting physics simulation and enabling dart shooting`);
+        this.engine.timing.timeScale = 1;
+        this.startDartTimer(); // Start dart timer only after countdown completes
+      }, 3000); // Match the 3-second countdown duration
     });
     
     // Create a Matter.js engine
@@ -107,8 +116,8 @@ class PhysicsEngine {
     // Start the engine update loop
     this.startPhysicsLoop();
     
-    // Start the dart timer
-    this.startDartTimer();
+    // NOTE: We don't start the dart timer here anymore
+    // It will be started after the countdown completes via the PHYSICS_ACTIVATE event
   }
   
   /**
@@ -307,8 +316,15 @@ class PhysicsEngine {
    */
   private getAllDartWalls(gameState: GameStateManager): any[] {
     const state = gameState.getState();
+    // Get static walls from game world
     const builtInWalls = state.gameWorld?.dartWalls || [];
+    // Get user-placed walls from items
     const placedWalls = state.items.filter((item: { type: string }) => item.type === 'dart_wall');
+    
+    // Log what we found for debugging
+    console.log(`[PhysicsEngine] Found ${builtInWalls.length} built-in dart walls and ${placedWalls.length} placed dart walls`);
+    
+    // Return all walls together
     return [...builtInWalls, ...placedWalls];
   }
   
@@ -438,6 +454,13 @@ class PhysicsEngine {
     // Cap accumulator to prevent spiral of death
     if (this.accumulator > MAX_STEP) {
       this.accumulator = MAX_STEP;
+    }
+    
+    // Skip physics updates if engine timeScale is 0 (during countdown)
+    if (this.engine.timing.timeScale === 0) {
+      // Just clear the accumulator and return
+      this.accumulator = 0;
+      return;
     }
     
     // Update physics in fixed time steps
