@@ -73,7 +73,7 @@ class GameStateManager {
   private lobbies: Map<string, Lobby>;
   private stateVersion: number;
   private lastUpdateTime: number;
-  private gameStatus: GameStatus;
+  // IMPORTANT: gameStatus now solely provided by GameStateMachine
   private parameters: Partial<GameParameters>;
   private gameWorld: GameWorld;
   
@@ -84,7 +84,7 @@ class GameStateManager {
     this.lobbies = new Map();
     this.stateVersion = 0;
     this.lastUpdateTime = Date.now();
-    this.gameStatus = 'tutorial';
+    // No explicit gameStatus initialization - using GameStateMachine instead
     this.parameters = {};
     
     // Initialize game world with default platforms
@@ -289,7 +289,8 @@ class GameStateManager {
       items: Array.from(this.items.values()),
       projectiles: Array.from(this.projectiles.values()),
       lobbies: Array.from(this.lobbies.values()),
-      gameStatus: this.gameStatus,
+      // gameStatus is now provided by the instance's GameStateMachine
+      // We don't include it here - it will be added by GameInstanceManager
       parameters: this.parameters,
       gameWorld: this.gameWorld // Include game world data
     };
@@ -320,7 +321,8 @@ class GameStateManager {
       players: lobbyPlayers,
       items: lobbyItems,
       projectiles: Array.from(this.projectiles.values()),
-      gameStatus: this.gameStatus,
+      // gameStatus is now provided by the instance's GameStateMachine
+      // We don't include it here - it will be added by GameInstanceManager
       parameters: this.parameters,
       gameWorld: this.gameWorld // Include game world data
     };
@@ -432,8 +434,8 @@ class GameStateManager {
           }
         }
         
-        // Update game status
-        this.gameStatus = 'playing';
+        // Game status is now managed by GameStateMachine in the GameInstance
+        // Transition is done via GameInstanceManager, not directly here
         
         return true;
       }
@@ -521,11 +523,10 @@ class GameStateManager {
   }
   
   /**
-   * Update the game status
+   * Handle game status changes from GameStateMachine 
+   * This method is called by GameInstanceManager when the StateMachine changes state
    */
-  setGameStatus(status: GameStatus): void {
-    this.gameStatus = status;
-    
+  handleGameStatusChange(status: GameStatus): void {
     // Handle status-specific logic
     switch (status) {
       case 'reset':
@@ -588,10 +589,8 @@ class GameStateManager {
     
     player.isAlive = false;
     
-    // Update game status if needed
-    if (this.gameStatus !== 'gameover') {
-      this.gameStatus = 'gameover';
-    }
+    // Game status transitions are handled by the GameStateMachine
+    // The GameEvents system will trigger the appropriate state change
     
     console.log(`GameState: Player ${playerId} died from ${cause}`);
   }
@@ -603,8 +602,8 @@ class GameStateManager {
     const player = this.players.get(playerId);
     if (!player || !player.isAlive) return;
     
-    // Update game status
-    this.gameStatus = 'win';
+    // Game status transitions are handled by the GameStateMachine
+    // The GameEvents system will trigger the appropriate state change
     
     // Increment player score
     player.score += 1;
@@ -644,8 +643,8 @@ class GameStateManager {
     // Clear projectiles
     this.projectiles.clear();
     
-    // Reset game status
-    this.gameStatus = 'select';
+    // Note: Game status is now managed by GameStateMachine
+    // Status transitions happen through the state machine, not directly here
     
     console.log('Game state reset');
   }

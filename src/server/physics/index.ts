@@ -2,6 +2,7 @@ import Matter from 'matter-js';
 import { GameStateManager, Player, GameItem } from '../game-state';
 import { DeathType } from '../../shared/types';
 import { gameEvents } from '../game-state/GameEvents';
+import { PHYSICS } from '../../shared/constants';
 
 // Constants for physics simulation
 const PHYSICS_UPDATE_RATE = 60; // Updates per second
@@ -421,7 +422,111 @@ class PhysicsEngine {
     const gameState = this.gameState.getState();
     const now = Date.now();
     
-    // Find all dart walls
+    // Check if game is currently in playing state
+    if (gameState.gameStatus !== 'playing') {
+      console.log(`[PhysicsEngine] Not shooting darts - game status is ${gameState.gameStatus}, not 'playing'`);
+      return;
+    }
+    
+    console.log(`[PhysicsEngine] Looking for dart walls to shoot from. Game state: ${gameState.gameStatus}`);
+    
+    // Count built-in walls and placed walls
+    let builtInWalls = gameState.gameWorld?.dartWalls?.length || 0;
+    let placedWalls = gameState.items.filter((item: { type: string }) => item.type === 'dart_wall').length;
+    console.log(`[PhysicsEngine] Found ${builtInWalls} built-in dart walls and ${placedWalls} placed dart walls`);
+
+    // Check game world dart walls too
+    if (gameState.gameWorld && gameState.gameWorld.dartWalls && gameState.gameWorld.dartWalls.length > 0) {
+      console.log(`[PhysicsEngine] Processing ${gameState.gameWorld.dartWalls.length} built-in dart walls`);
+      
+      for (const wall of gameState.gameWorld.dartWalls) {
+        // Get wall position
+        const wallX = wall.position.x;
+        const wallY = wall.position.y;
+        const wallHeight = wall.height || this.parameters.dart_wall_height;
+        
+        // Check if last shoot time is tracked for this wall
+        const dartWallId = wall.id;
+        const lastShootTime = this.dartTimer ? this.darts.get(`lastShoot_${dartWallId}`)?.createdAt || 0 : 0;
+        
+        // Only shoot if enough time has passed since last shot for this wall
+        if (now - lastShootTime < this.parameters.dart_frequency) {
+          console.log(`[PhysicsEngine] Skipping wall ${dartWallId} - cooldown not elapsed`);
+          continue; // Skip this wall until it's time to shoot again
+        }
+        
+        console.log(`[PhysicsEngine] Wall ${dartWallId} ready to shoot darts at position (${wallX}, ${wallY})`);
+        
+        // Update last shoot time
+        this.darts.set(`lastShoot_${dartWallId}`, {
+          body: null as any, // Not an actual dart body
+          createdAt: now,
+          lifetime: this.parameters.dart_frequency
+        });
+        
+        // Create three darts per wall at different heights (matching original implementation)
+        const positions = [
+          wallY - wallHeight * 0.3, // Top dart
+          wallY,                    // Middle dart
+          wallY + wallHeight * 0.3  // Bottom dart
+        ];
+        
+        positions.forEach((dartY, index) => {
+          // Create dart body (small rectangle)
+          const dartWidth = PHYSICS.DART_WIDTH;
+          const dartHeight = PHYSICS.DART_HEIGHT;
+          
+          const dart = Matter.Bodies.rectangle(
+            wallX + 15, // Offset from wall
+            dartY,
+            dartWidth,  // Width from constants
+            dartHeight, // Height from constants
+            {
+              label: `dart_${Date.now()}_${Math.random()}`,
+              frictionAir: 0,         // No air friction to maintain velocity
+              friction: 0,            // No friction
+              restitution: 0,         // No bounce
+              inertia: Infinity,      // Prevent rotation
+              isSensor: false,        // Allow physical collisions
+              collisionFilter: {
+                category: CATEGORIES.DART,
+                mask: CATEGORIES.PLAYER | CATEGORIES.PLATFORM | CATEGORIES.SHIELD
+              }
+            }
+          );
+          
+          // Set velocity exactly as in original implementation
+          Matter.Body.setVelocity(dart, {
+            x: -this.parameters.dart_speed,
+            y: 0
+          });
+          
+          // Add to world
+          Matter.Composite.add(this.engine.world, dart);
+          
+          // Track the dart
+          const dartId = `dart_${dartWallId}_${now}_${index}`;
+          this.darts.set(dartId, {
+            body: dart,
+            createdAt: now,
+            lifetime: 10000 // 10 seconds lifetime, same as original
+          });
+          
+          // Add to game state for client rendering
+          this.gameState.addProjectile({
+            id: dartId,
+            type: 'dart',
+            position: { x: wallX + 15, y: dartY },
+            velocity: { x: -this.parameters.dart_speed, y: 0 },
+            createdAt: now
+          });
+          
+          console.log(`[PhysicsEngine] Created dart from built-in wall at (${wallX + 15}, ${dartY})`);
+        });
+      }
+    }
+    
+    // Find all placed dart walls
     for (const item of gameState.items) {
       if (item.type !== 'dart_wall') continue;
       
@@ -430,26 +535,50 @@ class PhysicsEngine {
       const wallY = item.position.y;
       const wallHeight = item.properties.height || this.parameters.dart_wall_height;
       
-      // Create three darts per wall at different heights
+      // Check if last shoot time is tracked for this wall
+      const dartWallId = item.id;
+      const lastShootTime = this.dartTimer ? this.darts.get(`lastShoot_${dartWallId}`)?.createdAt || 0 : 0;
+      
+      // Only shoot if enough time has passed since last shot for this wall
+      // This mimics the original implementation's timing system
+      if (now - lastShootTime < this.parameters.dart_frequency) {
+        console.log(`[PhysicsEngine] Skipping placed wall ${dartWallId} - cooldown not elapsed`);
+        continue; // Skip this wall until it's time to shoot again
+      }
+      
+      console.log(`[PhysicsEngine] Placed wall ${dartWallId} ready to shoot darts at position (${wallX}, ${wallY})`);
+      
+      // Update last shoot time
+      this.darts.set(`lastShoot_${dartWallId}`, {
+        body: null as any, // Not an actual dart body
+        createdAt: now,
+        lifetime: this.parameters.dart_frequency
+      });
+      
+      // Create three darts per wall at different heights (matching original implementation)
       const positions = [
         wallY - wallHeight * 0.3, // Top dart
         wallY,                    // Middle dart
         wallY + wallHeight * 0.3  // Bottom dart
       ];
       
-      positions.forEach((dartY) => {
+      positions.forEach((dartY, index) => {
         // Create dart body (small rectangle)
+        const dartWidth = PHYSICS.DART_WIDTH;
+        const dartHeight = PHYSICS.DART_HEIGHT;
+        
         const dart = Matter.Bodies.rectangle(
           wallX + 15, // Offset from wall
           dartY,
-          20, // Dart width
-          6,  // Dart height
+          dartWidth,  // Width from constants
+          dartHeight, // Height from constants
           {
             label: `dart_${Date.now()}_${Math.random()}`,
-            frictionAir: 0,
-            friction: 0,
-            restitution: 0,
-            isSensor: true, // Doesn't physically block, just detects collisions
+            frictionAir: 0,         // No air friction to maintain velocity
+            friction: 0,            // No friction
+            restitution: 0,         // No bounce
+            inertia: Infinity,      // Prevent rotation
+            isSensor: false,        // Allow physical collisions
             collisionFilter: {
               category: CATEGORIES.DART,
               mask: CATEGORIES.PLAYER | CATEGORIES.PLATFORM | CATEGORIES.SHIELD
@@ -457,7 +586,7 @@ class PhysicsEngine {
           }
         );
         
-        // Set velocity
+        // Set velocity exactly as in original implementation
         Matter.Body.setVelocity(dart, {
           x: -this.parameters.dart_speed,
           y: 0
@@ -467,11 +596,11 @@ class PhysicsEngine {
         Matter.Composite.add(this.engine.world, dart);
         
         // Track the dart
-        const dartId = `dart_${Date.now()}_${Math.random()}`;
+        const dartId = `dart_${dartWallId}_${now}_${index}`;
         this.darts.set(dartId, {
           body: dart,
           createdAt: now,
-          lifetime: 10000 // 10 seconds lifetime
+          lifetime: 10000 // 10 seconds lifetime, same as original
         });
         
         // Add to game state for client rendering

@@ -5,7 +5,9 @@ export const PHYSICS = {
   PLAYER_JUMP_FORCE: 0.016,
   GROUND_FRICTION: 0.01,
   AIR_FRICTION: 0.05,
-  RESTITUTION: 0.2
+  RESTITUTION: 0.2,
+  DART_WIDTH: 30,
+  DART_HEIGHT: 8
 };
 
 // Game dimensions

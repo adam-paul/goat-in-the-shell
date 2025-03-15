@@ -57,10 +57,42 @@ export default class BasicGameScene extends Phaser.Scene {
   preload(): void {
     // Create platform texture
     this.createPlatformTexture();
+    // Create dart texture to match original implementation
+    this.createDartTexture();
+  }
+  
+  /**
+   * Create dart texture matching the original implementation exactly
+   */
+  private createDartTexture(): void {
+    const graphics = this.make.graphics({ x: 0, y: 0 });
+    
+    // Draw the dart facing left by default (exactly as in original)
+    graphics.fillStyle(0x303030); // Dark gray for the dart body
+    graphics.fillRect(6, 2, 14, 2); // Dart body
+    
+    // Dart point (triangle)
+    graphics.fillStyle(0x505050); // Slightly lighter gray for the point
+    graphics.fillTriangle(6, 0, 6, 6, 0, 3);
+    
+    // Dart feathers
+    graphics.fillStyle(0xC0C0C0); // Light gray for the feathers
+    graphics.fillRect(17, 0, 3, 6);
+    
+    // Generate the texture
+    graphics.generateTexture('dart', 20, 6);
+    graphics.destroy();
   }
   
   create(): void {
     console.log('BasicGameScene created');
+    
+    // Check if dart texture was generated successfully
+    if (this.textures.exists('dart')) {
+      console.log('[BasicGameScene] Successfully loaded dart texture');
+    } else {
+      console.error('[BasicGameScene] Failed to load dart texture - this will cause darts to not render correctly');
+    }
     
     // Set physics world bounds
     this.physics.world.setBounds(0, 0, this.worldWidth, 800, true, true, true, false);
@@ -700,16 +732,28 @@ export default class BasicGameScene extends Phaser.Scene {
   private processGameState(state: any): void {
     // Handle projectiles (darts) from state
     if (state.projectiles && Array.isArray(state.projectiles)) {
+      console.log(`[BasicGameScene] Received ${state.projectiles.length} projectiles from server`);
+      
       state.projectiles.forEach((projectile: any) => {
         if (projectile.type === 'dart' && projectile.position) {
-          // Render darts as small rectangles
-          const dart = this.add.rectangle(
+          console.log(`[BasicGameScene] Creating dart at position (${projectile.position.x}, ${projectile.position.y})`);
+          
+          // Create dart using the pre-generated texture (exactly like original implementation)
+          const dart = this.add.sprite(
             projectile.position.x,
             projectile.position.y,
-            20, // Width
-            6,  // Height
-            0x303030 // Dark gray
+            'dart'
           );
+          
+          // Ensure darts face left as they shoot from walls
+          dart.setOrigin(0.5, 0.5);
+          
+          // Set velocity from projectile data to allow smooth movement between updates
+          if (projectile.velocity) {
+            // Store velocity on the sprite for update
+            (dart as any).velocityX = projectile.velocity.x;
+            (dart as any).velocityY = projectile.velocity.y;
+          }
           
           // Store the dart in placedItems so it gets cleaned up on the next update
           this.placedItems.push({
@@ -1283,7 +1327,7 @@ export default class BasicGameScene extends Phaser.Scene {
     }
   }
   
-  update(): void {
+  update(time: number, delta: number): void {
     // Update item preview if in placement mode
     if (this.itemPlacementMode && this.itemPreview) {
       const pointer = this.input.activePointer;
@@ -1318,6 +1362,39 @@ export default class BasicGameScene extends Phaser.Scene {
         facingLeft: sprite.flipX
       });
     }
+    
+    // Smoothly update dart positions between server updates
+    // This matches the original implementation where darts moved continuously
+    const timeStep = delta / 1000; // Convert to seconds for frame-rate independent movement
+    
+    this.placedItems.forEach(item => {
+      if (item.type === 'dart') {
+        const dart = item.gameObject as Phaser.GameObjects.Sprite;
+        
+        // If dart has velocity information, update position smoothly
+        if ((dart as any).velocityX !== undefined) {
+          // Move dart based on its velocity (matching server physics exactly)
+          const newX = dart.x + (dart as any).velocityX;
+          const newY = dart.y + (dart as any).velocityY;
+          
+          dart.setPosition(newX, newY);
+          
+          // Also update stored coordinates
+          item.x = newX;
+          item.y = newY;
+          
+          // Remove darts that go off screen (matching original implementation)
+          if (newX < -100) {
+            dart.destroy();
+            // Mark for cleanup
+            (item as any).toRemove = true;
+          }
+        }
+      }
+    });
+    
+    // Clean up marked darts
+    this.placedItems = this.placedItems.filter(item => !(item as any).toRemove);
   }
   
   /**

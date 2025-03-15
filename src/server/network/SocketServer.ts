@@ -283,8 +283,8 @@ class SocketServer {
     // Get the current game state from the state machine
     const currentGameState = instance.stateMachine.getCurrentState();
     
-    // Update the instance's game state with the current state machine state
-    instance.state.setGameStatus(currentGameState);
+    // Notify the game state about the status change
+    instance.state.handleGameStatusChange(currentGameState);
     
     // Notify player of successful join
     this.sendMessage(clientId, {
@@ -355,6 +355,9 @@ class SocketServer {
   private broadcastGameState(instance: any): void {
     // Get the game state
     const state = instance.state.getState();
+    
+    // Add the current game status from the state machine
+    state.gameStatus = instance.stateMachine.getCurrentState();
     
     // Send state update to all clients
     this.broadcastToInstance(instance.id, {
@@ -555,8 +558,8 @@ class SocketServer {
     });
     
     if (success) {
-      // Update game status in instance state
-      instance.state.setGameStatus(targetState);
+      // Notify the game state about the status change
+      instance.state.handleGameStatusChange(targetState);
       
       // Broadcast state change to all players in the instance
       this.broadcastToInstance(instance.id, {
