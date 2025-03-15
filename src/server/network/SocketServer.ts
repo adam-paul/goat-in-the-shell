@@ -530,6 +530,46 @@ class SocketServer {
     // Get current state from state machine
     const currentState = instance.stateMachine.getCurrentState();
     
+    // Special case: intercept placement->playing transition and redirect to countdown
+    if (currentState === 'placement' && targetState === 'playing') {
+      console.log(`SERVER: Intercepting placement->playing transition, redirecting to countdown for client ${clientId}`);
+      
+      // Transition to countdown instead
+      const success = instance.stateMachine.transitionTo('countdown');
+      
+      // Send result to client
+      this.sendMessage(clientId, {
+        type: MESSAGE_TYPES.STATE_TRANSITION_RESULT,
+        payload: {
+          success,
+          message: success ? 'Redirected to countdown state' : 'Failed to redirect to countdown',
+          requestedState: targetState,
+          actualState: 'countdown',
+          currentState: instance.stateMachine.getCurrentState()
+        }
+      });
+      
+      if (success) {
+        // Notify the game state about the status change
+        instance.state.handleGameStatusChange('countdown');
+        
+        // Broadcast state change to all players in the instance
+        this.broadcastToInstance(instance.id, {
+          type: MESSAGE_TYPES.GAME_STATE_CHANGED,
+          payload: {
+            previousState: currentState,
+            currentState: 'countdown',
+            timestamp: Date.now()
+          }
+        });
+        
+        console.log(`SERVER: Redirected transition: ${currentState} -> countdown for instance ${instance.id}`);
+      }
+      
+      return;
+    }
+    
+    // For all other transitions, proceed with normal validation
     // Check if transition is valid
     const isValid = instance.stateMachine.isValidTransition(currentState, targetState);
     

@@ -145,11 +145,19 @@ export class GameStateMachine {
         // No specific actions needed for placement
         break;
         
+      case 'countdown':
+        // When entering countdown state, start the countdown timer
+        this.startCountdown();
+        break;
+        
       case 'playing':
-        // When transitioning to playing, initialize a countdown before starting
-        // But only if coming from placement state
+        // When transitioning to playing, physics should be already activated
+        // Only activate physics if coming directly from placement (older clients)
         if (prevState === 'placement') {
-          this.startCountdown();
+          console.log(`STATE MACHINE: Legacy path detected (placement -> playing). Redirecting to countdown.`);
+          // Redirect to countdown state for older clients
+          this.transitionTo('countdown');
+          return;
         }
         break;
         
@@ -187,14 +195,18 @@ export class GameStateMachine {
       timestamp: Date.now()
     });
     
-    // After countdown, activate physics and enable gameplay
+    // After countdown, activate physics and transition to playing state
     this.timers.set('countdown', setTimeout(() => {
+      // First activate physics
       gameEvents.publish('PHYSICS_ACTIVATE', {
         instanceId: this.instanceId,
         timestamp: Date.now()
       });
       
       console.log(`STATE MACHINE: Countdown complete, physics activated for instance ${this.instanceId}`);
+      
+      // Then transition to playing state
+      this.transitionTo('playing');
     }, 3000)); // 3 seconds countdown
   }
   
@@ -203,6 +215,8 @@ export class GameStateMachine {
    * @returns True if in an active gameplay state
    */
   isGameplayActive(): boolean {
+    // Only 'playing' state is considered active gameplay
+    // 'countdown' state is NOT active gameplay - physics should be paused during countdown
     return this.currentState === 'playing';
   }
   

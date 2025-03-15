@@ -70,7 +70,8 @@ export const GAME_STATUS_TRANSITIONS = {
   modeSelect: ['lobby', 'select', 'reset'],  // Added reset for retry flow
   lobby: ['playing', 'modeSelect', 'select'], // Added select for direct transition in single player 
   select: ['placement', 'modeSelect', 'reset'], // Added reset and modeSelect for back/reset flows
-  placement: ['playing', 'select', 'reset'],   // Added select for cancellation 
+  placement: ['countdown', 'select', 'reset'],   // Changed: transition to countdown instead of playing
+  countdown: ['playing', 'reset'],               // New: countdown transitions to playing when complete
   playing: ['win', 'gameover', 'select', 'reset'], // Added select and reset for resets during game
   win: ['reset', 'modeSelect', 'select'],  // Added more options for different retry flows
   gameover: ['reset', 'modeSelect', 'select'], // Added more options for different retry flows

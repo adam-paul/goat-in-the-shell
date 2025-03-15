@@ -79,17 +79,14 @@ class PhysicsEngine {
     // Listen for physics activation events, which might trigger dart shooting
     gameEvents.subscribe('PHYSICS_ACTIVATE', (data: any) => {
       console.log(`[PhysicsEngine] Physics activated for instance ${data.instanceId}, ready for dart shooting`);
-      // Initially pause the physics until the countdown completes
-      this.engine.timing.timeScale = 0;
       
-      // Schedule physics to start after a delay to match countdown
-      setTimeout(() => {
-        console.log(`[PhysicsEngine] Starting physics simulation and enabling dart shooting`);
-        this.engine.timing.timeScale = 1;
-        
-        // We no longer start the dart timer here since a single timer is managed globally
-        // The timer is now started only once per PhysicsEngine instance in startPhysicsLoop
-      }, 3000); // Match the 3-second countdown duration
+      // Immediately activate physics - the state machine ensures this only happens
+      // at the end of the countdown, right before transition to 'playing' state
+      console.log(`[PhysicsEngine] Starting physics simulation for instance ${data.instanceId}`);
+      this.engine.timing.timeScale = 1;
+      
+      // The dart timer is already started when the PhysicsEngine is created
+      // Darts will only fire when there are active 'playing' instances
     });
     
     // Create a Matter.js engine

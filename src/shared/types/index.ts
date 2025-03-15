@@ -8,7 +8,7 @@
 /**
  * Possible states of the game
  */
-export type GameStatus = 'tutorial' | 'modeSelect' | 'lobby' | 'win' | 'playing' | 'reset' | 'gameover' | 'select' | 'placement';
+export type GameStatus = 'tutorial' | 'modeSelect' | 'lobby' | 'win' | 'playing' | 'reset' | 'gameover' | 'select' | 'placement' | 'countdown';
 
 /**
  * Different ways that the player can die
