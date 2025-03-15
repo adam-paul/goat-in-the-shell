@@ -32,22 +32,21 @@ class SocketEvents {
    * Forward an incoming message to the GameEventBus
    */
   private forwardToGameEventBus(message: NetworkMessage): void {
-    const { type, payload, data } = message;
-    const messageData = payload || data;
+    const { type, payload } = message;
     
     // Handle special case for item placement to trigger countdown
-    if (type === 'EVENT' && messageData?.eventType === 'ITEM_PLACED') {
+    if (type === 'EVENT' && payload?.eventType === 'ITEM_PLACED') {
       // First trigger the item placement event for rendering
-      gameEvents.publish('ITEM_PLACED', messageData);
+      gameEvents.publish('ITEM_PLACED', payload);
       
       // Then publish the message to the game event bus
-      gameEvents.publish(type, messageData);
+      gameEvents.publish(type, payload);
     } 
     // Handle game state transition for countdown
     else if (type === 'GAME_STARTED' || 
-        (type === 'EVENT' && messageData?.eventType === 'GAME_STARTED')) {
+        (type === 'EVENT' && payload?.eventType === 'GAME_STARTED')) {
       // First publish to the game event bus for state update
-      gameEvents.publish(type, messageData);
+      gameEvents.publish(type, payload);
       
       // Then trigger countdown after item placement is confirmed
       // Even if this is triggered by a server event, it won't start the countdown twice
@@ -56,7 +55,7 @@ class SocketEvents {
     }
     else {
       // For all other events, just publish to the game event bus
-      gameEvents.publish(type, messageData);
+      gameEvents.publish(type, payload);
     }
   }
   

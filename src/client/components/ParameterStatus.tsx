@@ -5,6 +5,7 @@ import {
   GAME_PARAMETERS, 
   ParameterManager
 } from '../game/parameters';
+import { gameEvents } from '../utils/GameEventBus';
 
 /**
  * Component to display current parameter status

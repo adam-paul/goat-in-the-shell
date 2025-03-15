@@ -871,8 +871,8 @@ class PhysicsEngine {
       player.isAlive = false;
       console.log(`Player ${playerId} died from ${cause}`);
       
-      // Emit death event to game logic
-      gameEvents.emit('PLAYER_DEATH', {
+      // Publish death event to game logic
+      gameEvents.publish('PLAYER_DEATH', {
         playerId,
         cause,
         position: { ...player.position },
@@ -897,8 +897,8 @@ class PhysicsEngine {
     if (player && player.isAlive) {
       console.log(`Player ${playerId} won!`);
       
-      // Emit win event to game logic
-      gameEvents.emit('PLAYER_WIN', {
+      // Publish win event to game logic
+      gameEvents.publish('PLAYER_WIN', {
         playerId,
         position: { ...player.position },
         timestamp: Date.now()

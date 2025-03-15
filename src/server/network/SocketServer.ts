@@ -115,15 +115,15 @@ class SocketServer {
           break;
           
         case MESSAGE_TYPES.JOIN_LOBBY:
-          this.handleJoinLobby(clientId, message.payload || message.data);
+          this.handleJoinLobby(clientId, message.payload);
           break;
           
         case MESSAGE_TYPES.PLAYER_INPUT:
-          this.handlePlayerInput(clientId, message.payload || message.data);
+          this.handlePlayerInput(clientId, message.payload);
           break;
           
         case MESSAGE_TYPES.PLACE_ITEM:
-          this.handlePlaceItem(clientId, message.payload || message.data);
+          this.handlePlaceItem(clientId, message.payload);
           break;
           
         case MESSAGE_TYPES.START_GAME:
@@ -131,11 +131,11 @@ class SocketServer {
           break;
           
         case MESSAGE_TYPES.CHAT_MESSAGE:
-          this.handleChatMessage(clientId, message.payload || message.data);
+          this.handleChatMessage(clientId, message.payload);
           break;
           
         case MESSAGE_TYPES.AI_COMMAND:
-          this.handleAICommand(clientId, message.payload || message.data);
+          this.handleAICommand(clientId, message.payload);
           break;
           
         case MESSAGE_TYPES.REQUEST_INITIAL_STATE:

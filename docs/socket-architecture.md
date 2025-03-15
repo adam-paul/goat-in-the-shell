@@ -20,11 +20,15 @@ The WebSocket architecture consists of three main parts:
          ▼                       ▼                       ▼
 ┌────────────────┐     ┌────────────────┐     ┌────────────────┐
 │                │     │                │     │                │
-│  SocketProvider◄─────►  Event Bus     │     │  SocketServer  │
+│  SocketProvider│     │  GameEventBus  │     │  SocketServer  │
 │                │     │                │     │                │
-└────────┬───────┘     └────────────────┘     └────────┬───────┘
-         │                                             │
-         └─────────────────►WebSockets◄────────────────┘
+└────────┬───────┘     └───────▲────────┘     └────────┬───────┘
+         │                     │                       │
+         │    ┌───────────┐    │                       │
+         └────► SocketEvents ──┘                       │
+              └───────────┘                            │
+                    │                                  │
+                    └──────────►WebSockets◄────────────┘
 ```
 
 ## Client-Side Implementation
@@ -66,41 +70,32 @@ function MyComponent() {
 
 ### 2. SocketEvents (src/client/network/SocketEvents.ts)
 
-The `SocketEvents` class manages WebSocket message handling and integrates with the Event Bus system.
+The `SocketEvents` class serves as a bridge between WebSocket messages and the GameEventBus, forwarding all incoming messages to the appropriate event channels.
 
 **Key responsibilities:**
 - Process incoming WebSocket messages
-- Route messages to registered handlers
-- Publish messages to the game event bus
+- Convert network messages to event bus messages
+- Forward all messages to GameEventBus
+- Handle special cases like game state transitions
 
-**Usage example:**
-```tsx
-// In a component
-import { useSocketEvents } from '../network';
-
-function MyComponent() {
-  const socketEvents = useSocketEvents();
+**Implementation:**
+```typescript
+// Inside SocketEvents class
+private forwardToGameEventBus(message: NetworkMessage): void {
+  const { type, payload } = message;
   
-  useEffect(() => {
-    // Register handler for a specific message type
-    const cleanup = socketEvents.on('STATE_UPDATE', (payload) => {
-      console.log('Received state update:', payload);
-    });
-    
-    return cleanup; // Cleanup on unmount
-  }, [socketEvents]);
-  
-  return <div>Listening for socket events</div>;
+  // Forward message to GameEventBus (with special case handling)
+  gameEvents.publish(type, payload);
 }
 ```
 
 ### 3. Network Exports (src/client/network/index.ts)
 
-The `index.ts` file exports the SocketProvider and hooks for using the socket system.
+The `index.ts` file exports the SocketProvider and hook for using the socket system.
 
 **Usage:**
 ```tsx
-import { SocketProvider, useSocket, useSocketEvents } from './network';
+import { SocketProvider, useSocket } from './network';
 
 // Use SocketProvider at the app root
 ReactDOM.render(
@@ -113,14 +108,16 @@ ReactDOM.render(
 
 ## Event Bus System
 
-### GameEventBus (src/client/utils/GameEventBus.ts)
+The Event Bus system serves as the central communication channel for all components in the application. Both client and server use consistent implementations.
 
-The `GameEventBus` provides a type-safe pub/sub system for communication between game components without direct dependencies.
+### Client-side: GameEventBus (src/client/utils/GameEventBus.ts)
+
+The `GameEventBus` provides a type-safe pub/sub system for communication between client-side components.
 
 **Key responsibilities:**
-- Allow components to subscribe to events
-- Allow components to publish events
-- Handle event data with type safety
+- Serve as the single event bus for all client components
+- Provide type-safe event subscription and publishing
+- Connect WebSocket messages to application components through SocketEvents
 
 **Usage example:**
 ```tsx
@@ -145,6 +142,31 @@ useEffect(() => {
   
   return unsubscribe; // Clean up subscription
 }, []);
+```
+
+### Server-side: GameEventBus (src/server/game-state/GameEvents.ts)
+
+The server-side `GameEventBus` provides the same pub/sub system as the client side, but for server components.
+
+**Key responsibilities:**
+- Enable communication between server modules
+- Provide type-safe event subscription and publishing
+- Maintain consistent API with client implementation
+
+**Implementation:**
+```typescript
+// Server-side event bus using publish (same as client)
+publish<T>(event: string, data: T): void {
+  console.log(`GameEventBus: Publishing server event '${event}'`, data);
+  if (!this.listeners[event]) return;
+  this.listeners[event].forEach(callback => {
+    try {
+      callback(data);
+    } catch (error) {
+      console.error(`Error in server event handler for ${event}:`, error);
+    }
+  });
+}
 ```
 
 ## Server-Side Implementation
@@ -200,15 +222,17 @@ Client                        Server
 
 ## Message Format
 
-All messages follow a consistent format:
+All messages follow a consistent format using a standardized structure. The `payload` field is used exclusively for message data:
 
 ```typescript
 interface NetworkMessage {
   type: string;       // The message type (e.g., 'PLAYER_INPUT', 'STATE_UPDATE')
-  payload?: any;      // The message payload/data
+  payload?: any;      // The message payload data
   timestamp?: number; // Optional timestamp
 }
 ```
+
+**Important note:** Always use the `payload` field for message data. The legacy `data` field has been removed from the interface to maintain consistency throughout the codebase.
 
 ## How to Communicate with the WebSocket Architecture
 
@@ -288,22 +312,26 @@ socketServer.broadcastToInstance(instanceId, {
 
 ## Best Practices
 
-1. **Always clean up event subscriptions** when components unmount to prevent memory leaks.
+1. **Use a single event system**: Always use GameEventBus for all client-side communication. Avoid creating parallel event systems using DOM CustomEvents or other patterns.
 
-2. **Use typed event data** with the `subscribe<T>()` method to ensure type safety.
+2. **Clean up event subscriptions**: Always clean up event subscriptions when components unmount to prevent memory leaks.
 
-3. **Handle connection errors** gracefully with appropriate UI feedback.
+3. **Use typed event data**: Use the `subscribe<T>()` method with explicit types to ensure type safety.
 
-4. **Use the appropriate communication path**:
-   - React UI components → `useSocket` hook
-   - Game engine components → `gameEvents`
-   - Server components → `socketServer` methods
+4. **Handle connection errors** gracefully with appropriate UI feedback.
 
-5. **Avoid direct WebSocket usage** outside of the SocketProvider to maintain a consistent architecture.
+5. **Follow the correct communication path**:
+   - React UI components → `useSocket` hook for sending messages to server
+   - All components → `gameEvents.subscribe` for receiving events 
+   - All components → `gameEvents.publish` for sending events locally
+   - Server components → `gameEvents.publish` for server events
+   - Server components → `socketServer` methods for network communication
 
-6. **Keep message types in a central location** (MESSAGE_TYPES in constants) for consistency.
+6. **Standardize message format**: Always use the `payload` property for message data, never use alternatives like `data`.
 
-7. **Always include a timestamp** with messages for better debugging and state management.
+7. **Keep message types in a central location**: Use MESSAGE_TYPES from constants for consistency.
+
+8. **Always include a timestamp** with messages for better debugging and state management.
 
 ## Integration with Game State
 

@@ -7,6 +7,7 @@ import {
   GameMode, 
   PlayerRole 
 } from '../../shared/types';
+import { gameEvents } from '../utils/GameEventBus';
 
 // Define the state interface (without actions)
 interface GameStateData {
@@ -122,10 +123,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     }));
     
     // Notify the server about entering placement mode
-    const event = new CustomEvent('enter-placement-mode', {
-      detail: { type: item }
-    });
-    window.dispatchEvent(event);
+    gameEvents.publish('PLACEMENT_MODE_START', { itemType: item });
   },
   
   handleCancelPlacement: () => {
@@ -136,10 +134,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     }));
     
     // Notify the server about exiting placement mode
-    const event = new CustomEvent('exit-placement-mode', {
-      detail: {}
-    });
-    window.dispatchEvent(event);
+    gameEvents.publish('PLACEMENT_MODE_EXIT', {});
   },
   
   handlePlaceItem: (x, y) => {
@@ -156,24 +151,18 @@ export const useGameStore = create<GameState>((set, get) => ({
     }));
     
     // Notify the server to place the item
-    const event = new CustomEvent('place-item', {
-      detail: { 
-        type: state.selectedItem, 
-        x, 
-        y 
-      }
+    gameEvents.publish('PLACEMENT_CONFIRMED', { 
+      type: state.selectedItem, 
+      x, 
+      y 
     });
-    window.dispatchEvent(event);
   },
   
   handleContinueToNextRound: () => {
     set(() => ({ deathType: null }));
     
     // Notify the server to continue to the next round
-    const event = new CustomEvent('continue-to-next-round', {
-      detail: {}
-    });
-    window.dispatchEvent(event);
+    gameEvents.publish('CONTINUE_NEXT_ROUND', {});
   },
   
   // Reset game
@@ -183,10 +172,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     // If in multiplayer, disconnect from the server
     if (state.currentGameMode === 'multiplayer' && state.networkConnected) {
       // This will trigger the NetworkProvider to disconnect
-      const event = new CustomEvent('disconnect-network', {
-        detail: {}
-      });
-      window.dispatchEvent(event);
+      gameEvents.publish('DISCONNECT_NETWORK', {});
     }
     
     set(() => ({
@@ -202,12 +188,9 @@ export const useGameStore = create<GameState>((set, get) => ({
     }));
     
     // Reinitialize the game
-    const event = new CustomEvent('reset-game', {
-      detail: {
-        mode: 'single_player'
-      }
+    gameEvents.publish('RESET_GAME', {
+      mode: 'single_player'
     });
-    window.dispatchEvent(event);
     
     // Go to mode selection after a short delay
     setTimeout(() => {

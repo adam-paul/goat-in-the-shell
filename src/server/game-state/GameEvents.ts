@@ -33,12 +33,12 @@ class GameEventBus {
   }
 
   /**
-   * Emit an event to all subscribers
+   * Publish an event to all subscribers
    * @param event Event name
    * @param data Event data
    */
-  emit<T>(event: string, data: T): void {
-    console.log(`GameEventBus: Emitting server event '${event}'`, data);
+  publish<T>(event: string, data: T): void {
+    console.log(`GameEventBus: Publishing server event '${event}'`, data);
     if (!this.listeners[event]) return;
     this.listeners[event].forEach(callback => {
       try {
@@ -47,6 +47,14 @@ class GameEventBus {
         console.error(`Error in server event handler for ${event}:`, error);
       }
     });
+  }
+  
+  /**
+   * Alias for publish for backward compatibility
+   * @deprecated Use publish instead
+   */
+  emit<T>(event: string, data: T): void {
+    this.publish(event, data);
   }
 
   /**
