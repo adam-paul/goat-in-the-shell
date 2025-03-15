@@ -93,12 +93,6 @@ class SocketEvents {
       
       // Also publish the message to the game event bus
       gameEvents.publish(type, payload);
-      
-      // Handle special state-specific actions
-      if (payload.currentState === 'playing') {
-        // For playing state, make sure countdown is triggered
-        gameEvents.publish('START_COUNTDOWN', { duration: 3000 });
-      }
     }
     // Handle lobby joined events
     else if (type === 'EVENT' && payload?.eventType === 'LOBBY_JOINED') {

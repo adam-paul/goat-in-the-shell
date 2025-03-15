@@ -52,6 +52,11 @@ export default class BasicGameScene extends Phaser.Scene {
   
   constructor() {
     super('BasicGameScene');
+    
+    // Subscribe to game events
+    gameEvents.subscribe('DART_BLOCKED', (data: any) => {
+      this.createDartBlockEffect(data.position.x, data.position.y);
+    });
   }
   
   preload(): void {
@@ -401,6 +406,12 @@ export default class BasicGameScene extends Phaser.Scene {
    * Start the game after countdown completes
    */
   private startGame(): void {
+    // Guard against multiple starts
+    if (this.gameStarted) {
+      console.log('Game already started, ignoring duplicate start');
+      return;
+    }
+    
     console.log('Starting game after countdown');
     this.gameStarted = true;
     this.gameStatus = 'playing';
@@ -408,13 +419,9 @@ export default class BasicGameScene extends Phaser.Scene {
     // Resume physics
     this.physics.resume();
     
-    // Notify the game event bus that the game has started
-    // This is just for local tracking - server already knows
-    gameEvents.publish('GAME_STARTED', {});
-    
-    // Explicitly publish the COUNTDOWN_COMPLETE event to the server
-    // to ensure server knows the countdown is over
-    gameEvents.publish('COUNTDOWN_COMPLETE', { timestamp: Date.now() });
+    // Send a single event to notify game start
+    // We only need to send GAME_STARTED, not both events
+    gameEvents.publish('GAME_STARTED', { timestamp: Date.now() });
   }
   
   /**
@@ -1457,6 +1464,42 @@ export default class BasicGameScene extends Phaser.Scene {
         }
       });
       this.customStaticGroups = undefined;
+    }
+  }
+  
+  // Create a particle effect when a dart is blocked by a shield
+  private createDartBlockEffect(x: number, y: number): void {
+    // Create a simple visual effect using rectangles
+    for (let i = 0; i < 8; i++) {
+      // Create small particles
+      const particle = this.add.rectangle(
+        x, 
+        y, 
+        4, 
+        4, 
+        0xFF9800 // Orange color
+      );
+      
+      // Random direction
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 50 + Math.random() * 50;
+      
+      // Set velocity
+      const vx = Math.cos(angle) * speed;
+      const vy = Math.sin(angle) * speed;
+      
+      // Animate the particle
+      this.tweens.add({
+        targets: particle,
+        x: x + vx,
+        y: y + vy,
+        alpha: 0,
+        scale: 0.5,
+        duration: 300,
+        onComplete: () => {
+          particle.destroy();
+        }
+      });
     }
   }
 }
