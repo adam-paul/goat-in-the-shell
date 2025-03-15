@@ -52,11 +52,11 @@ const CATEGORIES = {
 // Define collision masks for each category
 const COLLISION_MASKS = {
   PLAYER: CATEGORIES.DEFAULT | CATEGORIES.PLATFORM | CATEGORIES.SPIKE | CATEGORIES.DART | CATEGORIES.SHIELD | CATEGORIES.WALL | CATEGORIES.DEATH_ZONE,
-  DART: CATEGORIES.PLAYER | CATEGORIES.PLATFORM | CATEGORIES.SHIELD | CATEGORIES.WALL,
+  DART: CATEGORIES.PLAYER | CATEGORIES.SHIELD,
   SHIELD: CATEGORIES.PLAYER | CATEGORIES.DART,
-  PLATFORM: CATEGORIES.PLAYER | CATEGORIES.DART,
-  SPIKE: CATEGORIES.PLAYER | CATEGORIES.DART,
-  WALL: CATEGORIES.PLAYER | CATEGORIES.DART,
+  PLATFORM: CATEGORIES.PLAYER,
+  SPIKE: CATEGORIES.PLAYER,
+  WALL: CATEGORIES.PLAYER,
   DEATH_ZONE: CATEGORIES.PLAYER
 };
 
@@ -98,6 +98,14 @@ export class PhysicsEngine {
       
       // The dart timer is already started when the PhysicsEngine is created
       // Darts will only fire when there are active 'playing' instances
+    });
+    
+    // Listen for item placement events
+    gameEvents.subscribe('ITEM_PLACED', (data: any) => {
+      console.log(`[PhysicsEngine] Item placed event received:`, data);
+      if (data && data.item) {
+        this.registerItemWithPhysics(data.item);
+      }
     });
     
     // Create a Matter.js engine with enhanced settings
@@ -630,6 +638,10 @@ export class PhysicsEngine {
     const gameState = this.gameState.getState();
     const now = Date.now();
     
+    // Log physics world state before shooting darts
+    console.log(`[PhysicsEngine] Verifying physics world before shooting darts:`);
+    this.logPhysicsBodies();
+    
     console.log(`[PhysicsEngine] shootDarts checking with GameStateManager: ${this.gameState.constructor.name}@${this.gameState.toString().split('\n')[0]}`);
     console.log(`[PhysicsEngine] Root GameStateManager is: ${(global as any).rootGameState.constructor.name}@${(global as any).rootGameState.toString().split('\n')[0]}`);
     
@@ -723,14 +735,14 @@ export class PhysicsEngine {
             dartHeight, // Height from constants
             {
               label: `dart_${Date.now()}_${Math.random()}`,
-              frictionAir: 0,         // No air friction to maintain velocity
+              frictionAir: 0,         // No air friction
               friction: 0,            // No friction
               restitution: 0,         // No bounce
               inertia: Infinity,      // Prevent rotation
               isSensor: false,        // Allow physical collisions
               collisionFilter: {
                 category: CATEGORIES.DART,
-                mask: COLLISION_MASKS.DART
+                mask: COLLISION_MASKS.DART // Use the consistent mask
               }
             }
           );
@@ -814,14 +826,14 @@ export class PhysicsEngine {
           dartHeight, // Height from constants
           {
             label: `dart_${Date.now()}_${Math.random()}`,
-            frictionAir: 0,         // No air friction to maintain velocity
+            frictionAir: 0,         // No air friction
             friction: 0,            // No friction
             restitution: 0,         // No bounce
             inertia: Infinity,      // Prevent rotation
             isSensor: false,        // Allow physical collisions
             collisionFilter: {
               category: CATEGORIES.DART,
-              mask: COLLISION_MASKS.DART
+              mask: COLLISION_MASKS.DART // Use the consistent mask
             }
           }
         );
@@ -858,64 +870,75 @@ export class PhysicsEngine {
   }
   
   private handleCollisionStart(event: Matter.IEventCollision<Matter.Engine>): void {
-    const pairs = event.pairs;
-    
-    console.log(`[PhysicsEngine] Handling ${pairs.length} collision pairs`);
-    
-    for (const pair of pairs) {
+    event.pairs.forEach((pair) => {
       const bodyA = pair.bodyA;
       const bodyB = pair.bodyB;
       
-      console.log(`[PhysicsEngine] Collision between: ${bodyA.label} and ${bodyB.label}`);
-      
-      // Player-spike collision
-      if (this.isCollisionBetween(bodyA, bodyB, 'player', 'spike')) {
-        const playerId = this.getPlayerIdFromBody(bodyA, bodyB);
-        if (playerId) this.handlePlayerDeath(playerId, 'spike');
-      }
-      
-      // Player-dart collision
-      if (this.isCollisionBetween(bodyA, bodyB, 'player', 'dart')) {
-        const playerId = this.getPlayerIdFromBody(bodyA, bodyB);
-        if (playerId) this.handlePlayerDeath(playerId, 'dart');
-        
-        // Destroy the dart
-        const dartBody = bodyA.label.startsWith('dart') ? bodyA : bodyB;
-        if (dartBody) {
-          this.removeDart(dartBody);
+      // Enhanced collision logging
+      console.log(`[PhysicsEngine] Collision detected:`, {
+        bodyA: {
+          label: bodyA.label,
+          position: bodyA.position,
+          category: bodyA.collisionFilter.category,
+          mask: bodyA.collisionFilter.mask
+        },
+        bodyB: {
+          label: bodyB.label,
+          position: bodyB.position,
+          category: bodyB.collisionFilter.category,
+          mask: bodyB.collisionFilter.mask
         }
-      }
+      });
       
-      // Dart-shield collision
-      if (this.isCollisionBetween(bodyA, bodyB, 'dart', 'shield')) {
-        console.log('[PhysicsEngine] Dart-shield collision detected!');
+      // Handle dart collisions
+      if (bodyA.label.includes('dart_') || bodyB.label.includes('dart_')) {
+        const dart = bodyA.label.includes('dart_') ? bodyA : bodyB;
+        const other = bodyA.label.includes('dart_') ? bodyB : bodyA;
         
-        // Destroy the dart
-        const dartBody = bodyA.label.startsWith('dart') ? bodyA : bodyB;
-        if (dartBody) {
-          console.log('[PhysicsEngine] Removing dart after shield collision');
-          this.removeDart(dartBody);
+        // Handle dart hitting shield
+        if (other.label.includes('shield_')) {
+          console.log(`[PhysicsEngine] SHIELD COLLISION DETECTED:`, {
+            dartPosition: dart.position,
+            shieldPosition: other.position,
+            dartVelocity: dart.velocity
+          });
           
-          // Emit event for visual effect
-          const shieldBody = bodyA.label.startsWith('shield') ? bodyA : bodyB;
-          gameEvents.publish('DART_BLOCKED', {
-            position: { x: dartBody.position.x, y: dartBody.position.y }
+          // Remove the dart
+          Matter.Composite.remove(this.engine.world, dart);
+          // Remove from tracking
+          for (const [dartId, dartInfo] of this.darts.entries()) {
+            if (dartInfo.body === dart) {
+              this.darts.delete(dartId);
+              console.log(`[PhysicsEngine] Removed dart ${dartId} after shield collision`);
+              break;
+            }
+          }
+          // Emit event for visual effects
+          gameEvents.publish('DART_HIT_SHIELD', {
+            position: dart.position,
+            velocity: dart.velocity
+          });
+        }
+        // Handle dart hitting player
+        else if (other.label.includes('player_')) {
+          console.log(`[PhysicsEngine] Dart hit player`);
+          // Remove the dart
+          Matter.Composite.remove(this.engine.world, dart);
+          // Remove from tracking
+          for (const [dartId, dartInfo] of this.darts.entries()) {
+            if (dartInfo.body === dart) {
+              this.darts.delete(dartId);
+              break;
+            }
+          }
+          // Emit death event
+          gameEvents.publish('PLAYER_DEATH', {
+            type: 'dart' as DeathType,
+            position: other.position
           });
         }
       }
-      
-      // Player-finish area collision
-      if (this.isCollisionBetween(bodyA, bodyB, 'player', 'finish')) {
-        const playerId = this.getPlayerIdFromBody(bodyA, bodyB);
-        if (playerId) this.handlePlayerWin(playerId);
-      }
-      
-      // Player-death zone collision
-      if (this.isCollisionBetween(bodyA, bodyB, 'player', 'death_zone')) {
-        const playerId = this.getPlayerIdFromBody(bodyA, bodyB);
-        if (playerId) this.handlePlayerDeath(playerId, 'fall');
-      }
-    }
+    });
   }
 
   private syncGameState(): void {
@@ -1095,6 +1118,266 @@ export class PhysicsEngine {
     
     // Add the body to the physics world
     Matter.Composite.add(this.engine.world, body);
+  }
+
+  createGameItem(item: GameItem): Matter.Body {
+    console.log(`[PhysicsEngine] Creating physics body for item: ${item.type}`);
+    
+    // Log all existing bodies for debugging
+    const existingBodies = Array.from(this.bodies.values());
+    const shieldBodies = existingBodies.filter(body => body.label.includes('shield_'));
+    console.log(`[PhysicsEngine] Current shield bodies in world: ${shieldBodies.length}`);
+    shieldBodies.forEach(body => {
+      console.log(`[PhysicsEngine] Shield body: ${body.label} at position (${body.position.x}, ${body.position.y})`);
+    });
+    
+    let body: Matter.Body;
+    
+    switch (item.type) {
+      case 'shield': {
+        console.log(`[PhysicsEngine] Creating physics body for shield ${item.id}`);
+        const width = item.properties.width || this.parameters.shield_width;
+        const height = item.properties.height || this.parameters.shield_height;
+        
+        body = Matter.Bodies.rectangle(
+          item.position.x,
+          item.position.y,
+          width,
+          height,
+          {
+            isStatic: true,
+            label: `shield_${item.id}`,
+            collisionFilter: {
+              category: CATEGORIES.SHIELD,
+              mask: CATEGORIES.DART // Direct specification of what shield can collide with
+            },
+            friction: 0,
+            frictionAir: 0,
+            frictionStatic: 0,
+            restitution: 0
+          }
+        );
+        
+        // Log shield creation details
+        console.log(`[PhysicsEngine] Created shield body:`, {
+          id: item.id,
+          label: body.label,
+          position: body.position,
+          width,
+          height,
+          category: CATEGORIES.SHIELD,
+          mask: CATEGORIES.DART
+        });
+        break;
+      }
+      case 'platform': {
+        const width = item.properties.width || this.parameters.platform_width;
+        const height = item.properties.height || this.parameters.platform_height;
+        
+        body = Matter.Bodies.rectangle(
+          item.position.x,
+          item.position.y,
+          width,
+          height,
+          {
+            isStatic: true,
+            label: 'platform',
+            collisionFilter: {
+              category: CATEGORIES.PLATFORM,
+              mask: CATEGORIES.PLAYER | CATEGORIES.DART
+            }
+          }
+        );
+        break;
+      }
+      case 'spike': {
+        const width = item.properties.width || this.parameters.spike_width;
+        const height = item.properties.height || this.parameters.spike_height;
+        
+        body = Matter.Bodies.rectangle(
+          item.position.x,
+          item.position.y,
+          width,
+          height,
+          {
+            isStatic: true,
+            label: 'spike',
+            collisionFilter: {
+              category: CATEGORIES.SPIKE,
+              mask: CATEGORIES.PLAYER | CATEGORIES.DART
+            }
+          }
+        );
+        break;
+      }
+      case 'dart_wall': {
+        const height = item.properties.height || this.parameters.dart_wall_height;
+        
+        body = Matter.Bodies.rectangle(
+          item.position.x,
+          item.position.y,
+          10, // Fixed width for dart walls
+          height,
+          {
+            isStatic: true,
+            label: 'dart_wall',
+            collisionFilter: {
+              category: CATEGORIES.WALL,
+              mask: CATEGORIES.PLAYER | CATEGORIES.DART
+            }
+          }
+        );
+        break;
+      }
+      default:
+        throw new Error(`Unknown item type: ${item.type}`);
+    }
+    
+    // Add the body to the physics world
+    Matter.Composite.add(this.engine.world, body);
+    
+    // Store the body with the item ID for later reference
+    this.bodies.set(item.id, body);
+    
+    // Verify body was added to world
+    const worldBodies = Matter.Composite.allBodies(this.engine.world);
+    console.log(`[PhysicsEngine] Total bodies in world after adding ${item.type}: ${worldBodies.length}`);
+    
+    return body;
+  }
+
+  private createDart(x: number, y: number, velocity: Matter.Vector): Matter.Body {
+    const dartBody = Matter.Bodies.rectangle(x, y, PHYSICS.DART_WIDTH, PHYSICS.DART_HEIGHT, {
+      label: `dart_${Date.now()}_${Math.random()}`,
+      frictionAir: 0,
+      friction: 0,
+      restitution: 0,
+      inertia: Infinity, // Prevent rotation
+      collisionFilter: {
+        category: CATEGORIES.DART,
+        mask: COLLISION_MASKS.DART // Already using the consistent mask
+      },
+      plugin: {
+        attractors: [
+          // Counter gravity force
+          (bodyA: Matter.Body) => ({
+            x: 0,
+            y: -this.engine.world.gravity.y * bodyA.mass
+          })
+        ]
+      }
+    });
+    
+    // Set the dart's velocity
+    Matter.Body.setVelocity(dartBody, velocity);
+    
+    // Add the dart to the physics world
+    Matter.Composite.add(this.engine.world, dartBody);
+    
+    return dartBody;
+  }
+
+  /**
+   * Log all physics bodies in the world for debugging
+   */
+  private logPhysicsBodies(): void {
+    console.log(`[PhysicsEngine] --- PHYSICS WORLD BODIES ---`);
+    
+    // Get all bodies from the physics world
+    const allBodies = Matter.Composite.allBodies(this.engine.world);
+    
+    // Count by type
+    const bodyCounts = {
+      shield: 0,
+      dart: 0,
+      platform: 0,
+      player: 0,
+      wall: 0,
+      other: 0
+    };
+    
+    allBodies.forEach(body => {
+      if (body.label.includes('shield')) bodyCounts.shield++;
+      else if (body.label.includes('dart')) bodyCounts.dart++;
+      else if (body.label.includes('platform')) bodyCounts.platform++;
+      else if (body.label.includes('player')) bodyCounts.player++;
+      else if (body.label.includes('wall')) bodyCounts.wall++;
+      else bodyCounts.other++;
+    });
+    
+    console.log(`[PhysicsEngine] Total bodies: ${allBodies.length}`);
+    console.log(`[PhysicsEngine] Shields: ${bodyCounts.shield}`);
+    console.log(`[PhysicsEngine] Darts: ${bodyCounts.dart}`);
+    console.log(`[PhysicsEngine] Platforms: ${bodyCounts.platform}`);
+    console.log(`[PhysicsEngine] Players: ${bodyCounts.player}`);
+    console.log(`[PhysicsEngine] Walls: ${bodyCounts.wall}`);
+    console.log(`[PhysicsEngine] Other: ${bodyCounts.other}`);
+    
+    // Log shield positions for verification
+    const shieldBodies = allBodies.filter(body => body.label.includes('shield'));
+    shieldBodies.forEach(shield => {
+      console.log(`[PhysicsEngine] Shield at (${shield.position.x}, ${shield.position.y})`);
+    });
+    
+    console.log(`[PhysicsEngine] --- END PHYSICS WORLD BODIES ---`);
+  }
+
+  /**
+   * Register an item with the physics engine and create its physics body
+   */
+  registerItemWithPhysics(item: GameItem): Matter.Body {
+    console.log(`[PhysicsEngine] Registering item ${item.id} of type ${item.type} with physics engine`);
+    
+    // Log current state before adding new body
+    this.logPhysicsBodies();
+    
+    let body: Matter.Body;
+    
+    if (item.type === 'shield') {
+      // Create shield physics body
+      body = Matter.Bodies.rectangle(
+        item.position.x,
+        item.position.y,
+        item.properties.width || this.parameters.shield_width,
+        item.properties.height || this.parameters.shield_height,
+        {
+          label: `shield_${item.id}`,
+          isStatic: true,
+          isSensor: false,
+          collisionFilter: {
+            category: CATEGORIES.SHIELD,
+            mask: CATEGORIES.DART // Direct specification of what shield can collide with
+          },
+          friction: 0,
+          frictionAir: 0,
+          frictionStatic: 0,
+          restitution: 0
+        }
+      );
+      
+      // Add to physics world
+      Matter.Composite.add(this.engine.world, body);
+      
+      // Track the shield body
+      this.bodies.set(item.id, body);
+      
+      console.log(`[PhysicsEngine] Created shield physics body:`, {
+        id: item.id,
+        position: body.position,
+        width: item.properties.width || this.parameters.shield_width,
+        height: item.properties.height || this.parameters.shield_height,
+        category: CATEGORIES.SHIELD,
+        mask: CATEGORIES.DART
+      });
+    } else {
+      // For other items, use the existing createGameItem method
+      body = this.createGameItem(item);
+    }
+    
+    // Log state after adding new body
+    this.logPhysicsBodies();
+    
+    return body;
   }
 }
 

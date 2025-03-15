@@ -5,6 +5,7 @@ import type { NetworkMessage } from '../../shared/types';
 import { GameStateManager } from '../game-state';
 import { GameLogicProcessor } from '../logic';
 import { GameInstanceManager } from '../game-state/GameInstanceManager';
+import { gameEvents } from '../game-state/GameEvents';
 
 // Client connection tracking
 interface ClientConnection {
@@ -428,6 +429,9 @@ class SocketServer {
       
       if (placedItem) {
         console.log(`SERVER: Successfully placed item ${placedItem.id} of type ${placedItem.type}`);
+        
+        // Publish event for physics engine to register the item
+        gameEvents.publish('ITEM_PLACED', { item: placedItem });
         
         // Send success confirmation back to the client
         this.sendMessage(clientId, {
