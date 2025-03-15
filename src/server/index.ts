@@ -151,12 +151,7 @@ const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
   console.log(`SERVER: WebSocket server running on port ${PORT}`);
   
-  // Setup game world parameters
-  physics.updateParameters({
-    gravity: 0.9,
-    dart_speed: 5,
-    dart_frequency: 3000 // 3 seconds between dart firings
-  });
+  // Physics parameters are now defined in shared constants only
   
   console.log(`SERVER: Physics engine initialized`);
 });

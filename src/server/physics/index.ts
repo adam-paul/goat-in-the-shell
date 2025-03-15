@@ -2,38 +2,38 @@ import Matter from 'matter-js';
 import { GameStateManager, Player, GameItem, setupGameInstanceManager } from '../game-state';
 import { DeathType } from '../../shared/types';
 import { gameEvents } from '../game-state/GameEvents';
-import { PHYSICS } from '../../shared/constants';
+import { PHYSICS, ITEMS } from '../../shared/constants';
 
 // Constants for physics simulation
 const PHYSICS_UPDATE_RATE = 60; // Updates per second
 const TIME_STEP = 1000 / PHYSICS_UPDATE_RATE;
 const MAX_STEP = 5 * TIME_STEP; // Max step size to prevent spiral of death
 
-// Game physics constants - these are calibrated for Matter.js 
-// to match Phaser's feel from original implementation
-const GRAVITY = 0.9; // Calibrated to match Phaser's 300
-const PLAYER_MOVE_FORCE = 0.012;
-const PLAYER_JUMP_FORCE = 0.025;
+// Game physics constants - all from shared constants
+const GRAVITY = PHYSICS.GRAVITY;
+const PLAYER_MOVE_FORCE = PHYSICS.PLAYER_MOVE_FORCE;
+const PLAYER_JUMP_FORCE = PHYSICS.PLAYER_JUMP_FORCE;
+// These could be moved to shared constants as well in the future
 const WORLD_WIDTH = 2400;
 const WORLD_HEIGHT = 800;
 
-// Game parameters (default values)
+// Game parameters (default values) - all derived from shared constants
 const DEFAULT_PARAMETERS = {
   gravity: GRAVITY,
   player_move_speed: PLAYER_MOVE_FORCE,
   player_jump_force: PLAYER_JUMP_FORCE,
-  dart_speed: 5,
-  dart_frequency: 3000, // milliseconds between dart shots
-  platform_width: 100,
-  platform_height: 20,
-  spike_width: 100,
-  spike_height: 20,
-  oscillator_width: 100, 
-  oscillator_height: 20,
-  oscillator_distance: 100,
-  shield_width: 60,
-  shield_height: 60,
-  dart_wall_height: 100,
+  dart_speed: PHYSICS.DART_SPEED,
+  dart_frequency: ITEMS.DART_WALL.DART_INTERVAL, // milliseconds between dart shots
+  platform_width: ITEMS.PLATFORM.DEFAULT_WIDTH,
+  platform_height: ITEMS.PLATFORM.DEFAULT_HEIGHT,
+  spike_width: ITEMS.PLATFORM.DEFAULT_WIDTH,
+  spike_height: ITEMS.PLATFORM.DEFAULT_HEIGHT,
+  oscillator_width: ITEMS.OSCILLATOR.DEFAULT_WIDTH, 
+  oscillator_height: ITEMS.OSCILLATOR.DEFAULT_HEIGHT,
+  oscillator_distance: ITEMS.OSCILLATOR.DEFAULT_AMPLITUDE_Y,
+  shield_width: ITEMS.SHIELD.WIDTH,
+  shield_height: ITEMS.SHIELD.HEIGHT,
+  dart_wall_height: ITEMS.DART_WALL.HEIGHT,
   tilt: 0 // degrees
 };
 

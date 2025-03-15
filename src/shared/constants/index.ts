@@ -7,7 +7,8 @@ export const PHYSICS = {
   AIR_FRICTION: 0.05,
   RESTITUTION: 0.2,
   DART_WIDTH: 30,
-  DART_HEIGHT: 8
+  DART_HEIGHT: 8,
+  DART_SPEED: 2 // Add dart speed to physics constants
 };
 
 // Game dimensions
@@ -54,8 +55,12 @@ export const ITEMS = {
   DART_WALL: {
     WIDTH: 20,
     HEIGHT: 200,
-    DART_SPEED: 5,
+    DART_SPEED: 2, // Reduced dart speed for better gameplay
     DART_INTERVAL: 3000 // ms between dart firing
+  },
+  SHIELD: {
+    WIDTH: 60,
+    HEIGHT: 60
   }
 };
 
