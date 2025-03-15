@@ -8,6 +8,7 @@ import {
   PlayerRole 
 } from '../../shared/types';
 import { gameEvents } from '../utils/GameEventBus';
+import { ITEMS } from '../../shared/constants';
 
 // Define the state interface (without actions)
 interface GameStateData {
@@ -175,11 +176,47 @@ export const useGameStore = create<GameState>((set, get): GameState => {
       placementConfirmed: true
     }));
     
-    // Create the placement data
-    const placementData = { 
+    // Create the placement data with required properties
+    const placementData: any = { 
       type: state.selectedItem, 
-      position: { x, y }
+      position: { x, y },
+      properties: {}
     };
+    
+    // Add properties based on item type from shared constants
+    
+    switch (state.selectedItem) {
+      case 'shield':
+        placementData.properties = {
+          width: ITEMS.SHIELD.WIDTH,
+          height: ITEMS.SHIELD.HEIGHT
+        };
+        break;
+      case 'platform':
+        placementData.properties = {
+          width: ITEMS.PLATFORM.DEFAULT_WIDTH,
+          height: ITEMS.PLATFORM.DEFAULT_HEIGHT
+        };
+        break;
+      case 'oscillator':
+        placementData.properties = {
+          width: ITEMS.OSCILLATOR.DEFAULT_WIDTH,
+          height: ITEMS.OSCILLATOR.DEFAULT_HEIGHT,
+          amplitudeY: ITEMS.OSCILLATOR.DEFAULT_AMPLITUDE_Y
+        };
+        break;
+      case 'spike':
+        placementData.properties = {
+          width: ITEMS.SPIKE.SIZE,
+          height: ITEMS.SPIKE.SIZE
+        };
+        break;
+      case 'dart_wall':
+        placementData.properties = {
+          height: ITEMS.DART_WALL.HEIGHT
+        };
+        break;
+    }
     
     // Send the item placement request to the server via event bus
     // This will be picked up by SocketEvents and sent to server

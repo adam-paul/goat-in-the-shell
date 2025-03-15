@@ -379,17 +379,61 @@ class SocketServer {
    * Handle item placement
    */
   private handlePlaceItem(clientId: string, data: any) {
+    console.log(`SERVER: Handling PLACE_ITEM from client ${clientId}:`, JSON.stringify(data));
+    
     // Get the game instance this player belongs to
     const instance = this.instanceManager.getInstanceByPlayer(clientId);
     if (!instance) {
-      console.warn(`SERVER: Client ${clientId} not associated with a game instance`);
+      console.error(`SERVER: Client ${clientId} not associated with a game instance`);
       return;
     }
     
+    console.log(`SERVER: Player is in instance ${instance.id}, validating placement...`);
+    
     // Validate item placement
-    if (!this.gameLogic.validateItemPlacement(data, clientId)) {
-      console.warn(`SERVER: Invalid item placement from client ${clientId}`);
+    const isValid = this.gameLogic.validateItemPlacement(data, clientId);
+    console.log(`SERVER: Item placement validation result: ${isValid ? 'VALID' : 'INVALID'}`);
+    
+    if (isValid) {
+      // Place the item in the instance's game state
+      const placedItem = instance.state.placeItem(data, clientId);
       
+      if (placedItem) {
+        console.log(`SERVER: Successfully placed item ${placedItem.id} of type ${placedItem.type}`);
+        
+        // Send success confirmation back to the client
+        this.sendMessage(clientId, {
+          type: MESSAGE_TYPES.EVENT,
+          payload: {
+            eventType: 'PLACEMENT_SUCCESS',
+            message: 'Item placed successfully',
+            timestamp: Date.now()
+          }
+        });
+        
+        // Notify all players in the instance about the successful item placement
+        this.broadcastToInstance(instance.id, {
+          type: MESSAGE_TYPES.EVENT,
+          payload: {
+            eventType: 'ITEM_PLACED',
+            placedBy: clientId,
+            itemData: placedItem,
+            timestamp: Date.now()
+          }
+        });
+      } else {
+        console.error(`SERVER: Item placement failed after validation passed - placeItem returned null`);
+        this.sendMessage(clientId, {
+          type: MESSAGE_TYPES.EVENT,
+          payload: {
+            eventType: 'PLACEMENT_FAILED',
+            message: 'Item placement failed after validation',
+            timestamp: Date.now()
+          }
+        });
+      }
+    } else {
+      console.error(`SERVER: Invalid item placement from client ${clientId} - validation failed`);
       // Send failure response to client
       this.sendMessage(clientId, {
         type: MESSAGE_TYPES.EVENT,
@@ -399,32 +443,7 @@ class SocketServer {
           timestamp: Date.now()
         }
       });
-      return;
     }
-    
-    // Place the item in the instance's game state
-    const placedItem = instance.state.placeItem(data, clientId);
-    
-    // Send success confirmation back to the client
-    this.sendMessage(clientId, {
-      type: MESSAGE_TYPES.EVENT,
-      payload: {
-        eventType: 'PLACEMENT_SUCCESS',
-        message: 'Item placed successfully',
-        timestamp: Date.now()
-      }
-    });
-    
-    // Notify all players in the instance about the successful item placement
-    this.broadcastToInstance(instance.id, {
-      type: MESSAGE_TYPES.EVENT,
-      payload: {
-        eventType: 'ITEM_PLACED',
-        placedBy: clientId,
-        itemData: placedItem,
-        timestamp: Date.now()
-      }
-    });
   }
   
   /**

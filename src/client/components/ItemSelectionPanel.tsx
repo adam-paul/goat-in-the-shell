@@ -20,7 +20,7 @@ const ItemSelectionPanel: React.FC<ItemSelectionPanelProps> = ({ onSelectItem })
       color: '#f44336' // Red
     },
     {
-      type: 'moving',
+      type: 'oscillator',
       name: 'Oscillator',
       description: 'A platform that moves back and forth',
       color: '#2196F3' // Blue

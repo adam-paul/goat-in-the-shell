@@ -474,52 +474,67 @@ class GameStateManager {
    * Place a game item in the world
    */
   placeItem(itemData: any, clientId: string): GameItem | null {
+    console.log(`GAME STATE: Placing item of type ${itemData.type} for client ${clientId}`);
+    console.log(`GAME STATE: Item data:`, JSON.stringify(itemData));
+    
     // Validate that the player exists
-    if (!this.players.has(clientId)) return null;
+    if (!this.players.has(clientId)) {
+      console.error(`GAME STATE: Cannot place item - player ${clientId} not found`);
+      return null;
+    }
     
     // Generate ID if not provided
     const itemId = itemData.id || uuidv4();
     
     // Create the item with appropriate defaults
-    const item: GameItem = {
-      id: itemId,
-      type: itemData.type,
-      position: itemData.position || { x: 0, y: 0 },
-      rotation: itemData.rotation || 0,
-      placedBy: clientId,
-      properties: itemData.properties ? { ...itemData.properties } : {}
-    };
-    
-    // Add width/height properties based on parameters if not specified
-    switch (item.type) {
-      case 'platform':
-        if (!item.properties.width) item.properties.width = this.parameters.platform_width || 100;
-        if (!item.properties.height) item.properties.height = this.parameters.platform_height || 20;
-        break;
-      case 'spike':
-        if (!item.properties.width) item.properties.width = this.parameters.spike_width || 100;
-        if (!item.properties.height) item.properties.height = this.parameters.spike_height || 20;
-        break;
-      case 'oscillator':
-      case 'moving':
-        if (!item.properties.width) item.properties.width = this.parameters.oscillator_width || 100;
-        if (!item.properties.height) item.properties.height = this.parameters.oscillator_height || 20;
-        if (!item.properties.distance) item.properties.distance = this.parameters.oscillator_distance || 100;
-        break;
-      case 'shield':
-        if (!item.properties.width) item.properties.width = this.parameters.shield_width || 60;
-        if (!item.properties.height) item.properties.height = this.parameters.shield_height || 60;
-        break;
-      case 'dart_wall':
-        if (!item.properties.height) item.properties.height = this.parameters.dart_wall_height || 100;
-        break;
+    try {
+      const item: GameItem = {
+        id: itemId,
+        type: itemData.type,
+        position: itemData.position || { x: 0, y: 0 },
+        rotation: itemData.rotation || 0,
+        placedBy: clientId,
+        properties: itemData.properties ? { ...itemData.properties } : {}
+      };
+      
+      console.log(`GAME STATE: Created item base with properties:`, JSON.stringify(item.properties));
+      
+      // Add width/height properties based on parameters if not specified
+      switch (item.type) {
+        case 'platform':
+          if (!item.properties.width) item.properties.width = this.parameters.platform_width || 100;
+          if (!item.properties.height) item.properties.height = this.parameters.platform_height || 20;
+          break;
+        case 'spike':
+          if (!item.properties.width) item.properties.width = this.parameters.spike_width || 100;
+          if (!item.properties.height) item.properties.height = this.parameters.spike_height || 20;
+          break;
+        case 'oscillator':
+          if (!item.properties.width) item.properties.width = this.parameters.oscillator_width || 100;
+          if (!item.properties.height) item.properties.height = this.parameters.oscillator_height || 20;
+          if (!item.properties.distance) item.properties.distance = this.parameters.oscillator_distance || 100;
+          break;
+        case 'shield':
+          if (!item.properties.width) item.properties.width = this.parameters.shield_width || 60;
+          if (!item.properties.height) item.properties.height = this.parameters.shield_height || 60;
+          break;
+        case 'dart_wall':
+          if (!item.properties.height) item.properties.height = this.parameters.dart_wall_height || 100;
+          break;
+      }
+      
+      console.log(`GAME STATE: Final item properties:`, JSON.stringify(item.properties));
+      
+      // Store the item
+      this.items.set(item.id, item);
+      console.log(`GAME STATE: Successfully placed item ${item.id} of type ${item.type}`);
+      
+      // Return the created item
+      return item;
+    } catch (error) {
+      console.error(`GAME STATE: Error placing item:`, error);
+      return null;
     }
-    
-    // Store the item
-    this.items.set(item.id, item);
-    
-    // Return the created item
-    return item;
   }
   
   /**

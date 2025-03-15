@@ -18,7 +18,7 @@ export type DeathType = 'dart' | 'spike' | 'fall' | null;
 /**
  * Types of items that can be placed in the game
  */
-export type ItemType = 'platform' | 'spike' | 'moving' | 'shield' | 'dart_wall';
+export type ItemType = 'platform' | 'spike' | 'oscillator' | 'shield' | 'dart_wall';
 
 /**
  * Game world structure for synchronizing between server and client

@@ -92,10 +92,27 @@ class GameLogicProcessor {
    * Validate item placement before adding it to the game state
    */
   validateItemPlacement(itemData: any, clientId: string): boolean {
+    console.log(`VALIDATION: Starting validation for item type ${itemData?.type || 'undefined'} from client ${clientId}`);
+    console.log(`VALIDATION: Full item data:`, JSON.stringify(itemData));
+    
+    // Basic structure check
+    if (!itemData) {
+      console.error(`VALIDATION: Item data is null or undefined`);
+      return false;
+    }
+    
+    if (!itemData.type) {
+      console.error(`VALIDATION: Item type is missing`);
+      return false;
+    }
+    
     // Check that the client exists
     const state = this.gameState.getState();
     const player = state.players.find((p: any) => p.id === clientId);
-    if (!player) return false;
+    if (!player) {
+      console.error(`VALIDATION: Client ${clientId} not found in players list`);
+      return false;
+    }
     
     // Check that the game is in placement phase (not running)
     // Find what lobby the player is in
@@ -107,57 +124,143 @@ class GameLogicProcessor {
       }
     }
     
-    if (!playerLobby || playerLobby.isGameActive) {
+    if (!playerLobby) {
+      console.error(`VALIDATION: Client ${clientId} not found in any lobby`);
+      return false;
+    }
+    
+    if (playerLobby.isGameActive) {
+      console.error(`VALIDATION: Can't place items during active gameplay in lobby ${playerLobby.id}`);
       return false; // Can't place items during active gameplay
     }
     
     // Check that the item type is valid
     const validItemTypes = ['platform', 'spike', 'oscillator', 'shield', 'dart_wall'];
-    if (!validItemTypes.includes(itemData.type)) return false;
+    console.log(`VALIDATION: Checking if ${itemData.type} is a valid item type among:`, validItemTypes);
+    if (!validItemTypes.includes(itemData.type)) {
+      console.error(`VALIDATION: Invalid item type: ${itemData.type}`);
+      return false;
+    }
     
     // Check that item position is within valid bounds
+    console.log(`VALIDATION: Checking position:`, itemData.position);
+    if (!itemData.position) {
+      console.error(`VALIDATION: Missing position`);
+      return false;
+    }
+    
     if (
-      !itemData.position ||
       typeof itemData.position.x !== 'number' ||
-      typeof itemData.position.y !== 'number' ||
-      itemData.position.x < 0 ||
-      itemData.position.x > 800 ||
-      itemData.position.y < 0 ||
-      itemData.position.y > 600
+      typeof itemData.position.y !== 'number'
     ) {
+      console.error(`VALIDATION: Position values must be numbers:`, itemData.position);
+      return false;
+    }
+    
+    if (
+      itemData.position.x < 0 ||
+      itemData.position.x > 2400 || // Updated to match actual world bounds width
+      itemData.position.y < 0 ||
+      itemData.position.y > 800    // Updated to match actual world bounds height
+    ) {
+      console.error(`VALIDATION: Position out of bounds: (${itemData.position.x}, ${itemData.position.y})`);
+      return false;
+    }
+    
+    // Check if properties exist
+    console.log(`VALIDATION: Checking properties:`, itemData.properties);
+    if (!itemData.properties) {
+      console.error(`VALIDATION: Missing properties for item type ${itemData.type}`);
       return false;
     }
     
     // Additional item-specific validations
     switch (itemData.type) {
       case 'platform':
+        console.log(`VALIDATION: Validating platform properties width=${itemData.properties.width}, height=${itemData.properties.height}`);
         if (
-          !itemData.properties ||
           typeof itemData.properties.width !== 'number' ||
-          typeof itemData.properties.height !== 'number' ||
+          typeof itemData.properties.height !== 'number'
+        ) {
+          console.error(`VALIDATION: Platform width and height must be numbers`);
+          return false;
+        }
+        if (
           itemData.properties.width <= 0 ||
           itemData.properties.height <= 0 ||
           itemData.properties.width > 300 || // Max platform width
           itemData.properties.height > 50    // Max platform height
         ) {
+          console.error(`VALIDATION: Invalid platform dimensions - must be within ranges 0-300 width and 0-50 height`);
           return false;
         }
         break;
         
       case 'oscillator':
+        console.log(`VALIDATION: Validating oscillator properties width=${itemData.properties.width}, height=${itemData.properties.height}, amplitudeY=${itemData.properties.amplitudeY}`);
+        if (typeof itemData.properties.amplitudeY !== 'number') {
+          console.error(`VALIDATION: Oscillator amplitudeY must be a number`);
+          return false;
+        }
         if (
-          !itemData.properties ||
-          typeof itemData.properties.amplitudeY !== 'number' ||
           itemData.properties.amplitudeY < 0 ||
           itemData.properties.amplitudeY > 200 // Max oscillation amplitude
         ) {
+          console.error(`VALIDATION: Invalid oscillator amplitudeY - must be within range 0-200`);
           return false;
         }
         break;
         
-      // Additional validations for other item types would go here
+      case 'shield':
+        console.log(`VALIDATION: Validating shield properties width=${itemData.properties.width}, height=${itemData.properties.height}`);
+        if (
+          typeof itemData.properties.width !== 'number' ||
+          typeof itemData.properties.height !== 'number'
+        ) {
+          console.error(`VALIDATION: Shield width and height must be numbers`);
+          return false;
+        }
+        if (
+          itemData.properties.width <= 0 ||
+          itemData.properties.height <= 0
+        ) {
+          console.error(`VALIDATION: Invalid shield dimensions - must be greater than zero`);
+          return false;
+        }
+        break;
+        
+      case 'spike':
+        console.log(`VALIDATION: Validating spike properties width=${itemData.properties.width}, height=${itemData.properties.height}`);
+        if (
+          typeof itemData.properties.width !== 'number' ||
+          typeof itemData.properties.height !== 'number'
+        ) {
+          console.error(`VALIDATION: Spike width and height must be numbers`);
+          return false;
+        }
+        if (
+          itemData.properties.width <= 0 ||
+          itemData.properties.height <= 0
+        ) {
+          console.error(`VALIDATION: Invalid spike dimensions - must be greater than zero`);
+          return false;
+        }
+        break;
+        
+      case 'dart_wall':
+        console.log(`VALIDATION: Validating dart_wall properties height=${itemData.properties.height}`);
+        if (typeof itemData.properties.height !== 'number') {
+          console.error(`VALIDATION: Dart wall height must be a number`);
+          return false;
+        }
+        if (itemData.properties.height <= 0) {
+          console.error(`VALIDATION: Invalid dart wall height - must be greater than zero`);
+          return false;
+        }
+        break;
     }
     
+    console.log(`VALIDATION: Item placement of type ${itemData.type} is VALID`);
     return true;
   }
   

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useRef, useState, useEffect } from 'react';
-import { MESSAGE_TYPES } from '../../shared/constants';
+import { MESSAGE_TYPES, ITEMS } from '../../shared/constants';
 import type { NetworkMessage } from '../../shared/types';
 import socketEvents from './SocketEvents';
 
@@ -174,10 +174,49 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
   };
   
   const sendPlaceItem = (itemType: string, x: number, y: number) => {
-    return sendMessage(MESSAGE_TYPES.PLACE_ITEM, {
+    // Create base placement data
+    const placementData: any = {
       type: itemType,
-      position: { x, y }
-    });
+      position: { x, y },
+      properties: {} // Always include properties object
+    };
+    
+    // Add properties based on item type from shared constants
+    switch (itemType) {
+      case 'shield':
+        placementData.properties = {
+          width: ITEMS.SHIELD.WIDTH,
+          height: ITEMS.SHIELD.HEIGHT
+        };
+        break;
+      case 'platform':
+        placementData.properties = {
+          width: ITEMS.PLATFORM.DEFAULT_WIDTH,
+          height: ITEMS.PLATFORM.DEFAULT_HEIGHT
+        };
+        break;
+      case 'oscillator':
+        placementData.properties = {
+          width: ITEMS.OSCILLATOR.DEFAULT_WIDTH,
+          height: ITEMS.OSCILLATOR.DEFAULT_HEIGHT,
+          amplitudeY: ITEMS.OSCILLATOR.DEFAULT_AMPLITUDE_Y
+        };
+        break;
+      case 'spike':
+        placementData.properties = {
+          width: ITEMS.SPIKE.SIZE,
+          height: ITEMS.SPIKE.SIZE
+        };
+        break;
+      case 'dart_wall':
+        placementData.properties = {
+          height: ITEMS.DART_WALL.HEIGHT
+        };
+        break;
+    }
+    
+    console.log('SOCKET: Sending PLACE_ITEM with data:', JSON.stringify(placementData));
+    return sendMessage(MESSAGE_TYPES.PLACE_ITEM, placementData);
   };
   
   const sendStartGame = () => {

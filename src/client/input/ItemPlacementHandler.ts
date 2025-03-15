@@ -32,12 +32,17 @@ export const useItemPlacementHandler = () => {
     const handlePlaceItemAtPosition = (data: {x: number, y: number, type: string}) => {
       const { x, y } = data;
       
+      console.log(`PLACEMENT: Handling placement at position (${x}, ${y}) for item type ${selectedItem}`);
+      
       // Place the item using the store action
       handlePlaceItem(x, y);
       
       // If in multiplayer, send placement to server
       if (socket.connected) {
+        console.log(`PLACEMENT: Sending placement to server via socket for item ${selectedItem}`);
         socket.sendPlaceItem(selectedItem, x, y);
+      } else {
+        console.warn(`PLACEMENT: Socket not connected, not sending to server`);
       }
     };
     
