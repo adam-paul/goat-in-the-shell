@@ -1,11 +1,14 @@
 import { v4 as uuidv4 } from 'uuid';
 import { GameStateManager, Player, Lobby } from './index';
+import { GameStateMachine } from './GameStateMachine';
+import { GameStatus } from '../../shared/types';
 
 // Game instance represents an active game with its own independent state
 export interface GameInstance {
   id: string;
   lobbyId: string;
   state: GameStateManager;
+  stateMachine: GameStateMachine;
   players: string[];
   isActive: boolean;
   startTime: number;
@@ -45,6 +48,12 @@ export class GameInstanceManager {
     // Create the new game instance
     const instanceId = uuidv4();
     
+    // Create a new GameStateMachine for this instance
+    // Always initialize with 'select' for single player or 'lobby' for multiplayer
+    // (we handle tutorial and modeSelect on client only)
+    const initialGameState: GameStatus = 'select'; // Will be 'select' for all players now
+    const stateMachine = new GameStateMachine(initialGameState, instanceId);
+    
     // Track player activity
     const playerLastActivity: Record<string, number> = {};
     players.forEach(id => playerLastActivity[id] = Date.now());
@@ -53,6 +62,7 @@ export class GameInstanceManager {
       id: instanceId,
       lobbyId,
       state,
+      stateMachine,
       players: [...players],
       isActive: false,
       startTime: 0,
@@ -127,7 +137,10 @@ export class GameInstanceManager {
     
     // Update each active instance
     for (const [id, instance] of this.instances) {
-      if (instance.isActive) {
+      // Only update physics if the game is in an active state
+      const isGameplayActive = instance.stateMachine.isGameplayActive();
+      
+      if (instance.isActive && isGameplayActive) {
         // Update instance state
         instance.state.update(deltaTime);
         instance.lastUpdateTime = now;
@@ -138,6 +151,10 @@ export class GameInstanceManager {
           // The event system or direct calls could broadcast this state
           // to clients in the future
         }
+      } else if (instance.isActive && !isGameplayActive) {
+        // Instance is active but not in gameplay state
+        // No physics updates needed, but still track the time
+        instance.lastUpdateTime = now;
       }
     }
   }

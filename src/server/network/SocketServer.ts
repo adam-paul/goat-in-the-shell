@@ -82,7 +82,9 @@ class SocketServer {
             moveSpeed: 5.0,
             jumpForce: 10.0,
           },
-          gameWorld: this.gameState.getGameWorld() // Include game world data
+          gameWorld: this.gameState.getGameWorld(), // Include game world data
+          // We don't set gameStatus here because the tutorial and mode select are client-side only
+          // The server will set proper state machine status when player joins a lobby
         }
       });
     });
@@ -140,6 +142,10 @@ class SocketServer {
           
         case MESSAGE_TYPES.REQUEST_INITIAL_STATE:
           this.handleRequestInitialState(clientId);
+          break;
+          
+        case MESSAGE_TYPES.REQUEST_STATE_TRANSITION:
+          this.handleStateTransitionRequest(clientId, message.payload);
           break;
           
         default:
@@ -274,6 +280,12 @@ class SocketServer {
     // Update client with instance ID
     client.instanceId = instance.id;
     
+    // Get the current game state from the state machine
+    const currentGameState = instance.stateMachine.getCurrentState();
+    
+    // Update the instance's game state with the current state machine state
+    instance.state.setGameStatus(currentGameState);
+    
     // Notify player of successful join
     this.sendMessage(clientId, {
       type: MESSAGE_TYPES.EVENT,
@@ -281,9 +293,13 @@ class SocketServer {
         eventType: 'LOBBY_JOINED',
         lobbyId: client.lobbyId,
         instanceId: instance.id,
+        // Don't send gameStatus here, as client is already in mode select
         timestamp: Date.now()
       }
     });
+    
+    // We don't send a state update yet - client will request transitions when needed
+    console.log(`SERVER: Client ${clientId} joined lobby ${client.lobbyId} with state ${currentGameState}`);
     
     // Notify other players in the lobby
     instance.players.forEach(playerId => {
@@ -397,22 +413,37 @@ class SocketServer {
       return;
     }
     
-    // Start the game
-    this.gameState.startGame(clientId);
-    this.instanceManager.startInstance(instance.id);
-    
-    console.log(`SERVER: Game instance ${instance.id} started by player ${clientId}`);
-    
-    // Notify all players in the instance
-    this.broadcastToInstance(instance.id, {
-      type: MESSAGE_TYPES.EVENT,
-      payload: {
-        eventType: 'GAME_STARTED',
-        startedBy: clientId,
-        instanceId: instance.id,
-        timestamp: Date.now()
-      }
-    });
+    // Start the game - update both state machine and game state
+    const success = instance.stateMachine.transitionTo('playing');
+    if (success) {
+      this.gameState.startGame(clientId);
+      this.instanceManager.startInstance(instance.id);
+      
+      console.log(`SERVER: Game instance ${instance.id} started by player ${clientId}`);
+      
+      // Notify all players in the instance
+      this.broadcastToInstance(instance.id, {
+        type: MESSAGE_TYPES.EVENT,
+        payload: {
+          eventType: 'GAME_STARTED',
+          startedBy: clientId,
+          instanceId: instance.id,
+          timestamp: Date.now()
+        }
+      });
+    } else {
+      console.warn(`SERVER: Could not transition to playing state for instance ${instance.id}`);
+      
+      // Send error response to client
+      this.sendMessage(clientId, {
+        type: MESSAGE_TYPES.ERROR,
+        payload: {
+          code: 'INVALID_STATE_TRANSITION',
+          message: 'Cannot transition to playing state',
+          timestamp: Date.now()
+        }
+      });
+    }
   }
   
   /**
@@ -463,6 +494,85 @@ class SocketServer {
   }
   
   /**
+   * Handle state transition request from client
+   */
+  private handleStateTransitionRequest(clientId: string, data: any) {
+    // Get target state from request
+    const { targetState } = data;
+    
+    // Get the game instance this player belongs to
+    const instance = this.instanceManager.getInstanceByPlayer(clientId);
+    if (!instance) {
+      console.warn(`SERVER: Client ${clientId} not associated with a game instance`);
+      
+      // Send error response to client
+      this.sendMessage(clientId, {
+        type: MESSAGE_TYPES.STATE_TRANSITION_RESULT,
+        payload: {
+          success: false,
+          message: 'Not associated with a game instance',
+          requestedState: targetState,
+          currentState: null
+        }
+      });
+      return;
+    }
+    
+    // Get current state from state machine
+    const currentState = instance.stateMachine.getCurrentState();
+    
+    // Check if transition is valid
+    const isValid = instance.stateMachine.isValidTransition(currentState, targetState);
+    
+    if (!isValid) {
+      console.warn(`SERVER: Invalid state transition from ${currentState} to ${targetState} requested by client ${clientId}`);
+      
+      // Send error response to client
+      this.sendMessage(clientId, {
+        type: MESSAGE_TYPES.STATE_TRANSITION_RESULT,
+        payload: {
+          success: false,
+          message: `Invalid transition from ${currentState} to ${targetState}`,
+          requestedState: targetState,
+          currentState: currentState
+        }
+      });
+      return;
+    }
+    
+    // Attempt the transition
+    const success = instance.stateMachine.transitionTo(targetState);
+    
+    // Send result to client
+    this.sendMessage(clientId, {
+      type: MESSAGE_TYPES.STATE_TRANSITION_RESULT,
+      payload: {
+        success,
+        message: success ? 'State transition successful' : 'State transition failed',
+        requestedState: targetState,
+        currentState: instance.stateMachine.getCurrentState()
+      }
+    });
+    
+    if (success) {
+      // Update game status in instance state
+      instance.state.setGameStatus(targetState);
+      
+      // Broadcast state change to all players in the instance
+      this.broadcastToInstance(instance.id, {
+        type: MESSAGE_TYPES.GAME_STATE_CHANGED,
+        payload: {
+          previousState: currentState,
+          currentState: targetState,
+          timestamp: Date.now()
+        }
+      });
+      
+      console.log(`SERVER: State transition successful: ${currentState} -> ${targetState} for instance ${instance.id}`);
+    }
+  }
+
+  /**
    * Handle request for initial state
    */
   private handleRequestInitialState(clientId: string) {
@@ -483,7 +593,8 @@ class SocketServer {
           payload: {
             state: state,
             timestamp: Date.now(),
-            gameWorld: instance.state.getGameWorld() // Include game world data
+            gameWorld: instance.state.getGameWorld(), // Include game world data
+            gameStatus: instance.stateMachine.getCurrentState() // Include current game status from state machine
           }
         });
         return;

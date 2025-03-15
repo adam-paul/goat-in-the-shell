@@ -15,6 +15,7 @@ export interface SocketContextType {
   sendChatMessage: (message: string, lobbyId: string) => boolean;
   sendAICommand: (command: string) => boolean;
   requestInitialState: () => boolean;
+  requestStateTransition: (targetState: string) => boolean;
 }
 
 // Create the context with default values
@@ -28,7 +29,8 @@ const SocketContext = createContext<SocketContextType>({
   sendStartGame: () => false,
   sendChatMessage: () => false,
   sendAICommand: () => false,
-  requestInitialState: () => false
+  requestInitialState: () => false,
+  requestStateTransition: () => false
 });
 
 // Hook to use socket throughout the app
@@ -196,19 +198,36 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
     return sendMessage(MESSAGE_TYPES.REQUEST_INITIAL_STATE);
   };
   
+  // Request a game state transition
+  const requestStateTransition = (targetState: string) => {
+    console.log(`SOCKET: Requesting state transition to ${targetState}`);
+    return sendMessage(MESSAGE_TYPES.REQUEST_STATE_TRANSITION, {
+      targetState,
+      timestamp: Date.now()
+    });
+  };
+  
+  // Create an object with all the socket methods
+  const socketInstance = {
+    connected,
+    connect,
+    disconnect,
+    sendMessage,
+    sendPlayerInput,
+    sendPlaceItem,
+    sendStartGame,
+    sendChatMessage,
+    sendAICommand,
+    requestInitialState,
+    requestStateTransition
+  };
+  
+  // Expose the socket instance to the window for access from GameEventBus
+  // This allows us to avoid circular dependencies
+  (window as any).__socket_instance__ = socketInstance;
+  
   return (
-    <SocketContext.Provider value={{
-      connected,
-      connect,
-      disconnect,
-      sendMessage,
-      sendPlayerInput,
-      sendPlaceItem,
-      sendStartGame,
-      sendChatMessage,
-      sendAICommand,
-      requestInitialState
-    }}>
+    <SocketContext.Provider value={socketInstance}>
       {children}
     </SocketContext.Provider>
   );

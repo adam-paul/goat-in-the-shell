@@ -67,3 +67,24 @@ export class GameEventBus {
 
 // Singleton instance for app-wide use
 export const gameEvents = new GameEventBus();
+
+// Set up forwarding of state transition requests to socket
+gameEvents.subscribe('REQUEST_STATE_TRANSITION', (data: any) => {
+  // This function will be called when components publish REQUEST_STATE_TRANSITION events
+  // We need to get the socket instance to forward the request to the server
+  const socketFetcher = () => {
+    const socket = (window as any).__socket_instance__;
+    if (socket && socket.requestStateTransition) {
+      socket.requestStateTransition(data.targetState);
+    } else {
+      console.warn('Socket not available for state transition request');
+    }
+  };
+  
+  // Try to send immediately, or retry in 50ms if socket not ready
+  try {
+    socketFetcher();
+  } catch (e) {
+    setTimeout(socketFetcher, 50);
+  }
+});

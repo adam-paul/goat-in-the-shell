@@ -45,7 +45,7 @@ function App() {
   const handleGameModeSelect = useCallback(async (mode: any, joinLobbyCode?: string) => {
     const { 
       setCurrentGameMode, 
-      setGameStatus, 
+      requestGameStateTransition, 
       setLobbyCode, 
       setPlayerRole 
     } = useGameStore.getState();
@@ -53,7 +53,25 @@ function App() {
     if (mode === 'single_player') {
       // Single player mode
       setCurrentGameMode('single_player');
-      setGameStatus('select');
+      
+      // For single player, generate a unique lobby code with SP prefix
+      const singlePlayerCode = 'SP-' + Math.random().toString(36).substring(2, 8).toUpperCase();
+      setLobbyCode(singlePlayerCode);
+      setPlayerRole('goat'); // In single player, we're always the goat
+      
+      try {
+        // Connect to a server instance even in single player mode
+        // This ensures the client is associated with a game instance on the server
+        const connected = await socket.connect('Single Player', singlePlayerCode);
+        if (connected) {
+          // For single player mode, we can directly set the status to 'select'
+          // Server state machine already starts in 'select' state for single player
+          console.log('Connected to single player game, advancing to item select');
+          useGameStore.getState().setGameStatus('select');
+        }
+      } catch (error) {
+        console.error('Error connecting to single player instance:', error);
+      }
     } else {
       // Multiplayer mode
       setCurrentGameMode('multiplayer');
@@ -66,7 +84,9 @@ function App() {
         try {
           const connected = await socket.connect(joinLobbyCode, 'goat');
           if (connected) {
-            setGameStatus('lobby');
+            // Directly set to lobby status for multiplayer
+            console.log('Connected to multiplayer lobby as goat');
+            useGameStore.getState().setGameStatus('lobby');
           }
         } catch (error) {
           console.error('Error connecting to lobby:', error);
@@ -81,7 +101,9 @@ function App() {
         try {
           const connected = await socket.connect(generatedCode, 'prompter');
           if (connected) {
-            setGameStatus('lobby');
+            // Directly set to lobby status for multiplayer
+            console.log('Connected to multiplayer lobby as prompter');
+            useGameStore.getState().setGameStatus('lobby');
           }
         } catch (error) {
           console.error('Error creating lobby:', error);
@@ -93,7 +115,7 @@ function App() {
   // Handle lobby cancel
   const handleCancelLobby = useCallback(() => {
     socket.disconnect();
-    useGameStore.getState().setGameStatus('modeSelect');
+    useGameStore.getState().requestGameStateTransition('modeSelect');
   }, [socket]);
 
   // Handle placing obstacles from the prompter

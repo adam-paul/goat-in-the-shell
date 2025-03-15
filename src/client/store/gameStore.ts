@@ -44,6 +44,7 @@ interface GameStateData {
 interface GameState extends GameStateData {
   // State setters
   setGameStatus: (status: GameStatus) => void;
+  requestGameStateTransition: (status: GameStatus) => void; // Request state change via server
   setSelectedItem: (item: ItemType | null) => void;
   setPlacementConfirmed: (confirmed: boolean) => void;
   setDeathType: (type: DeathType) => void;
@@ -73,7 +74,9 @@ interface GameState extends GameStateData {
 }
 
 // Create the store
-export const useGameStore = create<GameState>((set, get) => ({
+export const useGameStore = create<GameState>((set, get): GameState => {
+  // Create store object that we'll return and also expose globally
+  const store: GameState = {
   // Default game state
   gameStatus: 'tutorial',
   selectedItem: null,
@@ -95,32 +98,47 @@ export const useGameStore = create<GameState>((set, get) => ({
   gameState: {},
   
   // State setters
-  setGameStatus: (status) => set(() => ({ gameStatus: status })),
-  setSelectedItem: (item) => set(() => ({ selectedItem: item })),
-  setPlacementConfirmed: (confirmed) => set(() => ({ placementConfirmed: confirmed })),
-  setDeathType: (type) => set(() => ({ deathType: type })),
+  setGameStatus: (status: GameStatus) => set(() => ({ gameStatus: status })),
+  requestGameStateTransition: (status: GameStatus) => {
+    // Publish event to network layer to request state transition from server
+    gameEvents.publish('REQUEST_STATE_TRANSITION', { targetState: status });
+  },
+  setSelectedItem: (item: ItemType | null) => set(() => ({ selectedItem: item })),
+  setPlacementConfirmed: (confirmed: boolean) => set(() => ({ placementConfirmed: confirmed })),
+  setDeathType: (type: DeathType) => set(() => ({ deathType: type })),
   togglePrompter: () => set((state) => ({ showPrompter: !state.showPrompter })),
-  setCurrentGameMode: (mode) => set(() => ({ currentGameMode: mode })),
-  setLobbyCode: (code) => set(() => ({ lobbyCode: code })),
-  setPlayerRole: (role) => set(() => ({ playerRole: role })),
+  setCurrentGameMode: (mode: GameMode) => set(() => ({ currentGameMode: mode })),
+  setLobbyCode: (code: string) => set(() => ({ lobbyCode: code })),
+  setPlayerRole: (role: PlayerRole) => set(() => ({ playerRole: role })),
   
   // Network state setters
-  setNetworkConnected: (connected) => set(() => ({ networkConnected: connected })),
-  setErrorMessage: (message) => set(() => ({ errorMessage: message })),
-  setClientId: (id) => set(() => ({ clientId: id })),
-  setInstanceId: (id) => set(() => ({ instanceId: id })),
+  setNetworkConnected: (connected: boolean) => set(() => ({ networkConnected: connected })),
+  setErrorMessage: (message: string) => set(() => ({ errorMessage: message })),
+  setClientId: (id: string) => set(() => ({ clientId: id })),
+  setInstanceId: (id: string) => set(() => ({ instanceId: id })),
   
   // Server state setters
-  setGameConfig: (config) => set(() => ({ gameConfig: config })),
-  updateGameState: (state) => set(() => ({ gameState: state })),
+  setGameConfig: (config: any) => set(() => ({ gameConfig: config })),
+  updateGameState: (state: any) => set(() => ({ gameState: state })),
+  
   
   // Game item placement helpers
-  handleSelectItem: (item) => {
+  handleSelectItem: (item: ItemType) => {
     set(() => ({ 
-      selectedItem: item, 
-      gameStatus: 'placement',
+      selectedItem: item,
       placementConfirmed: false
     }));
+    
+    // Now we're connected to a server instance, use the state machine
+    // Request state transition to placement via server
+    gameEvents.publish('REQUEST_STATE_TRANSITION', { 
+      targetState: 'placement',
+      itemType: item
+    });
+    
+    // Also directly update the local state for immediate UI feedback
+    // This will be overwritten by server confirmation, but gives immediate response
+    set(() => ({ gameStatus: 'placement' }));
     
     // Notify the server about entering placement mode
     gameEvents.publish('PLACEMENT_MODE_START', { itemType: item });
@@ -129,15 +147,22 @@ export const useGameStore = create<GameState>((set, get) => ({
   handleCancelPlacement: () => {
     set(() => ({ 
       selectedItem: null, 
-      placementConfirmed: false,
-      gameStatus: 'select' 
+      placementConfirmed: false
     }));
+    
+    // Request state transition back to select via server
+    gameEvents.publish('REQUEST_STATE_TRANSITION', { 
+      targetState: 'select'
+    });
+    
+    // Also directly update the local state for immediate UI feedback
+    set(() => ({ gameStatus: 'select' }));
     
     // Notify the server about exiting placement mode
     gameEvents.publish('PLACEMENT_MODE_EXIT', {});
   },
   
-  handlePlaceItem: (x, y) => {
+  handlePlaceItem: (x: number, y: number) => {
     const state = get();
     
     if (!state.selectedItem || state.placementConfirmed) {
@@ -146,9 +171,16 @@ export const useGameStore = create<GameState>((set, get) => ({
     
     set(() => ({ 
       placementConfirmed: true,
-      selectedItem: null,
-      gameStatus: 'playing' 
+      selectedItem: null
     }));
+    
+    // Request state transition to playing via server
+    gameEvents.publish('REQUEST_STATE_TRANSITION', { 
+      targetState: 'playing'
+    });
+    
+    // Also directly update the local state for immediate UI feedback
+    set(() => ({ gameStatus: 'playing' }));
     
     // Notify the server to place the item
     gameEvents.publish('PLACEMENT_CONFIRMED', { 
@@ -160,6 +192,14 @@ export const useGameStore = create<GameState>((set, get) => ({
   
   handleContinueToNextRound: () => {
     set(() => ({ deathType: null }));
+    
+    // Request state transition to select via server
+    gameEvents.publish('REQUEST_STATE_TRANSITION', { 
+      targetState: 'select'
+    });
+    
+    // Also directly update the local state for immediate UI feedback
+    set(() => ({ gameStatus: 'select' }));
     
     // Notify the server to continue to the next round
     gameEvents.publish('CONTINUE_NEXT_ROUND', {});
@@ -175,12 +215,13 @@ export const useGameStore = create<GameState>((set, get) => ({
       gameEvents.publish('DISCONNECT_NETWORK', {});
     }
     
+    // This is a full reset, so we go back to client-side flow (tutorial/modeSelect)
     set(() => ({
-      gameStatus: 'reset',
+      gameStatus: 'modeSelect', // Go directly to mode select screen, no need for tutorial again
       selectedItem: null,
       placementConfirmed: false,
       deathType: null,
-      currentGameMode: 'single_player',
+      currentGameMode: 'single_player', 
       networkConnected: false,
       errorMessage: '',
       instanceId: '',
@@ -192,9 +233,19 @@ export const useGameStore = create<GameState>((set, get) => ({
       mode: 'single_player'
     });
     
-    // Go to mode selection after a short delay
-    setTimeout(() => {
-      set(() => ({ gameStatus: 'modeSelect' }));
-    }, 1000);
+    // If we're still connected to server, also send the transition request
+    // But we've already updated UI to avoid waiting
+    if (state.networkConnected) {
+      gameEvents.publish('REQUEST_STATE_TRANSITION', {
+        targetState: 'reset'
+      });
+    }
   }
-}));
+  };
+  
+  // Expose the store instance globally for access from other modules
+  // This helps us avoid circular dependencies
+  (window as any).__game_store_instance__ = store;
+  
+  return store;
+});

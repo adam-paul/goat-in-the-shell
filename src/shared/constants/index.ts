@@ -60,14 +60,14 @@ export const ITEMS = {
 // Game status transitions
 export const GAME_STATUS_TRANSITIONS = {
   tutorial: ['modeSelect'],
-  modeSelect: ['lobby', 'select'],
-  lobby: ['playing', 'modeSelect'],
-  select: ['placement'],
-  placement: ['playing'],
-  playing: ['win', 'gameover'],
-  win: ['reset'],
-  gameover: ['reset'],
-  reset: ['select', 'placement']
+  modeSelect: ['lobby', 'select', 'reset'],  // Added reset for retry flow
+  lobby: ['playing', 'modeSelect', 'select'], // Added select for direct transition in single player 
+  select: ['placement', 'modeSelect', 'reset'], // Added reset and modeSelect for back/reset flows
+  placement: ['playing', 'select', 'reset'],   // Added select for cancellation 
+  playing: ['win', 'gameover', 'select', 'reset'], // Added select and reset for resets during game
+  win: ['reset', 'modeSelect', 'select'],  // Added more options for different retry flows
+  gameover: ['reset', 'modeSelect', 'select'], // Added more options for different retry flows
+  reset: ['select', 'placement', 'modeSelect', 'tutorial'] // Added more destinations for reset
 };
 
 // Message types
@@ -87,12 +87,19 @@ export const MESSAGE_TYPES = {
   PONG: 'PONG',
   REQUEST_INITIAL_STATE: 'REQUEST_INITIAL_STATE',
   
+  // Game state management messages
+  REQUEST_STATE_TRANSITION: 'REQUEST_STATE_TRANSITION',
+  STATE_TRANSITION_RESULT: 'STATE_TRANSITION_RESULT',
+  GAME_STATE_CHANGED: 'GAME_STATE_CHANGED',
+  
   // Physics-related messages
   PHYSICS_UPDATE: 'PHYSICS_UPDATE',
   PLAYER_DEATH: 'PLAYER_DEATH',
   PLAYER_WIN: 'PLAYER_WIN',
   PROJECTILE_CREATED: 'PROJECTILE_CREATED',
-  PROJECTILE_DESTROYED: 'PROJECTILE_DESTROYED'
+  PROJECTILE_DESTROYED: 'PROJECTILE_DESTROYED',
+  PHYSICS_ACTIVATE: 'PHYSICS_ACTIVATE',
+  START_COUNTDOWN: 'START_COUNTDOWN'
 };
 
 // Event types

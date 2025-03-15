@@ -33,36 +33,96 @@ setInterval(() => {
   instanceManager.updateInstances(deltaTime);
 }, PHYSICS_UPDATE_RATE);
 
-// Set up event handling for game events
-gameEvents.subscribe<{
+// Define types for events
+interface PlayerDeathEvent {
   playerId: string;
   cause: string;
   position: { x: number; y: number };
   timestamp: number;
-}>('PLAYER_DEATH', (data) => {
+  instanceId?: string; // Added instanceId
+}
+
+interface PlayerWinEvent {
+  playerId: string;
+  position: { x: number; y: number };
+  timestamp: number;
+  instanceId?: string; // Added instanceId
+}
+
+interface GameStateChangedEvent {
+  previousState: string;
+  currentState: string;
+  instanceId: string;
+  timestamp: number;
+}
+
+interface PhysicsActivateEvent {
+  instanceId: string;
+  timestamp: number;
+}
+
+interface StartCountdownEvent {
+  instanceId: string;
+  duration: number;
+  timestamp: number;
+}
+
+// Set up event handling for game events
+gameEvents.subscribe<PlayerDeathEvent>('PLAYER_DEATH', (data) => {
   console.log(`SERVER: Player ${data.playerId} died from ${data.cause}`);
   
   // Find which instance the player belongs to
   const instance = instanceManager.getInstanceByPlayer(data.playerId);
   if (instance) {
+    // Update instance data with death info
+    data.instanceId = instance.id;
+    
+    // The state machine will handle the state transition
     // The socket server will handle the notification
     console.log(`SERVER: Death event in instance ${instance.id}`);
   }
 });
 
-gameEvents.subscribe<{
-  playerId: string;
-  position: { x: number; y: number };
-  timestamp: number;
-}>('PLAYER_WIN', (data) => {
+gameEvents.subscribe<PlayerWinEvent>('PLAYER_WIN', (data) => {
   console.log(`SERVER: Player ${data.playerId} won!`);
   
   // Find which instance the player belongs to
   const instance = instanceManager.getInstanceByPlayer(data.playerId);
   if (instance) {
+    // Update instance data with instance ID
+    data.instanceId = instance.id;
+    
+    // The state machine will handle the state transition
     // The socket server will handle the notification
     console.log(`SERVER: Win event in instance ${instance.id}`);
   }
+});
+
+// Listen for game state changes
+gameEvents.subscribe<GameStateChangedEvent>('GAME_STATE_CHANGED', (data) => {
+  console.log(`SERVER: Game state changed: ${data.previousState} -> ${data.currentState} for instance ${data.instanceId}`);
+  
+  // Additional server-side actions based on state transitions could be added here
+});
+
+// Listen for physics activation events from the state machine
+gameEvents.subscribe<PhysicsActivateEvent>('PHYSICS_ACTIVATE', (data) => {
+  console.log(`SERVER: Physics activated for instance ${data.instanceId}`);
+  
+  // Find the instance and mark it as active for physics updates
+  const instance = instanceManager.getInstance(data.instanceId);
+  if (instance) {
+    instance.isActive = true;
+    instance.startTime = Date.now();
+  }
+});
+
+// Listen for countdown events
+gameEvents.subscribe<StartCountdownEvent>('START_COUNTDOWN', (data) => {
+  console.log(`SERVER: Countdown started for instance ${data.instanceId}, duration ${data.duration}ms`);
+  
+  // The socket server will forward this to clients
+  // This could trigger visual/audio countdown on clients
 });
 
 // Initialize socket server
