@@ -386,21 +386,42 @@ class SocketServer {
       return;
     }
     
+    // Validate item placement
     if (!this.gameLogic.validateItemPlacement(data, clientId)) {
       console.warn(`SERVER: Invalid item placement from client ${clientId}`);
+      
+      // Send failure response to client
+      this.sendMessage(clientId, {
+        type: MESSAGE_TYPES.EVENT,
+        payload: {
+          eventType: 'PLACEMENT_FAILED',
+          message: 'Invalid item placement',
+          timestamp: Date.now()
+        }
+      });
       return;
     }
     
     // Place the item in the instance's game state
-    instance.state.placeItem(data, clientId);
+    const placedItem = instance.state.placeItem(data, clientId);
     
-    // Notify all players in the instance about the item placement
+    // Send success confirmation back to the client
+    this.sendMessage(clientId, {
+      type: MESSAGE_TYPES.EVENT,
+      payload: {
+        eventType: 'PLACEMENT_SUCCESS',
+        message: 'Item placed successfully',
+        timestamp: Date.now()
+      }
+    });
+    
+    // Notify all players in the instance about the successful item placement
     this.broadcastToInstance(instance.id, {
       type: MESSAGE_TYPES.EVENT,
       payload: {
         eventType: 'ITEM_PLACED',
         placedBy: clientId,
-        itemData: data,
+        itemData: placedItem,
         timestamp: Date.now()
       }
     });
@@ -507,69 +528,22 @@ class SocketServer {
    */
   private handleStateTransitionRequest(clientId: string, data: any) {
     // Get target state from request
-    const { targetState } = data;
+    const targetState = data.targetState;
+    if (!targetState) {
+      console.warn(`SERVER: Invalid state transition request from client ${clientId} - missing target state`);
+      return;
+    }
     
     // Get the game instance this player belongs to
     const instance = this.instanceManager.getInstanceByPlayer(clientId);
     if (!instance) {
       console.warn(`SERVER: Client ${clientId} not associated with a game instance`);
-      
-      // Send error response to client
-      this.sendMessage(clientId, {
-        type: MESSAGE_TYPES.STATE_TRANSITION_RESULT,
-        payload: {
-          success: false,
-          message: 'Not associated with a game instance',
-          requestedState: targetState,
-          currentState: null
-        }
-      });
       return;
     }
     
-    // Get current state from state machine
+    // Get current state
     const currentState = instance.stateMachine.getCurrentState();
     
-    // Special case: intercept placement->playing transition and redirect to countdown
-    if (currentState === 'placement' && targetState === 'playing') {
-      console.log(`SERVER: Intercepting placement->playing transition, redirecting to countdown for client ${clientId}`);
-      
-      // Transition to countdown instead
-      const success = instance.stateMachine.transitionTo('countdown');
-      
-      // Send result to client
-      this.sendMessage(clientId, {
-        type: MESSAGE_TYPES.STATE_TRANSITION_RESULT,
-        payload: {
-          success,
-          message: success ? 'Redirected to countdown state' : 'Failed to redirect to countdown',
-          requestedState: targetState,
-          actualState: 'countdown',
-          currentState: instance.stateMachine.getCurrentState()
-        }
-      });
-      
-      if (success) {
-        // Notify the game state about the status change
-        instance.state.handleGameStatusChange('countdown');
-        
-        // Broadcast state change to all players in the instance
-        this.broadcastToInstance(instance.id, {
-          type: MESSAGE_TYPES.GAME_STATE_CHANGED,
-          payload: {
-            previousState: currentState,
-            currentState: 'countdown',
-            timestamp: Date.now()
-          }
-        });
-        
-        console.log(`SERVER: Redirected transition: ${currentState} -> countdown for instance ${instance.id}`);
-      }
-      
-      return;
-    }
-    
-    // For all other transitions, proceed with normal validation
     // Check if transition is valid
     const isValid = instance.stateMachine.isValidTransition(currentState, targetState);
     

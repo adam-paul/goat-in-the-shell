@@ -26,6 +26,19 @@ class SocketEvents {
         console.error('SOCKET EVENTS: Error parsing message:', error);
       }
     };
+
+    // Set up PLACE_ITEM event handler
+    gameEvents.subscribe('PLACE_ITEM', (data: any) => {
+      console.log('SOCKET: Sending PLACE_ITEM to server', data);
+      if (this.socket?.readyState === WebSocket.OPEN) {
+        this.socket.send(JSON.stringify({
+          type: MESSAGE_TYPES.PLACE_ITEM,
+          payload: data
+        }));
+      } else {
+        console.error('SOCKET: Cannot send PLACE_ITEM - socket not connected');
+      }
+    });
   }
   
   /**
@@ -34,8 +47,19 @@ class SocketEvents {
   private forwardToGameEventBus(message: NetworkMessage): void {
     const { type, payload } = message;
     
+    // Handle placement success
+    if (type === 'EVENT' && payload?.eventType === 'PLACEMENT_SUCCESS') {
+      // Get store instance
+      const store = (window as any).__game_store_instance__;
+      if (store && store.handlePlacementSuccess) {
+        store.handlePlacementSuccess();
+      }
+      
+      // Also forward the event
+      gameEvents.publish(type, payload);
+    }
     // Handle special case for item placement to trigger countdown
-    if (type === 'EVENT' && payload?.eventType === 'ITEM_PLACED') {
+    else if (type === 'EVENT' && payload?.eventType === 'ITEM_PLACED') {
       // First trigger the item placement event for rendering
       gameEvents.publish('ITEM_PLACED', payload);
       

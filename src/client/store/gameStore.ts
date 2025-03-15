@@ -68,6 +68,7 @@ interface GameState extends GameStateData {
   handleCancelPlacement: () => void;
   handlePlaceItem: (x: number, y: number) => void;
   handleContinueToNextRound: () => void;
+  handlePlacementSuccess: () => void;
   
   // Reset game
   resetGame: () => void;
@@ -169,25 +170,38 @@ export const useGameStore = create<GameState>((set, get): GameState => {
       return;
     }
     
+    // Mark as pending
     set(() => ({ 
-      placementConfirmed: true,
-      selectedItem: null
+      placementConfirmed: true
     }));
     
-    // Request state transition to playing via server
+    // Create the placement data
+    const placementData = { 
+      type: state.selectedItem, 
+      position: { x, y }
+    };
+    
+    // Send the item placement request to the server via event bus
+    // This will be picked up by SocketEvents and sent to server
+    console.log('STORE: Publishing PLACE_ITEM event', placementData);
+    gameEvents.publish('PLACE_ITEM', placementData);
+    
+    // Don't clear selected item or request state transition yet
+    // We'll do that when we receive placement confirmation
+  },
+  
+  // Add handler for placement success
+  handlePlacementSuccess: () => {
+    // Clear selected item and request transition to countdown
+    set(() => ({ selectedItem: null }));
+    
+    // Request transition to countdown state AFTER successful placement
     gameEvents.publish('REQUEST_STATE_TRANSITION', { 
-      targetState: 'playing'
+      targetState: 'countdown'
     });
     
     // Also directly update the local state for immediate UI feedback
-    set(() => ({ gameStatus: 'playing' }));
-    
-    // Notify the server to place the item
-    gameEvents.publish('PLACEMENT_CONFIRMED', { 
-      type: state.selectedItem, 
-      x, 
-      y 
-    });
+    set(() => ({ gameStatus: 'countdown' }));
   },
   
   handleContinueToNextRound: () => {

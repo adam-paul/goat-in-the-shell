@@ -328,22 +328,19 @@ export default class BasicGameScene extends Phaser.Scene {
       if (this.itemPlacementMode && this.itemPreview) {
         const worldPoint = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
         
-        // Publish placement confirmation
-        gameEvents.publish('PLACEMENT_CONFIRMED', {
-          type: this.itemToPlace,
-          x: worldPoint.x,
-          y: worldPoint.y
-        });
+        console.log('SCENE: Processing item placement at', worldPoint);
         
-        // Exit placement mode
+        // Use the gameStore's handler to handle placement
+        // This centralizes all placement logic
+        const store = (window as any).__game_store_instance__;
+        if (store && store.handlePlaceItem) {
+          store.handlePlaceItem(worldPoint.x, worldPoint.y);
+        } else {
+          console.error('SCENE: Game store not available for item placement');
+        }
+        
+        // Exit placement mode in the scene
         this.exitPlacementMode();
-        
-        // Explicitly trigger item placed event to start countdown
-        console.log('Item placed, triggering countdown');
-        gameEvents.publish('ITEM_PLACED', {
-          type: this.itemToPlace,
-          position: worldPoint
-        });
       }
     });
     
