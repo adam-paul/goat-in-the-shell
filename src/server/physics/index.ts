@@ -86,7 +86,9 @@ class PhysicsEngine {
       setTimeout(() => {
         console.log(`[PhysicsEngine] Starting physics simulation and enabling dart shooting`);
         this.engine.timing.timeScale = 1;
-        this.startDartTimer(); // Start dart timer only after countdown completes
+        
+        // We no longer start the dart timer here since a single timer is managed globally
+        // The timer is now started only once per PhysicsEngine instance in startPhysicsLoop
       }, 3000); // Match the 3-second countdown duration
     });
     
@@ -255,6 +257,11 @@ class PhysicsEngine {
    * Start the physics update loop
    */
   private startPhysicsLoop(): void {
+    // Initialize a single dart timer when physics engine starts
+    // This ensures we only have one timer running across all instances
+    this.startDartTimer();
+    console.log(`[PhysicsEngine] Initialized single global dart timer with frequency ${this.parameters.dart_frequency}ms`);
+
     const loop = (): void => {
       const currentTime = Date.now();
       const deltaTime = currentTime - this.lastUpdateTime;
@@ -1274,6 +1281,8 @@ class PhysicsEngine {
    * Update physics parameters
    */
   updateParameters(parameters: Record<string, number>): void {
+    const oldDartFrequency = this.parameters.dart_frequency;
+    
     // Update stored parameters
     for (const [key, value] of Object.entries(parameters)) {
       this.parameters[key] = value;
@@ -1285,7 +1294,8 @@ class PhysicsEngine {
     }
     
     // Update dart timer if frequency changed
-    if (parameters.dart_frequency !== undefined) {
+    if (parameters.dart_frequency !== undefined && parameters.dart_frequency !== oldDartFrequency) {
+      console.log(`[PhysicsEngine] Dart frequency changed from ${oldDartFrequency} to ${parameters.dart_frequency}, restarting timer`);
       this.startDartTimer(); // Will clear and restart with new frequency
     }
     
@@ -1306,6 +1316,7 @@ class PhysicsEngine {
   cleanup(): void {
     // Clear dart timer
     if (this.dartTimer) {
+      console.log(`[PhysicsEngine] Cleaning up dart timer`);
       clearInterval(this.dartTimer);
       this.dartTimer = null;
     }
@@ -1317,6 +1328,9 @@ class PhysicsEngine {
     
     // Clear all event listeners
     Matter.Events.off(this.engine, 'collisionStart');
+    
+    // Note: Event subscriptions will persist, but that should be okay
+    // as the subscription handler checks if the physics engine is active
   }
 }
 
