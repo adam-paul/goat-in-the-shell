@@ -352,12 +352,18 @@ class SocketServer {
   /**
    * Broadcast the current game state to all clients in an instance
    */
-  private broadcastGameState(instance: any): void {
+  public broadcastGameState(instance: any): void {
     // Get the game state
     const state = instance.state.getState();
     
     // Add the current game status from the state machine
     state.gameStatus = instance.stateMachine.getCurrentState();
+    
+    // Log projectiles count for debugging
+    const projectileCount = state.projectiles ? state.projectiles.length : 0;
+    if (projectileCount > 0) {
+      console.log(`[SocketServer] Broadcasting state with ${projectileCount} projectiles`);
+    }
     
     // Send state update to all clients
     this.broadcastToInstance(instance.id, {

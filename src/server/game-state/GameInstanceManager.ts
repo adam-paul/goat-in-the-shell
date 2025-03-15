@@ -44,6 +44,7 @@ export class GameInstanceManager {
     
     // Create a new GameStateManager instance for this game
     const state = new GameStateManager();
+    console.log(`[GameInstanceManager] Created new GameStateManager for instance: ${state.constructor.name}@${state.toString().split('\n')[0]}`);
     
     // Create the new game instance
     const instanceId = uuidv4();

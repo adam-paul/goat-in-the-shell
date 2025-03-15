@@ -1,5 +1,5 @@
 import Matter from 'matter-js';
-import { GameStateManager, Player, GameItem } from '../game-state';
+import { GameStateManager, Player, GameItem, setupGameInstanceManager } from '../game-state';
 import { DeathType } from '../../shared/types';
 import { gameEvents } from '../game-state/GameEvents';
 import { PHYSICS } from '../../shared/constants';
@@ -52,6 +52,7 @@ const CATEGORIES = {
 class PhysicsEngine {
   private engine: Matter.Engine;
   private gameState: GameStateManager;
+  private instanceManager: any;
   private bodies: Map<string, Matter.Body>;
   private lastUpdateTime: number;
   private accumulator: number;
@@ -65,13 +66,20 @@ class PhysicsEngine {
     lifetime: number;
   }> = new Map();
 
-  constructor(gameState: GameStateManager) {
+  constructor(gameState: GameStateManager, instanceManager?: any) {
+    this.instanceManager = instanceManager;
     this.gameState = gameState;
+    console.log(`[PhysicsEngine] Initialized with GameStateManager: ${gameState.constructor.name}@${gameState.toString().split('\n')[0]}`);
     this.bodies = new Map();
     this.lastUpdateTime = Date.now();
     this.accumulator = 0;
     this.worldBounds = [];
     this.parameters = { ...DEFAULT_PARAMETERS };
+    
+    // Listen for physics activation events, which might trigger dart shooting
+    gameEvents.subscribe('PHYSICS_ACTIVATE', (data: any) => {
+      console.log(`[PhysicsEngine] Physics activated for instance ${data.instanceId}, ready for dart shooting`);
+    });
     
     // Create a Matter.js engine
     this.engine = Matter.Engine.create({
@@ -260,9 +268,164 @@ class PhysicsEngine {
       clearInterval(this.dartTimer);
     }
     
+    console.log(`[PhysicsEngine] Starting dart timer to check for active gameplay instances`);
+    
     this.dartTimer = setInterval(() => {
-      this.shootDarts();
+      // Check for active game instances using the instance manager passed to constructor
+      if (!this.instanceManager) {
+        console.log(`[PhysicsEngine] No instance manager available, skipping dart check`);
+        return;
+      }
+      
+      const instances = this.instanceManager.getAllInstances();
+      const activeInstances = instances.filter((instance: { stateMachine: { getCurrentState: () => string } }) => 
+        instance.stateMachine.getCurrentState() === 'playing'
+      );
+      
+      if (activeInstances.length > 0) {
+        console.log(`[PhysicsEngine] Found ${activeInstances.length} active playing instances. Using first one's state for darts.`);
+        
+        // Use the first active instance's state manager as our shooting context
+        const activeGameState = activeInstances[0].state;
+        const dartWalls = this.getAllDartWalls(activeGameState);
+        
+        if (dartWalls.length > 0) {
+          console.log(`[PhysicsEngine] Shooting darts from ${dartWalls.length} walls in active instance ${activeInstances[0].id}`);
+          this.shootDartsForState(activeGameState);
+          return; // We found an active instance and shot darts there
+        } else {
+          console.log(`[PhysicsEngine] No dart walls found in active instance ${activeInstances[0].id}`);
+        }
+      } else {
+        console.log(`[PhysicsEngine] No active 'playing' instances found, not shooting darts`);
+      }
     }, this.parameters.dart_frequency);
+  }
+  
+  /**
+   * Get all dart walls from a game state
+   */
+  private getAllDartWalls(gameState: GameStateManager): any[] {
+    const state = gameState.getState();
+    const builtInWalls = state.gameWorld?.dartWalls || [];
+    const placedWalls = state.items.filter((item: { type: string }) => item.type === 'dart_wall');
+    return [...builtInWalls, ...placedWalls];
+  }
+  
+  /**
+   * Shoot darts for a specific game state
+   */
+  private shootDartsForState(gameState: GameStateManager): void {
+    const state = gameState.getState();
+    const now = Date.now();
+    
+    console.log(`[PhysicsEngine] Shooting darts for active game state`);
+    
+    // Process built-in dart walls
+    if (state.gameWorld && state.gameWorld.dartWalls && state.gameWorld.dartWalls.length > 0) {
+      this.processDartWalls(state.gameWorld.dartWalls, now, gameState);
+    }
+    
+    // Process placed dart walls
+    const placedWalls = state.items.filter((item: { type: string }) => item.type === 'dart_wall');
+    if (placedWalls.length > 0) {
+      this.processDartWalls(placedWalls, now, gameState);
+    }
+    
+    // Publish a PROJECTILES_UPDATED event to notify the system that projectiles have been created
+    // This follows the event-based architecture - components should communicate via the event system
+    gameEvents.publish('PROJECTILES_UPDATED', {
+      timestamp: now,
+      instanceId: null // We don't know the instance ID here, but server components listening can determine it
+    });
+  }
+  
+  /**
+   * Process dart walls to shoot darts
+   */
+  private processDartWalls(walls: any[], now: number, gameState: GameStateManager): void {
+    for (const wall of walls) {
+      // Get wall position
+      const wallX = wall.position.x;
+      const wallY = wall.position.y;
+      const wallHeight = wall.height || this.parameters.dart_wall_height;
+      
+      // Check if last shoot time is tracked for this wall
+      const dartWallId = wall.id;
+      const lastShootTime = this.dartTimer ? this.darts.get(`lastShoot_${dartWallId}`)?.createdAt || 0 : 0;
+      
+      // Only shoot if enough time has passed since last shot for this wall
+      if (now - lastShootTime < this.parameters.dart_frequency) {
+        continue; // Skip this wall until it's time to shoot again
+      }
+      
+      // Update last shoot time
+      this.darts.set(`lastShoot_${dartWallId}`, {
+        body: null as any, // Not an actual dart body
+        createdAt: now,
+        lifetime: this.parameters.dart_frequency
+      });
+      
+      // Create three darts per wall at different heights
+      const positions = [
+        wallY - wallHeight * 0.3, // Top dart
+        wallY,                    // Middle dart
+        wallY + wallHeight * 0.3  // Bottom dart
+      ];
+      
+      positions.forEach((dartY, index) => {
+        // Create dart body
+        const dartWidth = PHYSICS.DART_WIDTH;
+        const dartHeight = PHYSICS.DART_HEIGHT;
+        
+        const dart = Matter.Bodies.rectangle(
+          wallX + 15, // Offset from wall
+          dartY,
+          dartWidth,
+          dartHeight,
+          {
+            label: `dart_${Date.now()}_${Math.random()}`,
+            frictionAir: 0,
+            friction: 0,
+            restitution: 0,
+            inertia: Infinity,
+            isSensor: false,
+            collisionFilter: {
+              category: CATEGORIES.DART,
+              mask: CATEGORIES.PLAYER | CATEGORIES.PLATFORM | CATEGORIES.SHIELD
+            }
+          }
+        );
+        
+        // Set velocity
+        Matter.Body.setVelocity(dart, {
+          x: -this.parameters.dart_speed,
+          y: 0
+        });
+        
+        // Add to world
+        Matter.Composite.add(this.engine.world, dart);
+        
+        // Track the dart
+        const dartId = `dart_${dartWallId}_${now}_${index}`;
+        this.darts.set(dartId, {
+          body: dart,
+          createdAt: now,
+          lifetime: 10000 // 10 seconds lifetime
+        });
+        
+        // Add to game state for client rendering
+        gameState.addProjectile({
+          id: dartId,
+          type: 'dart',
+          position: { x: wallX + 15, y: dartY },
+          velocity: { x: -this.parameters.dart_speed, y: 0 },
+          createdAt: now
+        });
+        
+        console.log(`[PhysicsEngine] Created dart from wall ${dartWallId} at (${wallX + 15}, ${dartY})`);
+      });
+    }
   }
   
   /**
@@ -395,6 +558,11 @@ class PhysicsEngine {
     
     // Check each dart
     for (const [dartId, dart] of this.darts.entries()) {
+      // Skip tracking entries that don't have bodies (like our lastShoot trackers)
+      if (!dart.body) {
+        continue;
+      }
+      
       // Remove darts that have lived too long
       if (now - dart.createdAt > dart.lifetime) {
         Matter.Composite.remove(this.engine.world, dart.body);
@@ -422,13 +590,45 @@ class PhysicsEngine {
     const gameState = this.gameState.getState();
     const now = Date.now();
     
-    // Check if game is currently in playing state
-    if (gameState.gameStatus !== 'playing') {
-      console.log(`[PhysicsEngine] Not shooting darts - game status is ${gameState.gameStatus}, not 'playing'`);
+    console.log(`[PhysicsEngine] shootDarts checking with GameStateManager: ${this.gameState.constructor.name}@${this.gameState.toString().split('\n')[0]}`);
+    console.log(`[PhysicsEngine] Root GameStateManager is: ${(global as any).rootGameState.constructor.name}@${(global as any).rootGameState.toString().split('\n')[0]}`);
+    
+    // Access the global instance manager
+    const instanceManager = (global as any).gameInstanceManager;
+    if (!instanceManager) {
+      console.log('[PhysicsEngine] No global instance manager found');
       return;
     }
     
-    console.log(`[PhysicsEngine] Looking for dart walls to shoot from. Game state: ${gameState.gameStatus}`);
+    // Find the instance that contains this gameState
+    const instances = instanceManager.getAllInstances();
+    console.log(`[PhysicsEngine] Found ${instances.length} game instances. Looking for matching state object...`);
+    
+    let stateMachine = null;
+    let found = false;
+    
+    for (const instance of instances) {
+      console.log(`[PhysicsEngine] Checking instance ${instance.id}: ${instance.state.constructor.name}@${instance.state.toString().split('\n')[0]}`);
+      
+      if (instance.state === this.gameState) {
+        found = true;
+        stateMachine = instance.stateMachine;
+        console.log(`[PhysicsEngine] Found matching instance ${instance.id} with state ${stateMachine.getCurrentState()}`);
+        break;
+      }
+    }
+    
+    if (!found) {
+      console.log(`[PhysicsEngine] No matching instance found for this GameStateManager!`);
+    }
+    
+    // Check if game is currently in playing state
+    if (!stateMachine || stateMachine.getCurrentState() !== 'playing') {
+      console.log(`[PhysicsEngine] Not shooting darts - game status is not 'playing'`);
+      return;
+    }
+    
+    console.log(`[PhysicsEngine] Looking for dart walls to shoot from. Game status is 'playing'`);
     
     // Count built-in walls and placed walls
     let builtInWalls = gameState.gameWorld?.dartWalls?.length || 0;
@@ -662,14 +862,18 @@ class PhysicsEngine {
         
         // Destroy the dart
         const dartBody = bodyA.label.startsWith('dart') ? bodyA : bodyB;
-        this.removeDart(dartBody);
+        if (dartBody) {
+          this.removeDart(dartBody);
+        }
       }
       
       // Dart-shield collision
       if (this.isCollisionBetween(bodyA, bodyB, 'dart', 'shield')) {
         // Destroy the dart
         const dartBody = bodyA.label.startsWith('dart') ? bodyA : bodyB;
-        this.removeDart(dartBody);
+        if (dartBody) {
+          this.removeDart(dartBody);
+        }
       }
       
       // Player-finish area collision
@@ -720,6 +924,11 @@ class PhysicsEngine {
    * Remove a dart from the physics world
    */
   private removeDart(dartBody: Matter.Body): void {
+    if (!dartBody) {
+      console.log(`[PhysicsEngine] Attempted to remove null dart body`);
+      return;
+    }
+    
     // Remove from physics engine
     Matter.Composite.remove(this.engine.world, dartBody);
     
@@ -970,6 +1179,9 @@ class PhysicsEngine {
     
     // Update projectile positions (darts)
     for (const [dartId, dart] of this.darts.entries()) {
+      // Skip entries that don't have actual bodies (like lastShoot trackers)
+      if (!dart.body) continue;
+      
       this.gameState.updateProjectile(dartId, {
         position: { 
           x: dart.body.position.x, 
@@ -1085,8 +1297,8 @@ class PhysicsEngine {
   }
 }
 
-export function setupPhysicsEngine(gameState: GameStateManager): PhysicsEngine {
-  return new PhysicsEngine(gameState);
+export function setupPhysicsEngine(gameState: GameStateManager, instanceManager?: any): PhysicsEngine {
+  return new PhysicsEngine(gameState, instanceManager);
 }
 
 export { PhysicsEngine };

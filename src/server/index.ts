@@ -17,8 +17,11 @@ const wss = new WebSocketServer({ server });
 
 // Create game managers
 const gameState = setupGameStateManager();
+console.log(`[SERVER] Created root GameStateManager: ${gameState.constructor.name}@${gameState.toString().split('\n')[0]}`); 
 const instanceManager = setupGameInstanceManager();
-const physics = setupPhysicsEngine(gameState);
+// Pass instanceManager to PhysicsEngine so it doesn't need to use global state
+const physics = setupPhysicsEngine(gameState, instanceManager);
+console.log(`[SERVER] Created PhysicsEngine with root GameStateManager`); 
 const gameLogic = new GameLogicProcessor(gameState, physics);
 
 // Set up physics-state synchronization
@@ -127,6 +130,21 @@ gameEvents.subscribe<StartCountdownEvent>('START_COUNTDOWN', (data) => {
 
 // Initialize socket server
 const socketServer = createSocketServer(wss, gameState, gameLogic, instanceManager);
+
+// Listen for projectile updates and broadcast to clients
+gameEvents.subscribe('PROJECTILES_UPDATED', (data) => {
+  console.log('SERVER: Projectiles updated, broadcasting to affected instances');
+  
+  // Find all active instances
+  const activeInstances = instanceManager.getAllInstances().filter(
+    instance => instance.stateMachine.getCurrentState() === 'playing'
+  );
+  
+  // Broadcast state update to each active instance
+  activeInstances.forEach(instance => {
+    socketServer.broadcastGameState(instance);
+  });
+});
 
 // Start the server
 const PORT = process.env.PORT || 3001;
