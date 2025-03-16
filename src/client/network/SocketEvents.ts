@@ -22,7 +22,14 @@ class SocketEvents {
         
         // Process game state updates
         if (message.type === 'STATE_UPDATE') {
-          // State update received, will be processed by event handlers
+          // Update the game store directly - it will publish the updated state
+          const store = (window as any).__game_store_instance__;
+          if (store && store.updateGameState && message.payload?.state) {
+            // Let the store handle the state update and publishing
+            store.updateGameState(message.payload.state);
+          }
+          // We no longer publish directly to SERVER_STATE_UPDATE
+          // The gameStore will do this as the single source of truth
         }
         
         // Process and forward the message
@@ -192,8 +199,15 @@ class SocketEvents {
       // Just store the clientId and other config data
       console.log('Received initial state from server');
       
-      // Publish the original message to the game event bus
+      // Get store instance and update it directly - it will publish the updated state
+      const store = (window as any).__game_store_instance__;
+      if (store && store.updateGameState) {
+        store.updateGameState(payload);
+      }
+      
+      // Only publish the original INITIAL_STATE type - gameStore will handle SERVER_STATE_UPDATE
       gameEvents.publish(type, payload);
+      // We no longer publish directly to SERVER_STATE_UPDATE
     }
     else {
       // For all other events, just publish to the game event bus

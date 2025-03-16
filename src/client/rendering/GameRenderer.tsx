@@ -147,35 +147,13 @@ const GameRenderer: React.FC<GameRendererProps> = ({ containerClassName = 'game-
   // BasicGameScene already handles local visual updates via the PLAYER_INPUT events
   // InputHandler already sends these inputs to the server directly
   
-  // Set up server state handling
+  // Request initial game state when component mounts
   useEffect(() => {
-    // Request initial state from server
+    // Request initial state from server via event bus
     if (socket.connected) {
-      socket.sendMessage(MESSAGE_TYPES.REQUEST_INITIAL_STATE, {});
+      gameEvents.publish('REQUEST_INITIAL_STATE', {});
     }
-    
-    // Function to handle server state updates
-    const handleServerState = (state: any) => {
-      // Process and update game state
-      updateGameState(state);
-      gameEvents.publish('SERVER_STATE_UPDATE', state);
-    };
-    
-    // Set up socket event listener for state updates
-    const handleStateUpdate = (data: any) => {
-      if (data && data.state) {
-        handleServerState(data.state);
-      }
-    };
-    
-    // Subscribe to STATE_UPDATE events from socket
-    const unsubStateUpdate = gameEvents.subscribe(MESSAGE_TYPES.STATE_UPDATE, handleStateUpdate);
-    
-    // Clean up
-    return () => {
-      unsubStateUpdate();
-    };
-  }, [socket.connected, updateGameState]);
+  }, [socket.connected]);
 
   // Return the container for Phaser to render into
   return <div id={containerClassName} />;

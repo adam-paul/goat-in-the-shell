@@ -283,14 +283,26 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
       }
     };
     
+    // This handler listens for REQUEST_INITIAL_STATE events
+    const handleRequestInitialState = (data: any) => {
+      if (socketRef.current?.readyState === WebSocket.OPEN) {
+        console.log('SOCKET: Requesting initial game state via event bus');
+        sendMessage(MESSAGE_TYPES.REQUEST_INITIAL_STATE, data);
+      } else {
+        console.error('SOCKET: Cannot request initial state - socket not connected');
+      }
+    };
+    
     // Subscribe to events
     const unsubInput = gameEvents.subscribe('PLAYER_INPUT', handlePlayerInput);
     const unsubPlacement = gameEvents.subscribe('ITEM_PLACEMENT', handleItemPlacement);
+    const unsubRequestState = gameEvents.subscribe('REQUEST_INITIAL_STATE', handleRequestInitialState);
     
     // Clean up subscriptions when component unmounts
     return () => {
       unsubInput();
       unsubPlacement();
+      unsubRequestState();
     };
   }, []);
   

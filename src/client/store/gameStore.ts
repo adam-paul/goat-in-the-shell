@@ -121,7 +121,14 @@ export const useGameStore = create<GameState>((set, get): GameState => {
   
   // Server state setters
   setGameConfig: (config: any) => set(() => ({ gameConfig: config })),
-  updateGameState: (state: any) => set(() => ({ gameState: state })),
+  updateGameState: (state: any) => {
+    // Update the store state
+    set(() => ({ gameState: state }));
+    
+    // After updating the store state, publish to GameEventBus for BasicGameScene
+    // This ensures the store is the single source of truth that drives the game scene
+    gameEvents.publish('SERVER_STATE_UPDATE', state);
+  },
   
   
   // Game item placement helpers
