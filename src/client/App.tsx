@@ -12,6 +12,7 @@ import { gameEvents } from './utils/GameEventBus';
 
 // Import components from the component structure
 import DeathModal from './components/DeathModal';
+import WinModal from './components/WinModal';
 import ItemSelectionPanel from './components/ItemSelectionPanel';
 import TutorialModal from './components/TutorialModal';
 import PrompterControls from './components/PrompterControls';
@@ -241,17 +242,8 @@ function App() {
         return null;
       
       case 'win':
-        return (
-          <div className="win-container">
-            <h2>You Won!</h2>
-            <button 
-              onClick={resetGame}
-              className="restart-button"
-            >
-              Play Again
-            </button>
-          </div>
-        );
+        // Use the new WinModal component
+        return <WinModal onPlayAgain={resetGame} />;
       
       default:
         return null;

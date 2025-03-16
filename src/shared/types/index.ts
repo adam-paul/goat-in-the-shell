@@ -433,6 +433,13 @@ export interface TutorialModalProps {
   onStart: () => void;
 }
 
+/**
+ * Props for WinModal component
+ */
+export interface WinModalProps {
+  onPlayAgain: () => void;
+}
+
 // ==================
 // Global Extensions
 // ==================

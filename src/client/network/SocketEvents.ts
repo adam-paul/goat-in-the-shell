@@ -118,21 +118,57 @@ class SocketEvents {
     else if (type === 'GAME_STATE_CHANGED') {
       console.log('Game state changed:', payload);
       
-      // Update the game state in the store
-      const store = (window as any).__game_store_instance__;
-      if (store && store.setGameStatus) {
-        store.setGameStatus(payload.currentState);
-      } else {
-        // Fallback using game events
-        gameEvents.publish('UPDATE_GAME_STATUS', {
-          status: payload.currentState
+      // Special handling for win state
+      if (payload.currentState === 'win') {
+        console.log('🏆 WIN EVENT DETECTED from server! Transitioning to win state');
+        
+        // Update the game state in the store
+        const store = (window as any).__game_store_instance__;
+        if (store && store.setGameStatus) {
+          store.setGameStatus('win');
+        }
+        
+        // Also publish to game scene for visual effects
+        gameEvents.publish('GAME_STATUS_CHANGE', { 
+          status: 'win' 
         });
+      }
+      // Regular handling for other state changes
+      else {
+        // Update the game state in the store
+        const store = (window as any).__game_store_instance__;
+        if (store && store.setGameStatus) {
+          store.setGameStatus(payload.currentState);
+        } else {
+          // Fallback using game events
+          gameEvents.publish('UPDATE_GAME_STATUS', {
+            status: payload.currentState
+          });
+        }
       }
       
       // Also publish the message to the game event bus
       gameEvents.publish(type, payload);
     }
     // Handle lobby joined events
+    // Handle explicit player win events from server
+    else if (type === 'EVENT' && payload?.eventType === 'PLAYER_WIN') {
+      console.log('🏆 PLAYER_WIN event received:', payload);
+      
+      // Update the game state in the store
+      const store = (window as any).__game_store_instance__;
+      if (store && store.setGameStatus) {
+        store.setGameStatus('win');
+      }
+      
+      // Also publish to game scene for visual effects
+      gameEvents.publish('GAME_STATUS_CHANGE', { 
+        status: 'win' 
+      });
+      
+      // Publish the original event
+      gameEvents.publish(type, payload);
+    }
     else if (type === 'EVENT' && payload?.eventType === 'LOBBY_JOINED') {
       console.log('Joined lobby:', payload);
       
