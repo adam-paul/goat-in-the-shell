@@ -82,10 +82,9 @@ export default class BasicGameScene extends Phaser.Scene {
     this.startPoint = this.add.rectangle(80, 650, 50, 50, 0x00ff00);
     this.endPoint = this.add.rectangle(2320, 120, 50, 50, 0xff0000);
     
-    // Enable physics for the endPoint
-    this.physics.world.enable(this.endPoint);
-    (this.endPoint.body as Phaser.Physics.Arcade.Body).setAllowGravity(false);
-    (this.endPoint.body as Phaser.Physics.Arcade.Body).setImmovable(true);
+    // Enable physics for the endPoint as a static body (true parameter makes it static)
+    // This matches the old implementation exactly
+    this.physics.add.existing(this.endPoint, true);
     
     // Create goat sprite at the start position
     this.goatSprite = new GoatSprite(this, this.PLAYER_START_X, this.PLAYER_START_Y);
@@ -160,6 +159,7 @@ export default class BasicGameScene extends Phaser.Scene {
   
   /**
    * Handle collision with end point (level completion)
+   * This matches the behavior of reachEndPoint() in the old implementation
    */
   private handleEndPointCollision(
     _player: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Physics.Arcade.Body | Phaser.Physics.Arcade.StaticBody | Phaser.Tilemaps.Tile,
@@ -175,13 +175,17 @@ export default class BasicGameScene extends Phaser.Scene {
     
     console.log(`Player position: (${playerPos.x}, ${playerPos.y}), EndPoint position: (${endPointPos.x}, ${endPointPos.y})`);
     
+    // Mark game as won
     this.gameWon = true;
     
-    // Notify game status change
-    gameEvents.publish('GAME_STATUS_CHANGE', { status: 'win' });
+    // Stop player movement - matches old implementation
+    if (this.goatSprite) {
+      const sprite = this.goatSprite.getSprite();
+      sprite.setVelocity(0, 0);
+    }
     
-    // Update game status
-    this.gameStatus = 'win';
+    // Stop camera following - matches old implementation
+    this.cameras.main.stopFollow();
     
     // Visual feedback - particles for celebration
     const particles = this.add.particles(endPointPos.x, endPointPos.y - 40, 'platform', {
@@ -195,6 +199,12 @@ export default class BasicGameScene extends Phaser.Scene {
     
     // Explode particles for celebration effect
     particles.explode(50);
+    
+    // Notify game status change
+    gameEvents.publish('GAME_STATUS_CHANGE', { status: 'win' });
+    
+    // Update game status
+    this.gameStatus = 'win';
   }
   
   /**
@@ -675,14 +685,48 @@ export default class BasicGameScene extends Phaser.Scene {
     }
     
     if (gameWorld.endPoint) {
-      this.endPoint.setPosition(gameWorld.endPoint.x, gameWorld.endPoint.y);
-      
-      // Update the physics body position to match
-      if (this.endPoint.body) {
-        (this.endPoint.body as Phaser.Physics.Arcade.Body).updateFromGameObject();
+      // If endPoint already exists with physics, update it
+      if (this.endPoint) {
+        // First destroy old endPoint and recreate it at the new position
+        // This ensures correct physics behavior
+        this.endPoint.destroy();
         
-        // Log that the finish line physics body has been updated
-        console.log(`Finish line updated at (${gameWorld.endPoint.x}, ${gameWorld.endPoint.y}) with physics enabled`);
+        // Create a new endPoint at the updated position
+        this.endPoint = this.add.rectangle(
+          gameWorld.endPoint.x, 
+          gameWorld.endPoint.y, 
+          50, 
+          50, 
+          0xff0000
+        );
+        
+        // Enable physics as a static body (exactly matching old implementation)
+        this.physics.add.existing(this.endPoint, true);
+        
+        // Re-establish the collision detection with the player
+        if (this.goatSprite) {
+          this.physics.add.overlap(
+            this.goatSprite.getSprite(),
+            this.endPoint,
+            this.handleEndPointCollision,
+            undefined,
+            this
+          );
+        }
+        
+        console.log(`Finish line recreated at (${gameWorld.endPoint.x}, ${gameWorld.endPoint.y}) with static physics`);
+      } else {
+        // If endPoint doesn't exist yet, create it
+        this.endPoint = this.add.rectangle(
+          gameWorld.endPoint.x, 
+          gameWorld.endPoint.y, 
+          50, 
+          50, 
+          0xff0000
+        );
+        
+        // Enable physics as a static body
+        this.physics.add.existing(this.endPoint, true);
       }
       
       // Add FINISH text above the end position
