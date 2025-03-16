@@ -282,7 +282,7 @@ const DeathModal: React.FC<DeathModalProps> = ({ deathType, onContinue }) => {
             e.currentTarget.style.backgroundColor = '#4CAF50';
           }}
         >
-          Continue to Next Round
+          Play Again
         </button>
       </div>
       

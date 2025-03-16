@@ -14,6 +14,9 @@ export default class BasicGameScene extends Phaser.Scene {
   private endPoint!: Phaser.GameObjects.Rectangle;
   private placedItems: Array<{id?: string, type: string, x: number, y: number, gameObject: Phaser.GameObjects.GameObject}> = [];
   
+  // Darts physics group
+  private darts!: Phaser.Physics.Arcade.Group;
+  
   // Custom physics groups for placed items
   private customStaticGroups?: {
     spikes: Phaser.Physics.Arcade.StaticGroup;
@@ -108,6 +111,9 @@ export default class BasicGameScene extends Phaser.Scene {
     // Initialize walls group
     this.walls = this.physics.add.staticGroup();
     
+    // Initialize darts group
+    this.darts = this.physics.add.group();
+    
     // Create placeholder for start/end points (will be updated from server)
     this.startPoint = this.add.rectangle(80, 650, 50, 50, 0x00ff00);
     this.endPoint = this.add.rectangle(2320, 120, 50, 50, 0xff0000);
@@ -180,7 +186,93 @@ export default class BasicGameScene extends Phaser.Scene {
       this
     );
     
+    // Set up dart collision with player
+    this.physics.add.overlap(
+      sprite,
+      this.darts,
+      this.handleDartCollision,
+      this.checkDartCollision, // Custom collision check function
+      this
+    );
+    
     console.log('Physics setup complete - player can now jump and collide with platforms');
+  }
+  
+  /**
+   * Custom collision check for dart hits
+   * Makes collision detection more precise by using a smaller hit area
+   */
+  private checkDartCollision(
+    player: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Physics.Arcade.Body | Phaser.Physics.Arcade.StaticBody | Phaser.Tilemaps.Tile,
+    dart: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Physics.Arcade.Body | Phaser.Physics.Arcade.StaticBody | Phaser.Tilemaps.Tile
+  ): boolean {
+    try {
+      // First, check if both objects have gameObjects (or are gameObjects)
+      const playerObj = 'gameObject' in player ? (player as Phaser.Physics.Arcade.Body).gameObject : player;
+      const dartObj = 'gameObject' in dart ? (dart as Phaser.Physics.Arcade.Body).gameObject : dart;
+      
+      // We need the getBounds method for collision detection
+      if (!('getBounds' in playerObj) || !('getBounds' in dartObj)) {
+        return false;
+      }
+      
+      // Now we can safely get bounds
+      const playerBounds = (playerObj as any).getBounds();
+      const dartBounds = (dartObj as any).getBounds();
+      
+      // Create a smaller hitbox for dart collision (~ 60% of the normal hitbox)
+      // Same logic as in the original game
+      const shrinkX = playerBounds.width * 0.2;
+      const shrinkY = playerBounds.height * 0.2;
+      
+      const smallerPlayerBounds = new Phaser.Geom.Rectangle(
+        playerBounds.x + shrinkX,
+        playerBounds.y + shrinkY,
+        playerBounds.width - (shrinkX * 2),
+        playerBounds.height - (shrinkY * 2)
+      );
+      
+      // Return true if the dart intersects with the smaller player bounds
+      return Phaser.Geom.Rectangle.Overlaps(smallerPlayerBounds, dartBounds);
+    } catch (err) {
+      console.error('Error in dart collision check:', err);
+      return false;
+    }
+  }
+  
+  /**
+   * Handle collision with dart - triggers death
+   */
+  private handleDartCollision(
+    _player: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Physics.Arcade.Body | Phaser.Physics.Arcade.StaticBody | Phaser.Tilemaps.Tile,
+    dartObj: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Physics.Arcade.Body | Phaser.Physics.Arcade.StaticBody | Phaser.Tilemaps.Tile
+  ): void {
+    if (this.gameWon || this.gameOver || !this.gameStarted) return;
+    
+    console.log('Player hit by a dart!');
+    this.gameOver = true;
+    
+    // Destroy the dart - need to check type first
+    if ('destroy' in dartObj) {
+      (dartObj as Phaser.GameObjects.GameObject).destroy();
+    }
+    
+    // Apply visual effect to goat
+    if (this.goatSprite) {
+      this.goatSprite.setTint(0x0000ff); // Blue tint for tranquilizer dart
+      
+      // Shake the camera slightly
+      this.cameras.main.shake(300, 0.01);
+    }
+    
+    // Notify game status change
+    gameEvents.publish('GAME_STATUS_CHANGE', {
+      status: 'gameover',
+      deathType: 'dart'
+    });
+    
+    // Update game status
+    this.gameStatus = 'gameover';
   }
   
   /**

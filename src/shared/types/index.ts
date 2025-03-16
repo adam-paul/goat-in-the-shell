@@ -25,7 +25,7 @@ export type GameStatus = 'tutorial' | 'modeSelect' | 'lobby' | 'win' | 'playing'
 /**
  * Different ways that the player can die
  */
-export type DeathType = 'spike' | 'fall' | null;
+export type DeathType = 'dart' | 'spike' | 'fall' | null;
 
 /**
  * Types of items that can be placed in the game

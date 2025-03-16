@@ -1,5 +1,5 @@
 // src/client/App.tsx
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import './App.css';
 
 // Import components from new structure
@@ -8,6 +8,7 @@ import { useGameStore } from './store/gameStore';
 import { useSocket } from './network'; // Updated import
 import useInputHandler from './input/InputHandler';
 import useItemPlacementHandler from './input/ItemPlacementHandler';
+import { gameEvents } from './utils/GameEventBus';
 
 // Import components from the component structure
 import DeathModal from './components/DeathModal';
@@ -40,6 +41,32 @@ function App() {
   // Use our custom hooks for input handling
   useInputHandler();
   useItemPlacementHandler();
+  
+  // Subscribe to game status changes from the game scene
+  useEffect(() => {
+    // Set up specific listener for game status changes from game scene
+    // This is particularly important for death events and modal display
+    const handleGameStatusChange = (data: any) => {
+      console.log('Game status change from scene:', data);
+      
+      // Update game status in store
+      useGameStore.getState().setGameStatus(data.status);
+      
+      // If it's a death event, update the death type
+      if (data.status === 'gameover' && data.deathType) {
+        console.log(`Death detected: ${data.deathType}`);
+        useGameStore.getState().setDeathType(data.deathType);
+      }
+    };
+    
+    // Add listener for GAME_STATUS_CHANGE events
+    const unsubscribe = gameEvents.subscribe('GAME_STATUS_CHANGE', handleGameStatusChange);
+    
+    return () => {
+      // Clean up event listener
+      unsubscribe();
+    };
+  }, []);
   
   // Handle game mode selection
   const handleGameModeSelect = useCallback(async (mode: any, joinLobbyCode?: string) => {
