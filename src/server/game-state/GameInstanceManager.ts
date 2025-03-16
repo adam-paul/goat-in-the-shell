@@ -153,11 +153,6 @@ export class GameInstanceManager {
       const isGameplayActive = instance.stateMachine.isGameplayActive();
       
       if (instance.isActive && isGameplayActive) {
-        // Start the dart timer if not already started
-        if (instance.physics) {
-          instance.physics.startDartTimer();
-        }
-        
         // Update physics for this instance
         if (instance.physics) {
           instance.physics.update(deltaTime);
@@ -168,10 +163,7 @@ export class GameInstanceManager {
         instance.lastUpdateTime = now;
       } else if (instance.isActive && !isGameplayActive) {
         // Instance is active but not in gameplay state
-        // Stop dart timer if it's running
-        if (instance.physics) {
-          instance.physics.stopDartTimer();
-        }
+        // Physics is paused during non-gameplay states
         
         // No physics updates needed, but still track the time
         instance.lastUpdateTime = now;
@@ -186,9 +178,8 @@ export class GameInstanceManager {
     const instance = this.instances.get(instanceId);
     if (!instance) return false;
     
-    // Stop dart timers and clean up physics engine
+    // Clean up physics engine
     if (instance.physics) {
-      instance.physics.stopDartTimer();
       instance.physics.destroy();
       console.log(`[GameInstanceManager] Cleaned up physics engine for instance ${instanceId}`);
     }
@@ -267,7 +258,6 @@ export class GameInstanceManager {
     
     // Clean up existing physics engine
     if (instance.physics) {
-      instance.physics.stopDartTimer();
       instance.physics.destroy();
     }
     

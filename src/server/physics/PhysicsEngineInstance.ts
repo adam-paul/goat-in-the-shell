@@ -45,20 +45,16 @@ const CATEGORIES = {
   PLAYER: 0x0002,
   PLATFORM: 0x0004,
   SPIKE: 0x0008,
-  DART: 0x0010,
   SHIELD: 0x0020,
-  WALL: 0x0040,
   DEATH_ZONE: 0x0080
 };
 
 // Define collision masks for each category
 const COLLISION_MASKS = {
-  PLAYER: CATEGORIES.DEFAULT | CATEGORIES.PLATFORM | CATEGORIES.SPIKE | CATEGORIES.DART | CATEGORIES.SHIELD | CATEGORIES.WALL | CATEGORIES.DEATH_ZONE,
-  DART: CATEGORIES.PLAYER | CATEGORIES.SHIELD,
-  SHIELD: CATEGORIES.PLAYER | CATEGORIES.DART,
+  PLAYER: CATEGORIES.DEFAULT | CATEGORIES.PLATFORM | CATEGORIES.SPIKE | CATEGORIES.SHIELD | CATEGORIES.DEATH_ZONE,
+  SHIELD: CATEGORIES.PLAYER,
   PLATFORM: CATEGORIES.PLAYER,
   SPIKE: CATEGORIES.PLAYER,
-  WALL: CATEGORIES.PLAYER,
   DEATH_ZONE: CATEGORIES.PLAYER
 };
 
@@ -74,21 +70,7 @@ interface PlayerJumpEvent {
 export class PhysicsEngineInstance {
   private engine: Matter.Engine;
   private bodies: Map<string, Matter.Body> = new Map();
-  private darts: Map<string, {
-    body: Matter.Body;
-    createdAt: number;
-    lifetime: number;
-    wallId?: string;
-  }> = new Map();
-
-  // Track dart walls and their metadata
-  private dartWalls: Map<string, {
-    body: Matter.Body | null;
-    lastShotTime: number;
-    isBuiltIn: boolean;
-  }> = new Map();
-
-  private dartTimer: NodeJS.Timeout | null = null;
+  // Dart and projectile system has been removed
   private lastUpdateTime: number = Date.now();
   private accumulator: number = 0;
   private worldBounds: Matter.Body[] = [];
@@ -121,7 +103,7 @@ export class PhysicsEngineInstance {
     // Create platforms and dart walls from game world
     const gameWorldData = this.gameState.getGameWorld();
     if (gameWorldData) {
-      console.log(`[PhysicsEngine:${this.instanceId}] Setting up world with ${gameWorldData.platforms.length} platforms and ${gameWorldData.dartWalls.length} dart walls`);
+      console.log(`[PhysicsEngine:${this.instanceId}] Setting up world with ${gameWorldData.platforms.length} platforms`);
       this.createPlatformsFromGameWorld(gameWorldData);
     }
     
@@ -162,46 +144,17 @@ export class PhysicsEngineInstance {
     });
   }
   
-  /**
-   * Start the dart timer for this instance
-   */
-  startDartTimer(): void {
-    if (this.dartTimer) {
-      clearInterval(this.dartTimer);
-    }
-    
-    // Set interval for dart shooting
-    const interval = Math.min(1000, this.parameters.dart_frequency || ITEMS.DART_WALL.DART_INTERVAL);
-    this.dartTimer = setInterval(() => this.shootDarts(), interval);
-    
-    console.log(`[PhysicsEngine:${this.instanceId}] Started dart timer with interval: ${interval}ms`);
-  }
-  
-  /**
-   * Stop the dart timer for this instance
-   */
-  stopDartTimer(): void {
-    if (this.dartTimer) {
-      clearInterval(this.dartTimer);
-      this.dartTimer = null;
-      console.log(`[PhysicsEngine:${this.instanceId}] Stopped dart timer`);
-    }
-  }
+  // Dart timer methods removed
   
   /**
    * Clean up resources when this physics instance is destroyed
    */
   destroy(): void {
-    // Stop timers
-    this.stopDartTimer();
-    
     // Clear Matter.js engine
     Matter.Engine.clear(this.engine);
     
     // Clear maps
     this.bodies.clear();
-    this.darts.clear();
-    this.dartWalls.clear();
     
     console.log(`[PhysicsEngine:${this.instanceId}] Physics engine instance destroyed`);
   }
@@ -234,7 +187,7 @@ export class PhysicsEngineInstance {
   }
   
   /**
-   * Create platforms and dart walls from game world data
+   * Create platforms from game world data
    */
   private createPlatformsFromGameWorld(gameWorld: any): void {
     // Create platforms based on game world data
@@ -251,45 +204,12 @@ export class PhysicsEngineInstance {
             angle: platform.rotation || 0,
             collisionFilter: {
               category: CATEGORIES.PLATFORM,
-              mask: CATEGORIES.DEFAULT | CATEGORIES.PLAYER | CATEGORIES.DART
+              mask: CATEGORIES.DEFAULT | CATEGORIES.PLAYER
             }
           }
         );
         
         Matter.Composite.add(this.engine.world, platformBody);
-      });
-    }
-    
-    // Create dart walls based on game world data
-    if (gameWorld.dartWalls && Array.isArray(gameWorld.dartWalls)) {
-      gameWorld.dartWalls.forEach((wall: any) => {
-        const wallId = wall.id || `dart_wall_${Math.random().toString(36).substring(2, 9)}`;
-        
-        // Create wall body
-        const wallBody = Matter.Bodies.rectangle(
-          wall.position.x,
-          wall.position.y,
-          20, // Fixed width for walls (20px)
-          wall.height,
-          {
-            isStatic: wall.isStatic,
-            label: wallId,
-            collisionFilter: {
-              category: CATEGORIES.WALL,
-              mask: CATEGORIES.PLAYER | CATEGORIES.DART
-            }
-          }
-        );
-        
-        // Add wall to physics world
-        Matter.Composite.add(this.engine.world, wallBody);
-        
-        // Register in dart walls tracking map
-        this.dartWalls.set(wallId, {
-          body: wallBody,
-          lastShotTime: 0,
-          isBuiltIn: true
-        });
       });
     }
     
@@ -366,9 +286,6 @@ export class PhysicsEngineInstance {
       
       // Update special item physics (oscillators)
       this.updateSpecialItemPhysics();
-      
-      // Update dart physics
-      this.updateDarts();
       
       // Step the physics simulation forward
       Matter.Engine.update(this.engine, TIME_STEP);
@@ -476,51 +393,7 @@ export class PhysicsEngineInstance {
     }
   }
   
-  /**
-   * Update dart positions and check lifetime
-   */
-  private updateDarts(): void {
-    const now = Date.now();
-    
-    // Check each dart
-    for (const [dartId, dart] of this.darts.entries()) {
-      // Skip entries without bodies
-      if (!dart.body) continue;
-      
-      // Remove darts that have lived too long
-      if (now - dart.createdAt > dart.lifetime) {
-        this.removeDart(dartId);
-        continue;
-      }
-      
-      // Check if dart is out of bounds
-      if (
-        dart.body.position.x < 0 ||
-        dart.body.position.x > WORLD_WIDTH ||
-        dart.body.position.y < 0 ||
-        dart.body.position.y > WORLD_HEIGHT
-      ) {
-        this.removeDart(dartId);
-      }
-    }
-  }
-  
-  /**
-   * Helper to properly remove darts from all tracking systems
-   */
-  private removeDart(dartId: string): void {
-    const dart = this.darts.get(dartId);
-    if (!dart || !dart.body) return;
-    
-    // Remove from physics world
-    Matter.Composite.remove(this.engine.world, dart.body);
-    
-    // Remove from dart tracking
-    this.darts.delete(dartId);
-    
-    // Remove from game state projectiles
-    this.gameState.removeProjectile(dartId);
-  }
+  // Dart update methods removed
   
   /**
    * Sync physics state with game state
@@ -605,43 +478,6 @@ export class PhysicsEngineInstance {
         const playerId = this.getPlayerIdFromBody(bodyA, bodyB);
         if (playerId) {
           this.handlePlayerDeath(playerId, 'fall');
-        }
-      }
-      
-      // Handle dart collisions
-      if (bodyA.label.startsWith('dart_') || bodyB.label.startsWith('dart_')) {
-        const dartBody = bodyA.label.startsWith('dart_') ? bodyA : bodyB;
-        const otherBody = bodyA.label.startsWith('dart_') ? bodyB : bodyA;
-        const dartId = dartBody.label;
-        
-        // Get the dart from our tracking map
-        const dart = Array.from(this.darts.entries())
-          .find(([id, data]) => data.body === dartBody);
-          
-        if (!dart) return; // Dart not found in tracking map
-        
-        // Handle dart hitting shield
-        if (otherBody.label.includes('shield_')) {
-          // Emit event for visual effects
-          gameEvents.publish('DART_HIT_SHIELD', {
-            position: dartBody.position,
-            velocity: dartBody.velocity,
-            instanceId: this.instanceId
-          });
-          
-          // Remove the dart
-          this.removeDart(dart[0]);
-        }
-        // Handle dart hitting player
-        else if (otherBody.label.includes('player_')) {
-          // Get player ID from body label
-          const playerId = otherBody.label.split('_')[1];
-          
-          // Handle player death
-          this.handlePlayerDeath(playerId, 'dart');
-          
-          // Remove the dart
-          this.removeDart(dart[0]);
         }
       }
     });
@@ -739,128 +575,7 @@ export class PhysicsEngineInstance {
     return body;
   }
   
-  /**
-   * Shoot darts from walls for this instance
-   */
-  shootDarts(): void {
-    const now = Date.now();
-    const dartFrequency = this.parameters.dart_frequency || ITEMS.DART_WALL.DART_INTERVAL;
-    const dartSpeed = this.parameters.dart_speed || PHYSICS.DART_SPEED;
-    
-    // Process all tracked dart walls
-    for (const [wallId, wallData] of this.dartWalls.entries()) {
-      // Skip if cooldown hasn't elapsed
-      if (now - wallData.lastShotTime < dartFrequency) continue;
-      
-      // Get wall position data
-      let wallX = 0;
-      let wallY = 0;
-      let wallHeight = 0;
-      
-      // If this is a built-in wall, get position from game world
-      if (wallData.isBuiltIn) {
-        const gameState = this.gameState.getState();
-        const wall = gameState.gameWorld?.dartWalls?.find((w: any) => w.id === wallId);
-        if (!wall) continue; // Skip if wall not found
-        
-        wallX = wall.position.x;
-        wallY = wall.position.y;
-        wallHeight = wall.height || this.parameters.dart_wall_height || ITEMS.DART_WALL.HEIGHT;
-      } 
-      // Otherwise get position from physics body
-      else if (wallData.body) {
-        wallX = wallData.body.position.x;
-        wallY = wallData.body.position.y;
-        
-        // Approximate height from body bounds
-        wallHeight = wallData.body.bounds.max.y - wallData.body.bounds.min.y;
-      } 
-      else {
-        continue; // Skip if we don't have position data
-      }
-      
-      // Update last shoot time
-      wallData.lastShotTime = now;
-      
-      // Create three darts per wall
-      this.createDartsFromWall(wallId, wallX, wallY, wallHeight, dartSpeed);
-    }
-  }
-  
-  /**
-   * Helper method to create darts from a wall
-   */
-  private createDartsFromWall(
-    wallId: string, 
-    wallX: number, 
-    wallY: number, 
-    wallHeight: number,
-    dartSpeed: number
-  ): void {
-    const now = Date.now();
-    
-    // Create three darts per wall at different heights
-    const positions = [
-      wallY - wallHeight * 0.3, // Top dart
-      wallY,                    // Middle dart
-      wallY + wallHeight * 0.3  // Bottom dart
-    ];
-    
-    positions.forEach((dartY, index) => {
-      const dartId = `dart_${wallId}_${now}_${index}`;
-      
-      // Create dart body
-      const dart = Matter.Bodies.rectangle(
-        wallX + 15, // Offset from wall
-        dartY,
-        PHYSICS.DART_WIDTH,
-        PHYSICS.DART_HEIGHT,
-        {
-          label: dartId,
-          frictionAir: 0,
-          friction: 0,
-          restitution: 0,
-          inertia: Infinity,
-          isSensor: false,
-          collisionFilter: {
-            category: CATEGORIES.DART,
-            mask: COLLISION_MASKS.DART
-          }
-        }
-      );
-      
-      // Set velocity
-      Matter.Body.setVelocity(dart, {
-        x: -dartSpeed,
-        y: 0
-      });
-      
-      // Add to world
-      Matter.Composite.add(this.engine.world, dart);
-      
-      // Track the dart
-      this.darts.set(dartId, {
-        body: dart,
-        createdAt: now,
-        lifetime: 10000, // 10 seconds lifetime
-        wallId
-      });
-      
-      // Add to game state for client rendering
-      const projectile = {
-        id: dartId,
-        type: 'dart',
-        position: { x: wallX + 15, y: dartY },
-        velocity: { x: -dartSpeed, y: 0 },
-        createdAt: now
-      };
-      
-      // Add to this instance's game state
-      this.gameState.addProjectile(projectile);
-      
-      console.log(`[PhysicsEngine:${this.instanceId}] Created dart ${dartId} from wall ${wallId}`);
-    });
-  }
+  // Dart firing methods removed
   
   /**
    * Apply force to a player's physics body
@@ -907,7 +622,7 @@ export class PhysicsEngineInstance {
             label: `shield_${item.id}`,
             collisionFilter: {
               category: CATEGORIES.SHIELD,
-              mask: CATEGORIES.DART // Direct specification of what shield can collide with
+              mask: CATEGORIES.PLAYER
             },
             friction: 0,
             frictionAir: 0,
@@ -931,7 +646,7 @@ export class PhysicsEngineInstance {
             label: 'platform',
             collisionFilter: {
               category: CATEGORIES.PLATFORM,
-              mask: CATEGORIES.PLAYER | CATEGORIES.DART
+              mask: CATEGORIES.PLAYER
             }
           }
         );
@@ -951,37 +666,10 @@ export class PhysicsEngineInstance {
             label: 'spike',
             collisionFilter: {
               category: CATEGORIES.SPIKE,
-              mask: CATEGORIES.PLAYER | CATEGORIES.DART
+              mask: CATEGORIES.PLAYER
             }
           }
         );
-        break;
-      }
-      case 'dart_wall': {
-        const height = item.properties.height || this.parameters.dart_wall_height || ITEMS.DART_WALL.HEIGHT;
-        
-        body = Matter.Bodies.rectangle(
-          item.position.x,
-          item.position.y,
-          10, // Fixed width for dart walls
-          height,
-          {
-            isStatic: true,
-            label: `dart_wall_${item.id}`,
-            collisionFilter: {
-              category: CATEGORIES.WALL,
-              mask: CATEGORIES.PLAYER | CATEGORIES.DART
-            }
-          }
-        );
-        
-        // Register this wall in dart walls tracking
-        this.dartWalls.set(item.id, {
-          body: body,
-          lastShotTime: 0,
-          isBuiltIn: false
-        });
-        
         break;
       }
       default:

@@ -19,7 +19,6 @@ export default class BasicGameScene extends Phaser.Scene {
     spikes: Phaser.Physics.Arcade.StaticGroup;
     shields: Phaser.Physics.Arcade.StaticGroup;
     oscillators: Phaser.Physics.Arcade.StaticGroup;
-    dartWalls: Phaser.Physics.Arcade.StaticGroup;
   };
   
   // Preview for item placement
@@ -55,9 +54,6 @@ export default class BasicGameScene extends Phaser.Scene {
     super('BasicGameScene');
     
     // Subscribe to game events
-    gameEvents.subscribe('DART_BLOCKED', (data: any) => {
-      this.createDartBlockEffect(data.position.x, data.position.y);
-    });
   }
   
   preload(): void {
@@ -637,7 +633,7 @@ export default class BasicGameScene extends Phaser.Scene {
       });
     }
     
-    // Process projectiles and other state info
+    // Process game state
     this.processGameState(state);
   }
   
@@ -769,90 +765,10 @@ export default class BasicGameScene extends Phaser.Scene {
   }
   
   /**
-   * Handle projectiles and other state info from the server
+   * Process game state from the server
    */
   private processGameState(state: any): void {
-    // Handle projectiles (darts) from state
-    if (state.projectiles && Array.isArray(state.projectiles)) {
-      console.log(`[BasicGameScene] Received ${state.projectiles.length} projectiles from server`);
-      
-      // Clean up old darts before adding new ones to avoid duplicates
-      const oldDarts = this.placedItems.filter(item => item.type === 'dart');
-      oldDarts.forEach(dart => {
-        dart.gameObject.destroy();
-      });
-      this.placedItems = this.placedItems.filter(item => item.type !== 'dart');
-      
-      // Track if we're using the dart texture successfully
-      let dartTextureExists = this.textures.exists('dart');
-      console.log(`[DART DEBUG] Dart texture exists: ${dartTextureExists}`);
-      
-      state.projectiles.forEach((projectile: any) => {
-        if (projectile.type === 'dart' && projectile.position) {
-          console.log(`[DART DEBUG] Creating dart at position (${projectile.position.x}, ${projectile.position.y}), velocity: ${JSON.stringify(projectile.velocity)}`);
-          
-          let dart;
-          // Try to create with texture first
-          if (dartTextureExists) {
-            try {
-              // Create dart using the pre-generated texture
-              dart = this.add.sprite(
-                projectile.position.x,
-                projectile.position.y,
-                'dart'
-              );
-              console.log('[DART DEBUG] Successfully created dart sprite with texture');
-            } catch (error) {
-              console.error('[DART DEBUG] Failed to create dart with texture:', error);
-              dartTextureExists = false; // Mark texture as problematic for future darts
-            }
-          }
-          
-          // Fallback to simple rectangle if texture fails
-          if (!dartTextureExists || !dart) {
-            console.log('[DART DEBUG] Using fallback dart rectangle');
-            dart = this.add.rectangle(
-              projectile.position.x,
-              projectile.position.y,
-              PHYSICS.DART_WIDTH || 30,
-              PHYSICS.DART_HEIGHT || 8,
-              0x303030
-            );
-          }
-          
-          // Ensure darts face left as they shoot from walls
-          dart.setOrigin(0.5, 0.5);
-          
-          // Make the dart more visible for debugging
-          if (!dartTextureExists) {
-            (dart as Phaser.GameObjects.Rectangle).setStrokeStyle(1, 0xff0000);
-          }
-          
-          // Set velocity from projectile data to allow smooth movement between updates
-          if (projectile.velocity) {
-            // Store velocity on the sprite for update
-            (dart as any).velocityX = projectile.velocity.x;
-            (dart as any).velocityY = projectile.velocity.y;
-            console.log(`[DART DEBUG] Set dart velocity to: x=${projectile.velocity.x}, y=${projectile.velocity.y}`);
-          }
-          
-          // Store the dart in placedItems so it gets cleaned up on the next update
-          this.placedItems.push({
-            id: projectile.id,
-            type: 'dart',
-            x: projectile.position.x,
-            y: projectile.position.y,
-            gameObject: dart
-          });
-          
-          // Log success for better visibility
-          console.log(`[DART DEBUG] ✅ Successfully created dart ${projectile.id} at (${projectile.position.x}, ${projectile.position.y})`);
-        }
-      });
-      
-      // Summary after processing all projectiles
-      console.log(`[DART SUMMARY] Created ${this.placedItems.filter(item => item.type === 'dart').length} dart objects from ${state.projectiles.length} projectiles`);
-    }
+    // Projectile system removed
     
     // Update game status if provided
     if (state.gameStatus) {
@@ -1102,8 +1018,7 @@ export default class BasicGameScene extends Phaser.Scene {
         this.customStaticGroups = {
           spikes: this.physics.add.staticGroup(),
           shields: this.physics.add.staticGroup(),
-          oscillators: this.physics.add.staticGroup(),
-          dartWalls: this.physics.add.staticGroup()
+          oscillators: this.physics.add.staticGroup()
         };
         
         // Add colliders with the player for these groups if goatSprite exists
@@ -1118,9 +1033,6 @@ export default class BasicGameScene extends Phaser.Scene {
           
           // Add collision with oscillators (platforms that move)
           this.physics.add.collider(sprite, this.customStaticGroups.oscillators);
-          
-          // Add collision with dart walls
-          this.physics.add.collider(sprite, this.customStaticGroups.dartWalls);
         }
       }
       
@@ -1307,49 +1219,14 @@ export default class BasicGameScene extends Phaser.Scene {
           break;
         }
         case 'dart_wall': {
-          // Get dart wall parameters to match original implementation
-          const height = getParameterValue('dart_wall_height');
+          // Dart walls have been removed from the game
+          // This case is kept for backward compatibility
+          console.log('Dart walls have been removed from the game');
           
-          try {
-            // Create a vertical wall using wall texture with physics
-            const wall = this.customStaticGroups.dartWalls.create(x, y, 'wall') as Phaser.Physics.Arcade.Sprite;
-            
-            // Scale to match parameter height
-            const heightScale = height / 100; // Default texture height is 100
-            wall.setScale(1, heightScale).refreshBody();
-            
-            gameObject = wall;
-            console.log(`Dart wall created with height=${height}`);
-          } catch (error) {
-            console.error('Error creating dart wall:', error);
-            
-            // Fallback with physics
-            const height = getParameterValue('dart_wall_height');
-            
-            // Create physics body
-            const wallBody = this.customStaticGroups.dartWalls.create(x, y, 'wall') as Phaser.Physics.Arcade.Sprite;
-            wallBody.setVisible(false);
-            wallBody.setDisplaySize(20, height);
-            wallBody.refreshBody();
-            
-            // Create visual wall
-            const wall = this.add.rectangle(x, y, 20, height, 0x800000);
-            
-            // Add dart launcher indicators
-            const wallDetails = this.add.graphics();
-            wallDetails.fillStyle(0x600000);
-            
-            // Add three circular dart launchers on the wall
-            const dartPositions = [0.25, 0.5, 0.75]; // Positions along the height
-            dartPositions.forEach(pos => {
-              wallDetails.fillCircle(x + 8, y - (height/2) + (height * pos), 3);
-            });
-            
-            // Group them
-            const container = this.add.container(0, 0, [wall, wallDetails]);
-            gameObject = container;
-            console.log('Fallback dart wall created with physics');
-          }
+          // Create a visual placeholder - a gray rectangle without physics
+          const height = getParameterValue('dart_wall_height');
+          const wall = this.add.rectangle(x, y, 20, height, 0x808080, 0.5);
+          gameObject = wall;
           break;
         }
         default: {
@@ -1412,7 +1289,6 @@ export default class BasicGameScene extends Phaser.Scene {
       this.customStaticGroups.spikes.clear(true, true);
       this.customStaticGroups.shields.clear(true, true);
       this.customStaticGroups.oscillators.clear(true, true);
-      this.customStaticGroups.dartWalls.clear(true, true);
     }
   }
   
@@ -1559,39 +1435,5 @@ export default class BasicGameScene extends Phaser.Scene {
     }
   }
   
-  // Create a particle effect when a dart is blocked by a shield
-  private createDartBlockEffect(x: number, y: number): void {
-    // Create a simple visual effect using rectangles
-    for (let i = 0; i < 8; i++) {
-      // Create small particles
-      const particle = this.add.rectangle(
-        x, 
-        y, 
-        4, 
-        4, 
-        0xFF9800 // Orange color
-      );
-      
-      // Random direction
-      const angle = Math.random() * Math.PI * 2;
-      const speed = 50 + Math.random() * 50;
-      
-      // Set velocity
-      const vx = Math.cos(angle) * speed;
-      const vy = Math.sin(angle) * speed;
-      
-      // Animate the particle
-      this.tweens.add({
-        targets: particle,
-        x: x + vx,
-        y: y + vy,
-        alpha: 0,
-        scale: 0.5,
-        duration: 300,
-        onComplete: () => {
-          particle.destroy();
-        }
-      });
-    }
-  }
+  // Dart effects removed
 }

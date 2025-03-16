@@ -126,7 +126,7 @@ class GameLogicProcessor {
     }
     
     // Check that the item type is valid
-    const validItemTypes = ['platform', 'spike', 'oscillator', 'shield', 'dart_wall'];
+    const validItemTypes = ['platform', 'spike', 'oscillator', 'shield'];
     console.log(`VALIDATION: Checking if ${itemData.type} is a valid item type among:`, validItemTypes);
     if (!validItemTypes.includes(itemData.type)) {
       console.error(`VALIDATION: Invalid item type: ${itemData.type}`);

@@ -25,12 +25,12 @@ export type GameStatus = 'tutorial' | 'modeSelect' | 'lobby' | 'win' | 'playing'
 /**
  * Different ways that the player can die
  */
-export type DeathType = 'dart' | 'spike' | 'fall' | null;
+export type DeathType = 'spike' | 'fall' | null;
 
 /**
  * Types of items that can be placed in the game
  */
-export type ItemType = 'platform' | 'spike' | 'oscillator' | 'shield' | 'dart_wall';
+export type ItemType = 'platform' | 'spike' | 'oscillator' | 'shield';
 
 /**
  * Game world structure for synchronizing between server and client
@@ -42,12 +42,6 @@ export interface GameWorld {
     width: number;
     height: number;
     rotation: number;
-    isStatic: boolean;
-  }>;
-  dartWalls: Array<{
-    id: string;
-    position: { x: number; y: number };
-    height: number;
     isStatic: boolean;
   }>;
   startPoint: { x: number; y: number };

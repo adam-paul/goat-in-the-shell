@@ -15,14 +15,6 @@ interface GameItem {
   properties: Record<string, any>;
 }
 
-interface Projectile {
-  id: string;
-  type: string; // 'dart', etc.
-  position: Vector2D;
-  velocity: Vector2D;
-  createdAt: number;
-}
-
 interface Lobby {
   id: string;
   name: string;
@@ -54,7 +46,6 @@ interface GameParameters {
 class GameStateManager {
   private playerRegistry: PlayerRegistry;
   private items: Map<string, GameItem>;
-  private projectiles: Map<string, Projectile>;
   private lobbies: Map<string, Lobby>;
   private stateVersion: number;
   private lastUpdateTime: number;
@@ -67,7 +58,6 @@ class GameStateManager {
   constructor(playerRegistry: PlayerRegistry) {
     this.playerRegistry = playerRegistry;
     this.items = new Map();
-    this.projectiles = new Map();
     this.lobbies = new Map();
     this.stateVersion = 0;
     this.lastUpdateTime = Date.now();
@@ -76,7 +66,6 @@ class GameStateManager {
     // Initialize game world with default platforms
     this.gameWorld = {
       platforms: [],
-      dartWalls: [],
       startPoint: { ...PLAYER.DEFAULT_POSITION }, // Use shared constant
       endPoint: { x: 2320, y: 120 },
       worldBounds: { width: 2400, height: 800 }
@@ -131,25 +120,10 @@ class GameStateManager {
     this.stateVersion++;
     this.lastUpdateTime = Date.now();
     
-    // Update projectile lifetimes
-    this.updateProjectiles();
-    
     // Update game logic here, but most updates will come from the physics engine
   }
   
-  /**
-   * Update projectiles and remove expired ones
-   */
-  private updateProjectiles(): void {
-    const now = Date.now();
-    
-    for (const [id, projectile] of this.projectiles.entries()) {
-      // Remove projectiles older than 10 seconds
-      if (now - projectile.createdAt > 10000) {
-        this.projectiles.delete(id);
-      }
-    }
-  }
+  // Projectile system removed
   
   /**
    * Initialize game world with default platforms
@@ -233,35 +207,6 @@ class GameStateManager {
       
       this.gameWorld.platforms.push(platform);
     });
-    
-    // Create vertical dart walls as in the original implementation
-    const dartWallPositions = [
-      // Left section
-      { x: 400, y: 700 },
-      { x: 600, y: 500 },
-      { x: 800, y: 650 },
-      { x: 300, y: 350 },
-      { x: 900, y: 450 },
-      
-      // Right section
-      { x: 1400, y: 600 },
-      { x: 1600, y: 650 },
-      { x: 1800, y: 500 },
-      { x: 2000, y: 400 },
-      { x: 2200, y: 300 }
-    ];
-    
-    // Create each dart wall
-    dartWallPositions.forEach((pos, index) => {
-      const dartWall = {
-        id: `dart_wall_initial_${index}`,
-        position: { x: pos.x, y: pos.y },
-        height: this.parameters.dart_wall_height || 100,
-        isStatic: true
-      };
-      
-      this.gameWorld.dartWalls.push(dartWall);
-    });
   }
   
   /**
@@ -273,7 +218,6 @@ class GameStateManager {
       timestamp: this.lastUpdateTime,
       players: this.getAllPlayers(),
       items: Array.from(this.items.values()),
-      projectiles: Array.from(this.projectiles.values()),
       lobbies: Array.from(this.lobbies.values()),
       parameters: this.parameters,
       gameWorld: this.gameWorld
@@ -335,7 +279,6 @@ class GameStateManager {
       isGameActive: lobby.isGameActive,
       players: lobbyPlayers,
       items: lobbyItems,
-      projectiles: Array.from(this.projectiles.values()),
       parameters: this.parameters,
       gameWorld: this.gameWorld
     };
@@ -609,63 +552,12 @@ class GameStateManager {
     // Handle status-specific logic
     switch (status) {
       case 'reset':
-        // Clear all projectiles
-        this.projectiles.clear();
+        // Reset game state as needed
         break;
     }
   }
   
-  /**
-   * Add a projectile to the game state
-   */
-  addProjectile(projectile: Partial<Projectile>): Projectile {
-    const id = projectile.id || uuidv4();
-    
-    const newProjectile: Projectile = {
-      id,
-      type: projectile.type || 'dart',
-      position: projectile.position || { x: 0, y: 0 },
-      velocity: projectile.velocity || { x: 0, y: 0 },
-      createdAt: projectile.createdAt || Date.now()
-    };
-    
-    console.log(`[GameState] Adding projectile ${id} of type ${newProjectile.type} at position (${newProjectile.position.x}, ${newProjectile.position.y})`);
-    console.log(`[GameState] Projectile velocity: (${newProjectile.velocity.x}, ${newProjectile.velocity.y})`);
-    
-    // Store projectile
-    this.projectiles.set(id, newProjectile);
-    
-    // Log total projectiles for verification
-    console.log(`[GameState] Total projectiles in state: ${this.projectiles.size}`);
-    
-    return newProjectile;
-  }
-  
-  /**
-   * Update a projectile's position
-   */
-  updateProjectile(id: string, update: Partial<Projectile>): Projectile | null {
-    const projectile = this.projectiles.get(id);
-    if (!projectile) return null;
-    
-    // Update properties
-    if (update.position) {
-      projectile.position = update.position;
-    }
-    
-    if (update.velocity) {
-      projectile.velocity = update.velocity;
-    }
-    
-    return projectile;
-  }
-  
-  /**
-   * Remove a projectile
-   */
-  removeProjectile(id: string): boolean {
-    return this.projectiles.delete(id);
-  }
+  // Projectile methods removed
   
   /**
    * Handle player death event
@@ -719,8 +611,7 @@ class GameStateManager {
       this.playerRegistry.setPlayerAliveStatus(player.id, true);
     }
     
-    // Clear projectiles
-    this.projectiles.clear();
+    // Reset game state
     
     console.log('Game state reset');
   }
@@ -745,4 +636,4 @@ export function setupGameInstanceManager(playerRegistry: PlayerRegistry): GameIn
 }
 
 export { GameStateManager, GameInstanceManager };
-export type { GameItem, Projectile, Lobby, GameParameters };
+export type { GameItem, Lobby, GameParameters };

@@ -136,20 +136,7 @@ gameEvents.subscribe<StartCountdownEvent>('START_COUNTDOWN', (data) => {
 // Initialize socket server
 const socketServer = createSocketServer(wss, gameState, gameLogic, instanceManager, playerRegistry);
 
-// Listen for projectile updates and broadcast to clients
-gameEvents.subscribe('PROJECTILES_UPDATED', (data) => {
-  console.log('SERVER: Projectiles updated, broadcasting to affected instances');
-  
-  // Find all active instances
-  const activeInstances = instanceManager.getAllInstances().filter(
-    instance => instance.stateMachine.getCurrentState() === 'playing'
-  );
-  
-  // Broadcast state update to each active instance
-  activeInstances.forEach(instance => {
-    socketServer.broadcastGameState(instance);
-  });
-});
+// Projectile system removed
 
 // Start the server
 const PORT = process.env.PORT || 3001;

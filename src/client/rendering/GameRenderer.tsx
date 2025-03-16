@@ -169,33 +169,13 @@ const GameRenderer: React.FC<GameRendererProps> = ({ containerClassName = 'game-
     
     // Function to handle server state updates
     const handleServerState = (state: any) => {
-      // Add debugging for projectiles
-      if (state && state.projectiles && Array.isArray(state.projectiles)) {
-        console.log(`[GameRenderer] Received state update with ${state.projectiles.length} projectiles`);
-        
-        // Log the first few projectiles for debugging
-        if (state.projectiles.length > 0) {
-          console.log('[GameRenderer] First projectile details:', JSON.stringify(state.projectiles[0]));
-        }
-      } else {
-        console.warn('[GameRenderer] WARNING: State update missing projectiles array or it\'s not properly formed:', 
-          state?.projectiles ? typeof state.projectiles : 'undefined');
-        console.log('[GameRenderer] State keys:', state ? Object.keys(state).join(', ') : 'null state');
-      }
-      
+      // Process and update game state
       updateGameState(state);
       gameEvents.publish('SERVER_STATE_UPDATE', state);
     };
     
     // Set up socket event listener for state updates
     const handleStateUpdate = (data: any) => {
-      // Add detailed debugging
-      console.log(`[GameRenderer] Received ${MESSAGE_TYPES.STATE_UPDATE} event:`, 
-        data && data.state ? 
-          `Contains state with ${data.state.projectiles ? data.state.projectiles.length + ' projectiles' : 'no projectiles array'}` : 
-          'No state data'
-      );
-      
       if (data && data.state) {
         handleServerState(data.state);
       }

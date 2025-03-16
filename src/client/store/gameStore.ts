@@ -211,11 +211,6 @@ export const useGameStore = create<GameState>((set, get): GameState => {
           height: ITEMS.SPIKE.SIZE
         };
         break;
-      case 'dart_wall':
-        placementData.properties = {
-          height: ITEMS.DART_WALL.HEIGHT
-        };
-        break;
     }
     
     // Send the item placement request to the server via event bus
