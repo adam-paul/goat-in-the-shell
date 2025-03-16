@@ -7,7 +7,7 @@ This document provides an overview of the WebSocket architecture used in the Goa
 The WebSocket architecture consists of three main parts:
 
 1. **Client-side Socket Implementation**: Handles WebSocket connection and message sending
-2. **Event Bus System**: Provides communication between game components
+2. **Event Bus System**: Provides communication between game components and to server
 3. **Server-side Socket Implementation**: Handles client connections and game state management
 
 ```
@@ -17,36 +17,78 @@ The WebSocket architecture consists of three main parts:
 │                 │     │                 │     │                 │
 └────────┬────────┘     └────────┬────────┘     └────────┬────────┘
          │                       │                       │
-         ▼                       ▼                       ▼
-┌────────────────┐     ┌────────────────┐     ┌────────────────┐
-│                │     │                │     │                │
-│  SocketProvider│     │  GameEventBus  │     │  SocketServer  │
-│                │     │                │     │                │
-└────────┬───────┘     └───────▲────────┘     └────────┬───────┘
-         │                     │                       │
-         │    ┌───────────┐    │                       │
-         └────► SocketEvents ──┘                       │
-              └───────────┘                            │
-                    │                                  │
-                    └──────────►WebSockets◄────────────┘
+         │                       │                       │
+         └──────────┬────────────┘                       │
+                    ▼                                    ▼
+            ┌───────────────┐                    ┌───────────────┐
+            │               │                    │               │
+            │  GameEventBus │                    │  SocketServer │
+            │               │                    │               │
+            └───┬───────────┘                    └───────┬───────┘
+                │                                        │
+                ▼                                        │
+         ┌──────────────┐                                │
+         │              │                                │
+         │SocketProvider│◄───────────WebSockets─────────►│
+         │              │                                │
+         └──────────────┘                                │
 ```
+
+This new architecture follows an event-driven approach where:
+
+1. All client components publish to the central GameEventBus
+2. SocketProvider subscribes to relevant events and handles server communication
+3. All client-side subscribers get events for local updates
+4. Server processes inputs and broadcasts state updates
 
 ## Client-Side Implementation
 
 ### 1. SocketProvider (src/client/network/SocketProvider.tsx)
 
-The `SocketProvider` is a React context provider that manages the WebSocket connection and exposes methods for sending messages to the server.
+The `SocketProvider` is a React context provider that manages the WebSocket connection and handles client-server communication based on events from the GameEventBus.
 
 **Key responsibilities:**
 - Establish and maintain WebSocket connection
 - Provide connection status to components
-- Send messages to the server
+- Subscribe to GameEventBus events (like PLAYER_INPUT, ITEM_PLACEMENT)
+- Send messages to the server based on those events
 - Handle reconnection logic (when implemented)
 - Initiate ping messages every 30 seconds to keep the connection alive
 
+**Implementation:**
+```tsx
+// In SocketProvider.tsx
+// Set up event listeners for game events
+useEffect(() => {
+  // This handler listens for PLAYER_INPUT events and sends them to server
+  const handlePlayerInput = (data: any) => {
+    if (socketRef.current?.readyState === WebSocket.OPEN) {
+      sendPlayerInput(data);
+    }
+  };
+  
+  // This handler listens for ITEM_PLACEMENT events and sends them to server
+  const handleItemPlacement = (data: any) => {
+    if (socketRef.current?.readyState === WebSocket.OPEN) {
+      sendPlaceItem(data.type, data.x, data.y);
+    }
+  };
+  
+  // Subscribe to events
+  const unsubInput = gameEvents.subscribe('PLAYER_INPUT', handlePlayerInput);
+  const unsubPlacement = gameEvents.subscribe('ITEM_PLACEMENT', handleItemPlacement);
+  
+  // Clean up subscriptions when component unmounts
+  return () => {
+    unsubInput();
+    unsubPlacement();
+  };
+}, []);
+```
+
 **Usage example:**
 ```tsx
-// In a component
+// In a component - for checking status only, NOT for direct sending!
 import { useSocket } from '../network';
 
 function MyComponent() {
@@ -57,13 +99,7 @@ function MyComponent() {
     console.log('Connected to server');
   }
   
-  // Send a message
-  socket.sendMessage('CUSTOM_EVENT', { data: 'value' });
-  
-  // Use specialized methods
-  socket.sendPlayerInput({ left: true, jump: true });
-  socket.sendPlaceItem('platform', 100, 200);
-  
+  // Get the connection status for UI
   return <div>Socket status: {socket.connected ? 'Connected' : 'Disconnected'}</div>
 }
 ```
@@ -108,35 +144,48 @@ ReactDOM.render(
 
 ## Event Bus System
 
-The Event Bus system serves as the central communication channel for all components in the application. Both client and server use consistent implementations.
+The Event Bus system serves as the central communication hub for all components in the application, including client-server communication. Both client and server use consistent implementations.
 
 ### Client-side: GameEventBus (src/client/utils/GameEventBus.ts)
 
-The `GameEventBus` provides a type-safe pub/sub system for communication between client-side components.
+The `GameEventBus` provides a type-safe pub/sub system that acts as the core of our event-driven architecture.
 
 **Key responsibilities:**
 - Serve as the single event bus for all client components
+- Route events to both client-side components AND the SocketProvider for server communication
 - Provide type-safe event subscription and publishing
 - Connect WebSocket messages to application components through SocketEvents
+- Enable a clean, decoupled architecture with separation of concerns
 
 **Usage example:**
 ```tsx
-// Publishing events
+// Publishing events from input components
 import { gameEvents } from '../utils/GameEventBus';
 
-// Publish an event with data
-gameEvents.publish('PLAYER_MOVE', { x: 100, y: 200 });
+// In an input handler
+const handleKeyDown = (event: KeyboardEvent) => {
+  // Create standardized input data
+  const inputData = {
+    left: event.code === 'ArrowLeft',
+    right: event.code === 'ArrowRight',
+    jump: event.code === 'Space',
+    timestamp: Date.now()
+  };
+  
+  // Publish to GameEventBus - this will go to BOTH:
+  // 1. Local components (like Phaser scene) for immediate visual feedback
+  // 2. SocketProvider for sending to server
+  gameEvents.publish('PLAYER_INPUT', inputData);
+};
 
-// Subscribing to events
-import { gameEvents } from '../utils/GameEventBus';
-
-// In a React component
+// Subscribing to events in a game component
 useEffect(() => {
   // Subscribe with type information
   const unsubscribe = gameEvents.subscribe<{x: number, y: number}>(
-    'PLAYER_MOVE', 
+    'PLAYER_POSITION_UPDATE', 
     (position) => {
-      console.log('Player moved to:', position.x, position.y);
+      // Update local rendering based on position
+      updatePlayerSprite(position.x, position.y);
     }
   );
   
@@ -234,51 +283,93 @@ interface NetworkMessage {
 
 **Important note:** Always use the `payload` field for message data. The legacy `data` field has been removed from the interface to maintain consistency throughout the codebase.
 
-## How to Communicate with the WebSocket Architecture
+## Event-Driven Architecture for Client Communication
 
-### From React Components
+Our architecture follows a consistent event-driven pattern for both user input and item placement. This section outlines the general approach and specific implementations.
 
-React components should use the `useSocket` hook to send messages and check connection status:
+### General Pattern
 
-```typescript
-import { useSocket } from '../network';
+All client-side communication follows this pattern:
 
-function MyComponent() {
-  const socket = useSocket();
-  
-  // To send a message:
-  const handleSendMessage = () => {
-    socket.sendMessage('CUSTOM_EVENT', { data: 'value' });
-  };
-  
-  // To check connection status:
-  const isConnected = socket.connected;
-  
-  // To handle user joining a lobby:
-  const handleJoinLobby = (lobbyId: string) => {
-    socket.connect('Player1', lobbyId);
-  };
-}
-```
+1. **Input Detection**: UI/Input component detects user action
+2. **Event Publication**: Component publishes standardized event to GameEventBus
+3. **Multiple Subscribers**:
+   - Game rendering components subscribe for immediate visual feedback
+   - SocketProvider subscribes for sending to server
+   - Other components subscribe as needed
 
-### From Game Components (Phaser, etc.)
+This pattern ensures:
+- Separation of concerns
+- Single source of truth
+- No duplicate network messages
+- Consistent architecture
 
-Game components should use the `GameEventBus` to communicate:
+### Player Input Flow Example
 
 ```typescript
-import { gameEvents } from '../utils/GameEventBus';
+// 1. In InputHandler.ts - Detect keyboard input
+const handleKeyDown = (event: KeyboardEvent) => {
+  // Format standardized input data
+  const inputData = {
+    left: event.code === 'ArrowLeft',
+    right: event.code === 'ArrowRight',
+    jump: event.code === 'Space',
+    timestamp: Date.now()
+  };
+  
+  // Publish to GameEventBus
+  gameEvents.publish('PLAYER_INPUT', inputData);
+};
 
-// Subscribe to events
-const unsubscribe = gameEvents.subscribe('PLAYER_INPUT', (input) => {
-  // Handle player input in the game
-  updatePlayerPosition(input);
+// 2. In BasicGameScene.ts - Subscribe for visual feedback
+gameEvents.subscribe('PLAYER_INPUT', (data) => {
+  // Update player sprite for immediate feedback
+  handlePlayerMovement(data);
 });
 
-// Publish events
-gameEvents.publish('PLAYER_POSITION_CHANGED', { x: 100, y: 200 });
+// 3. In SocketProvider.tsx - Subscribe to send to server
+gameEvents.subscribe('PLAYER_INPUT', (data) => {
+  if (socketRef.current?.readyState === WebSocket.OPEN) {
+    sendPlayerInput(data);
+  }
+});
+```
 
-// Clean up when done
-unsubscribe();
+### Item Placement Flow Example
+
+```typescript
+// 1. In BasicGameScene.ts - Detect placement click
+this.input.on('pointerdown', (pointer) => {
+  if (this.itemPlacementMode) {
+    const worldPoint = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
+    
+    // Publish item placement event
+    gameEvents.publish('ITEM_PLACEMENT', {
+      type: this.itemToPlace,
+      x: worldPoint.x,
+      y: worldPoint.y
+    });
+  }
+});
+
+// 2. In gameStore.ts - Subscribe to update UI state
+gameEvents.subscribe('ITEM_PLACEMENT', (data) => {
+  // Update game store state and publish follow-up events
+  store.handlePlaceItem(data.x, data.y);
+});
+
+// 3. In GameRenderer.tsx - Subscribe for visual feedback
+gameEvents.subscribe('ITEM_PLACEMENT', (data) => {
+  // Show immediate visual feedback
+  updateRendering(data);
+});
+
+// 4. In SocketProvider.tsx - Subscribe to send to server
+gameEvents.subscribe('ITEM_PLACEMENT', (data) => {
+  if (socketRef.current?.readyState === WebSocket.OPEN) {
+    sendPlaceItem(data.type, data.x, data.y);
+  }
+});
 ```
 
 ### From Server Components
@@ -320,18 +411,24 @@ socketServer.broadcastToInstance(instanceId, {
 
 4. **Handle connection errors** gracefully with appropriate UI feedback.
 
-5. **Follow the correct communication path**:
-   - React UI components → `useSocket` hook for sending messages to server
-   - All components → `gameEvents.subscribe` for receiving events 
+5. **Follow the correct event-driven communication path**:
+   - Input components → `gameEvents.publish` for publishing user actions
+   - SocketProvider → `gameEvents.subscribe` for sending to server
+   - Game components → `gameEvents.subscribe` for visual/local updates
    - All components → `gameEvents.publish` for sending events locally
    - Server components → `gameEvents.publish` for server events
    - Server components → `socketServer` methods for network communication
+   - **Never** directly call socket.send* methods from UI components
 
 6. **Standardize message format**: Always use the `payload` property for message data, never use alternatives like `data`.
 
 7. **Keep message types in a central location**: Use MESSAGE_TYPES from constants for consistency.
 
 8. **Always include a timestamp** with messages for better debugging and state management.
+
+9. **Maintain consistent event-driven pattern**: Apply the same pattern to all types of user input (keyboard, mouse, item placement, etc).
+
+10. **Format data before publishing**: Format standardized data objects in the component that detects the input before publishing to GameEventBus.
 
 ## Integration with Game State
 

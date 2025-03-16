@@ -1,15 +1,15 @@
 # Input Handling Architecture
 
-This document outlines the input handling architecture for Goat in the Shell, focusing on how player inputs are processed, how they affect game state, and how state updates are broadcasted to clients.
+This document outlines the input handling architecture for Goat in the Shell, focusing on how player inputs and item placements are processed through a unified event-driven approach.
 
 ## Architectural Overview
 
 The input handling system follows these key principles:
 
-1. **Separation of Concerns**: Clear separation between input handling, physics processing, and state broadcasting
+1. **Separation of Concerns**: Clear separation between input handling, rendering, and network communication
 2. **Single Responsibility**: Each component has a focused role in the pipeline
-3. **Resource Efficiency**: Avoid redundant operations and excessive network traffic
-4. **Consistency**: Provide predictable, regular state updates regardless of input frequency
+3. **Resource Efficiency**: Avoid redundant operations and eliminate duplicate messages
+4. **Consistency**: Provide predictable, unified approach to all user interactions
 5. **Event-driven Communication**: Components communicate through a central event bus
 
 The architecture consists of these main components that work together:
@@ -42,6 +42,8 @@ The architecture consists of these main components that work together:
 │               │      │               │      │               │
 └───────────────┘      └───────────────┘      └───────────────┘
 ```
+
+This architecture implements a consistent event-driven approach for all user interactions - both player movement inputs and item placements follow the same pattern.
 
 ## Implementation Details
 
@@ -246,24 +248,32 @@ private handlePlayerInput(data: any): void {
 }
 ```
 
-## Complete Data Flow 
+## Complete Data Flow
 
-When a player presses a key, data flows through the system as follows:
+The data flow for both player input and item placement follows a consistent event-driven pattern:
 
-### Client-Side Flow
+### Client-Side Flow (Player Input)
 1. **Input Detection**: InputHandler detects keyboard event
 2. **Event Publishing**: InputHandler publishes event to GameEventBus
-3. **Client Rendering**: Game Renderer receives event and updates visuals
-4. **Server Communication**: SocketProvider receives event and sends to server
+3. **Client Rendering**: BasicGameScene receives event and updates visuals immediately
+4. **Server Communication**: SocketProvider receives same event and sends to server
+
+### Client-Side Flow (Item Placement)
+1. **Input Detection**: BasicGameScene detects placement click
+2. **Event Publishing**: BasicGameScene publishes ITEM_PLACEMENT event to GameEventBus
+3. **Multiple Handlers**:
+   - GameStore updates local state and triggers further events
+   - GameRenderer provides immediate visual feedback
+   - SocketProvider sends the placement data to server
 
 ### Server-Side Flow
-5. **Server Receives**: SocketServer receives the WebSocket message
-6. **Input Processing**: handlePlayerInput method updates the player's input state 
-7. **Physics Update**: On next physics tick, GameInstanceManager applies physics
-8. **State Broadcast**: On next broadcast tick, SocketServer sends state to all clients
-9. **Client Update**: Client receives state update and reconciles with local state
+1. **Server Receives**: SocketServer receives the WebSocket message
+2. **Input Processing**: Server updates the appropriate state (player input or item placement)
+3. **Physics Update**: On next physics tick, GameInstanceManager applies physics
+4. **State Broadcast**: On next broadcast tick, SocketServer sends state to all clients
+5. **Client Update**: Client receives state update and reconciles with local state
 
-This creates a clean, decoupled pipeline where each step has a clear responsibility:
+This creates a clean, decoupled pipeline where each step has a clear responsibility, and the same pattern is applied consistently to all user interactions.
 
 ## Benefits of This Approach
 
@@ -294,6 +304,42 @@ This creates a clean, decoupled pipeline where each step has a clear responsibil
 - More predictable server load
 - Easier to adjust broadcast frequency based on server load
 
+## Best Practices for Event-Driven Input Architecture
+
+To maintain the integrity of this architecture, developers should follow these practices:
+
+1. **Central Event Bus**: Always use GameEventBus as the communication channel between components.
+
+2. **Standardized Event Names**: Use consistent event names:
+   - `PLAYER_INPUT` for keyboard/mouse player controls
+   - `ITEM_PLACEMENT` for item placement actions
+
+3. **Standardized Data Format**: Format data consistently before publishing:
+   ```typescript
+   // Player input format
+   {
+     left: boolean,
+     right: boolean,
+     jump: boolean,
+     timestamp: number
+   }
+
+   // Item placement format
+   {
+     type: string,  // The item type
+     x: number,     // X coordinate
+     y: number,     // Y coordinate
+     timestamp?: number
+   }
+   ```
+
+4. **No Direct Socket Calls**: Never call socket methods directly from UI or game components. Always publish to GameEventBus and let SocketProvider handle server communication.
+
+5. **Subscribe Where Needed**: Components should subscribe only to events they need to handle:
+   - Rendering components → Visual feedback
+   - SocketProvider → Server communication
+   - GameStore → State updates
+
 ## Common Pitfalls Avoided
 
 This architecture explicitly avoids several common pitfalls in networked game development:
@@ -306,11 +352,9 @@ This architecture explicitly avoids several common pitfalls in networked game de
 
 4. **Mixed Responsibilities**: Each component has a clear single responsibility - InputHandler detects inputs, GameEventBus routes events, SocketProvider handles network communication.
 
-5. **Overlapping Intervals**: Creating multiple intervals that perform the same task wastes resources and can lead to race conditions.
+5. **Inconsistent Patterns**: Applying the same event-driven pattern to both player inputs and item placements ensures a consistent, maintainable codebase.
 
-6. **Inconsistent Update Frequency**: Variable update frequencies make client-side interpolation and prediction more difficult.
-
-7. **Poor Separation of Concerns**: The event-based architecture ensures each component can focus on its specific responsibility without needing to know about other components.
+6. **Poor Separation of Concerns**: The event-based architecture ensures each component can focus on its specific responsibility without needing to know about other components.
 
 ## Future Improvements
 
@@ -318,14 +362,12 @@ Potential improvements to this architecture could include:
 
 1. **Client-side prediction**: Implement client-side physics prediction to reduce perceived latency.
 
-2. **Dynamic broadcast rates**: Adjust broadcast frequency based on game activity and server load.
+2. **Event Validation**: Add validation to ensure events contain correctly formatted data.
 
-3. **Delta compression**: Only send state changes rather than full state.
+3. **Strongly Typed Events**: Enhance GameEventBus with TypeScript generics for type-safe event publishing and subscription.
 
-4. **Interest management**: Only send relevant portions of state to each client based on what they can see or interact with.
+4. **Input Buffering**: Implement client-side input buffering for smoother gameplay.
 
-5. **Input buffering**: Implement an input buffer on the server to handle network jitter.
+5. **Extend to Other Interactions**: Apply the same event-driven pattern to other user interactions like UI controls and menu selections.
 
-6. **Extend Event-Driven Architecture**: Apply the same event-based pattern to other areas of the codebase for consistency.
-
-7. **Typed Events**: Enhance the GameEventBus with stronger typing for improved type safety across the event system.
+6. **Event Debugging Tools**: Create developer tools to monitor and debug event flow in real-time.
