@@ -186,15 +186,8 @@ class SocketEvents {
       // Also publish the original message
       gameEvents.publish(type, payload);
     }
-    // Handle initial state message
-    else if (type === 'INITIAL_STATE') {
-      // We don't update game status from initial state anymore - tutorial and mode select are client-side
-      // Just store the clientId and other config data
-      console.log('Received initial state from server');
-      
-      // Publish the original message to the game event bus
-      gameEvents.publish(type, payload);
-    }
+    // This INITIAL_STATE case is no longer needed as we use STATE_UPDATE for all state messages
+    // The server now sends STATE_UPDATE for both initial state and updates
     else {
       // For all other events, just publish to the game event bus
       gameEvents.publish(type, payload);

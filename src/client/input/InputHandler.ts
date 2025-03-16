@@ -1,6 +1,7 @@
 // src/client/input/InputHandler.ts
 import { useEffect, useState, useRef } from 'react';
 import { gameEvents } from '../utils/GameEventBus';
+import { MESSAGE_TYPES } from '../../shared/constants';
 
 // Input state definition
 interface InputState {
@@ -125,7 +126,7 @@ export const useInputHandler = () => {
       
       // Publish to game event bus for both Phaser rendering AND server communication
       // SocketProvider will pick this up and send it to server
-      gameEvents.publish('PLAYER_INPUT', inputToSend);
+      gameEvents.publish(MESSAGE_TYPES.PLAYER_INPUT, inputToSend);
       
       // Update last sent state
       lastSentStateRef.current = { ...inputState };

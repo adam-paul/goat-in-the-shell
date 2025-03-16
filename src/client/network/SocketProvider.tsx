@@ -282,15 +282,25 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
         sendPlaceItem(data.type, data.x, data.y);
       }
     };
+
+    // This handler listens for REQUEST_INITIAL_STATE events
+    const handleRequestInitialState = () => {
+      if (socketRef.current?.readyState === WebSocket.OPEN) {
+        console.log('SOCKET: Requesting initial state from server');
+        requestInitialState();
+      }
+    };
     
     // Subscribe to events
-    const unsubInput = gameEvents.subscribe('PLAYER_INPUT', handlePlayerInput);
-    const unsubPlacement = gameEvents.subscribe('ITEM_PLACEMENT', handleItemPlacement);
+    const unsubInput = gameEvents.subscribe(MESSAGE_TYPES.PLAYER_INPUT, handlePlayerInput);
+    const unsubPlacement = gameEvents.subscribe(MESSAGE_TYPES.PLACE_ITEM, handleItemPlacement);
+    const unsubRequestState = gameEvents.subscribe(MESSAGE_TYPES.REQUEST_INITIAL_STATE, handleRequestInitialState);
     
     // Clean up subscriptions when component unmounts
     return () => {
       unsubInput();
       unsubPlacement();
+      unsubRequestState();
     };
   }, []);
   

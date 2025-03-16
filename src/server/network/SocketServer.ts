@@ -85,7 +85,7 @@ class SocketServer {
       
       // Send initial welcome message with game world data
       this.sendMessage(clientId, {
-        type: MESSAGE_TYPES.INITIAL_STATE,
+        type: MESSAGE_TYPES.STATE_UPDATE,
         payload: {
           clientId,
           timestamp: Date.now(),
@@ -400,40 +400,17 @@ class SocketServer {
    * Broadcast the current game state to all clients in an instance
    */
   public broadcastGameState(instance: any): void {
-    // Get the game state - includes items, projectiles, etc.
+    // Get the game state - includes items, players, etc.
     const state = instance.state.getState();
     
     // Add the current game status from the state machine
     state.gameStatus = instance.stateMachine.getCurrentState();
-    
-    // Check if we have projectiles in the state
-    if (!state.projectiles || state.projectiles.length === 0) {
-      console.log(`[DEBUG] Instance ${instance.id} has no projectiles in state - investigate why`);
-    } else {
-      console.log(`[DEBUG] Instance ${instance.id} has ${state.projectiles.length} projectiles in state`);
-    }
     
     // Get player data from PlayerRegistry - the single source of truth
     const playerState = this.playerRegistry.getInstanceStateSnapshot(instance.id);
     
     // Override the players array with data from the registry
     state.players = playerState.players;
-    
-    // Log projectiles count for debugging
-    const projectileCount = state.projectiles ? state.projectiles.length : 0;
-    
-    // Enhanced logging for projectiles
-    if (projectileCount > 0) {
-      console.log(`[DART SYSTEM] Broadcasting state with ${projectileCount} projectiles to ${playerState.players.length} players in instance ${instance.id}`);
-      
-      // Log details of the first few projectiles for debugging
-      state.projectiles.slice(0, 3).forEach((proj: any, i: number) => {
-        console.log(`[DART SYSTEM] Projectile ${i}: id=${proj.id}, type=${proj.type}, pos=(${proj.position.x}, ${proj.position.y}), vel=(${proj.velocity.x}, ${proj.velocity.y})`);
-      });
-    }
-    
-    // Debug - check the state before sending
-    console.log(`[SocketServer] State to broadcast - projectiles: ${state.projectiles?.length || 'undefined'}`);
     
     // Create the network message
     const stateUpdateMessage = {
@@ -443,12 +420,6 @@ class SocketServer {
         timestamp: Date.now()
       }
     };
-    
-    // Debug - verify the structure of the message
-    console.log(`[SocketServer] Message to send - has projectiles: ${stateUpdateMessage.payload.state.projectiles ? 'yes' : 'no'}`);
-    if (stateUpdateMessage.payload.state.projectiles) {
-      console.log(`[SocketServer] Message projectiles count: ${stateUpdateMessage.payload.state.projectiles.length}`);
-    }
     
     // Send state update to all clients
     this.broadcastToInstance(instance.id, stateUpdateMessage);
@@ -723,13 +694,18 @@ class SocketServer {
       if (instance) {
         const state = instance.state.getState();
         
+        // Note: We're ensuring gameWorld is always included in the state directly
+        // This ensures consistent data format for handling on client side
+        if (!state.gameWorld) {
+          state.gameWorld = instance.state.getGameWorld();
+        }
+        
         // Send state update including game world
         this.sendMessage(clientId, {
           type: MESSAGE_TYPES.STATE_UPDATE,
           payload: {
             state: state,
             timestamp: Date.now(),
-            gameWorld: instance.state.getGameWorld(), // Include game world data
             gameStatus: instance.stateMachine.getCurrentState() // Include current game status from state machine
           }
         });
@@ -740,12 +716,16 @@ class SocketServer {
     // If not in an instance, send global state
     const globalState = this.gameState.getState();
     
+    // Ensure gameWorld is always included in the state directly
+    if (!globalState.gameWorld) {
+      globalState.gameWorld = this.gameState.getGameWorld();
+    }
+    
     this.sendMessage(clientId, {
       type: MESSAGE_TYPES.STATE_UPDATE,
       payload: {
         state: globalState,
-        timestamp: Date.now(),
-        gameWorld: this.gameState.getGameWorld() // Include game world data
+        timestamp: Date.now()
       }
     });
   }

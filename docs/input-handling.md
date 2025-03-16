@@ -310,9 +310,9 @@ To maintain the integrity of this architecture, developers should follow these p
 
 1. **Central Event Bus**: Always use GameEventBus as the communication channel between components.
 
-2. **Standardized Event Names**: Use consistent event names:
-   - `PLAYER_INPUT` for keyboard/mouse player controls
-   - `ITEM_PLACEMENT` for item placement actions
+2. **Standardized Event Names**: Use consistent event names from MESSAGE_TYPES:
+   - `MESSAGE_TYPES.PLAYER_INPUT` for keyboard/mouse player controls
+   - `MESSAGE_TYPES.PLACE_ITEM` for item placement actions
 
 3. **Standardized Data Format**: Format data consistently before publishing:
    ```typescript

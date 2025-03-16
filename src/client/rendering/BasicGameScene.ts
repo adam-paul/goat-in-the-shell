@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { gameEvents } from '../utils/GameEventBus';
 import { ItemType, GameStatus } from '../../shared/types';
 import { getParameterValue } from '../game/parameters';
-import { PHYSICS } from '../../shared/constants';
+import { PHYSICS, MESSAGE_TYPES } from '../../shared/constants';
 import GoatSprite from './GoatSprite';
 import CountdownManager from './CountdownManager';
 
@@ -337,7 +337,7 @@ export default class BasicGameScene extends Phaser.Scene {
         
         // Publish item placement event to GameEventBus
         // This will be picked up by both client-side components and SocketProvider
-        gameEvents.publish('ITEM_PLACEMENT', {
+        gameEvents.publish(MESSAGE_TYPES.PLACE_ITEM, {
           type: this.itemToPlace,
           x: worldPoint.x,
           y: worldPoint.y
@@ -392,7 +392,7 @@ export default class BasicGameScene extends Phaser.Scene {
     });
     
     // Listen for player input
-    gameEvents.subscribe('PLAYER_INPUT', (data: any) => {
+    gameEvents.subscribe(MESSAGE_TYPES.PLAYER_INPUT, (data: any) => {
       this.handlePlayerInput(data);
     });
     

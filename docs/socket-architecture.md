@@ -418,7 +418,14 @@ socketServer.broadcastToInstance(instanceId, {
    - All components → `gameEvents.publish` for sending events locally
    - Server components → `gameEvents.publish` for server events
    - Server components → `socketServer` methods for network communication
-   - **Never** directly call socket.send* methods from UI components
+   - **Never** directly call socket.send* methods from UI/game components
+   
+   **Standard event types to use**:
+   - `MESSAGE_TYPES.PLAYER_INPUT` - For player movement/control inputs
+   - `MESSAGE_TYPES.PLACE_ITEM` - For placing items in the world
+   - `MESSAGE_TYPES.REQUEST_INITIAL_STATE` - For requesting initial game state
+   
+   (All message types are defined in shared/constants/index.ts)
 
 6. **Standardize message format**: Always use the `payload` property for message data, never use alternatives like `data`.
 

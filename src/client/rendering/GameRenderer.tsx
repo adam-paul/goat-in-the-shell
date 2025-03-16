@@ -91,6 +91,13 @@ const GameRenderer: React.FC<GameRendererProps> = ({ containerClassName = 'game-
   useEffect(() => {
     initGame(currentGameMode, playerRole);
     
+    // Immediately request initial state to ensure we have data for rendering
+    // before the countdown phase
+    console.log('GAME RENDERER: Initial mount, requesting initial state');
+    setTimeout(() => {
+      gameEvents.publish(MESSAGE_TYPES.REQUEST_INITIAL_STATE, {});
+    }, 100);
+    
     // Clean up on unmount
     return () => {
       if (gameInstanceRef.current) {
@@ -133,6 +140,13 @@ const GameRenderer: React.FC<GameRendererProps> = ({ containerClassName = 'game-
   useEffect(() => {
     const resetHandler = (data: { mode: GameMode }) => {
       initGame(data.mode, playerRole);
+      
+      // Request initial state again after reset
+      // This ensures we have rendering data after game reset
+      setTimeout(() => {
+        console.log('GAME RENDERER: Game reset, requesting state refresh');
+        gameEvents.publish(MESSAGE_TYPES.REQUEST_INITIAL_STATE, {});
+      }, 100);
     };
     
     const unsubReset = gameEvents.subscribe<{ mode: GameMode }>(
@@ -149,33 +163,40 @@ const GameRenderer: React.FC<GameRendererProps> = ({ containerClassName = 'game-
   
   // Set up server state handling
   useEffect(() => {
-    // Request initial state from server
-    if (socket.connected) {
-      socket.sendMessage(MESSAGE_TYPES.REQUEST_INITIAL_STATE, {});
-    }
-    
     // Function to handle server state updates
     const handleServerState = (state: any) => {
       // Process and update game state
+      console.log('GAME RENDERER: Received server state:', state);
       updateGameState(state);
       gameEvents.publish('SERVER_STATE_UPDATE', state);
     };
     
     // Set up socket event listener for state updates
     const handleStateUpdate = (data: any) => {
+      console.log('GAME RENDERER: Received STATE_UPDATE with data:', data);
       if (data && data.state) {
         handleServerState(data.state);
+      } else if (data && data.payload && data.payload.state) {
+        // Handle alternative data structure that might come through event bus
+        handleServerState(data.payload.state);
+      } else if (data) {
+        // For initial state or other formats, just use the data directly
+        // This ensures we handle different state formats correctly
+        handleServerState(data);
       }
     };
     
     // Subscribe to STATE_UPDATE events from socket
     const unsubStateUpdate = gameEvents.subscribe(MESSAGE_TYPES.STATE_UPDATE, handleStateUpdate);
     
+    // We've moved the REQUEST_INITIAL_STATE to the initial mount effect
+    // so we don't need to duplicate it here
+    
     // Clean up
     return () => {
       unsubStateUpdate();
     };
-  }, [socket.connected, updateGameState]);
+  }, [updateGameState]);
 
   // Return the container for Phaser to render into
   return <div id={containerClassName} />;
