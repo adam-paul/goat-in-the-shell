@@ -14,9 +14,6 @@ export default class BasicGameScene extends Phaser.Scene {
   private endPoint!: Phaser.GameObjects.Rectangle;
   private placedItems: Array<{id?: string, type: string, x: number, y: number, gameObject: Phaser.GameObjects.GameObject}> = [];
   
-  // Darts physics group
-  private darts!: Phaser.Physics.Arcade.Group;
-  
   // Custom physics groups for placed items
   private customStaticGroups?: {
     spikes: Phaser.Physics.Arcade.StaticGroup;
@@ -62,42 +59,12 @@ export default class BasicGameScene extends Phaser.Scene {
   preload(): void {
     // Create platform texture
     this.createPlatformTexture();
-    // Create dart texture to match original implementation
-    this.createDartTexture();
   }
   
-  /**
-   * Create dart texture matching the original implementation exactly
-   */
-  private createDartTexture(): void {
-    const graphics = this.make.graphics({ x: 0, y: 0 });
-    
-    // Draw the dart facing left by default (exactly as in original)
-    graphics.fillStyle(0x303030); // Dark gray for the dart body
-    graphics.fillRect(6, 2, 14, 2); // Dart body
-    
-    // Dart point (triangle)
-    graphics.fillStyle(0x505050); // Slightly lighter gray for the point
-    graphics.fillTriangle(6, 0, 6, 6, 0, 3);
-    
-    // Dart feathers
-    graphics.fillStyle(0xC0C0C0); // Light gray for the feathers
-    graphics.fillRect(17, 0, 3, 6);
-    
-    // Generate the texture
-    graphics.generateTexture('dart', 20, 6);
-    graphics.destroy();
-  }
+  // Dart texture and handling code removed - this type will be implemented in a future update
   
   create(): void {
     console.log('BasicGameScene created');
-    
-    // Check if dart texture was generated successfully
-    if (this.textures.exists('dart')) {
-      console.log('[BasicGameScene] Successfully loaded dart texture');
-    } else {
-      console.error('[BasicGameScene] Failed to load dart texture - this will cause darts to not render correctly');
-    }
     
     // Set physics world bounds
     this.physics.world.setBounds(0, 0, this.worldWidth, 800, true, true, true, false);
@@ -110,9 +77,6 @@ export default class BasicGameScene extends Phaser.Scene {
     
     // Initialize walls group
     this.walls = this.physics.add.staticGroup();
-    
-    // Initialize darts group
-    this.darts = this.physics.add.group();
     
     // Create placeholder for start/end points (will be updated from server)
     this.startPoint = this.add.rectangle(80, 650, 50, 50, 0x00ff00);
@@ -186,93 +150,7 @@ export default class BasicGameScene extends Phaser.Scene {
       this
     );
     
-    // Set up dart collision with player
-    this.physics.add.overlap(
-      sprite,
-      this.darts,
-      this.handleDartCollision,
-      this.checkDartCollision, // Custom collision check function
-      this
-    );
-    
     console.log('Physics setup complete - player can now jump and collide with platforms');
-  }
-  
-  /**
-   * Custom collision check for dart hits
-   * Makes collision detection more precise by using a smaller hit area
-   */
-  private checkDartCollision(
-    player: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Physics.Arcade.Body | Phaser.Physics.Arcade.StaticBody | Phaser.Tilemaps.Tile,
-    dart: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Physics.Arcade.Body | Phaser.Physics.Arcade.StaticBody | Phaser.Tilemaps.Tile
-  ): boolean {
-    try {
-      // First, check if both objects have gameObjects (or are gameObjects)
-      const playerObj = 'gameObject' in player ? (player as Phaser.Physics.Arcade.Body).gameObject : player;
-      const dartObj = 'gameObject' in dart ? (dart as Phaser.Physics.Arcade.Body).gameObject : dart;
-      
-      // We need the getBounds method for collision detection
-      if (!('getBounds' in playerObj) || !('getBounds' in dartObj)) {
-        return false;
-      }
-      
-      // Now we can safely get bounds
-      const playerBounds = (playerObj as any).getBounds();
-      const dartBounds = (dartObj as any).getBounds();
-      
-      // Create a smaller hitbox for dart collision (~ 60% of the normal hitbox)
-      // Same logic as in the original game
-      const shrinkX = playerBounds.width * 0.2;
-      const shrinkY = playerBounds.height * 0.2;
-      
-      const smallerPlayerBounds = new Phaser.Geom.Rectangle(
-        playerBounds.x + shrinkX,
-        playerBounds.y + shrinkY,
-        playerBounds.width - (shrinkX * 2),
-        playerBounds.height - (shrinkY * 2)
-      );
-      
-      // Return true if the dart intersects with the smaller player bounds
-      return Phaser.Geom.Rectangle.Overlaps(smallerPlayerBounds, dartBounds);
-    } catch (err) {
-      console.error('Error in dart collision check:', err);
-      return false;
-    }
-  }
-  
-  /**
-   * Handle collision with dart - triggers death
-   */
-  private handleDartCollision(
-    _player: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Physics.Arcade.Body | Phaser.Physics.Arcade.StaticBody | Phaser.Tilemaps.Tile,
-    dartObj: Phaser.Types.Physics.Arcade.GameObjectWithBody | Phaser.Physics.Arcade.Body | Phaser.Physics.Arcade.StaticBody | Phaser.Tilemaps.Tile
-  ): void {
-    if (this.gameWon || this.gameOver || !this.gameStarted) return;
-    
-    console.log('Player hit by a dart!');
-    this.gameOver = true;
-    
-    // Destroy the dart - need to check type first
-    if ('destroy' in dartObj) {
-      (dartObj as Phaser.GameObjects.GameObject).destroy();
-    }
-    
-    // Apply visual effect to goat
-    if (this.goatSprite) {
-      this.goatSprite.setTint(0x0000ff); // Blue tint for tranquilizer dart
-      
-      // Shake the camera slightly
-      this.cameras.main.shake(300, 0.01);
-    }
-    
-    // Notify game status change
-    gameEvents.publish('GAME_STATUS_CHANGE', {
-      status: 'gameover',
-      deathType: 'dart'
-    });
-    
-    // Update game status
-    this.gameStatus = 'gameover';
   }
   
   /**
@@ -1427,64 +1305,16 @@ export default class BasicGameScene extends Phaser.Scene {
     // This matches the original implementation where darts moved continuously
     const timeStep = delta / 1000; // Convert to seconds for frame-rate independent movement
     
-    // Count darts for debugging
-    const dartCount = this.placedItems.filter(item => item.type === 'dart').length;
-    if (dartCount > 0 && time % 1000 < 20) {  // Only log occasionally to avoid spam
-      console.log(`[DART DEBUG] Currently tracking ${dartCount} darts in update loop`);
-    }
-    
+    // Dart tracking code removed
+    // Any items that need to be cleaned up would still be handled here
     this.placedItems.forEach(item => {
-      if (item.type === 'dart') {
-        const gameObject = item.gameObject;
-        // Need to access position based on type
-        const isSprite = gameObject instanceof Phaser.GameObjects.Sprite;
-        const isRect = gameObject instanceof Phaser.GameObjects.Rectangle;
-        
-        // Get current position regardless of specific type
-        const currentX = isSprite ? (gameObject as Phaser.GameObjects.Sprite).x : 
-                        isRect ? (gameObject as Phaser.GameObjects.Rectangle).x : 0;
-        const currentY = isSprite ? (gameObject as Phaser.GameObjects.Sprite).y : 
-                        isRect ? (gameObject as Phaser.GameObjects.Rectangle).y : 0;
-        
-        // If dart has velocity information, update position smoothly
-        if ((gameObject as any).velocityX !== undefined) {
-          // Move dart based on its velocity (matching server physics exactly)
-          const newX = currentX + (gameObject as any).velocityX;
-          const newY = currentY + (gameObject as any).velocityY;
-          
-          // Log dart movement occasionally for debugging
-          if (Math.random() < 0.01) { // Log ~1% of updates to avoid console spam
-            console.log(`[DART DEBUG] Moving dart from (${currentX}, ${currentY}) to (${newX}, ${newY}) with velocity (${(gameObject as any).velocityX}, ${(gameObject as any).velocityY})`);
-          }
-          
-          // Set position based on object type
-          if (isSprite) {
-            (gameObject as Phaser.GameObjects.Sprite).setPosition(newX, newY);
-          } else if (isRect) {
-            (gameObject as Phaser.GameObjects.Rectangle).setPosition(newX, newY);
-          }
-          
-          // Also update stored coordinates
-          item.x = newX;
-          item.y = newY;
-          
-          // Remove darts that go off screen (matching original implementation)
-          if (newX < -100 || newX > this.worldWidth + 100 || newY < -100 || newY > 900) {
-            console.log(`[DART DEBUG] Removing dart at (${newX}, ${newY}) - out of bounds`);
-            gameObject.destroy();
-            // Mark for cleanup
-            (item as any).toRemove = true;
-          }
-        } else {
-          // If the dart doesn't have velocity info, log it for debugging
-          if (Math.random() < 0.05) { // Log ~5% to avoid console spam
-            console.log(`[DART DEBUG] Dart at (${currentX}, ${currentY}) has no velocity information`);
-          }
-        }
+      // Check for any items that need to be removed
+      if ((item as any).toRemove) {
+        item.gameObject.destroy();
       }
     });
     
-    // Clean up marked darts
+    // No dart cleanup needed anymore as we've removed darts
     this.placedItems = this.placedItems.filter(item => !(item as any).toRemove);
   }
   
@@ -1527,5 +1357,5 @@ export default class BasicGameScene extends Phaser.Scene {
     }
   }
   
-  // Dart effects removed
+  // Dart functionality removed - will be reimplemented in the future
 }
