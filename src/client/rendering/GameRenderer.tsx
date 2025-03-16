@@ -100,13 +100,12 @@ const GameRenderer: React.FC<GameRendererProps> = ({ containerClassName = 'game-
     };
   }, []);
   
-  // Set up event bus for placement confirmations
+  // Set up event bus for item placement events for immediate visual feedback
   useEffect(() => {
     const placementHandler = (data: { type: string, x: number, y: number }) => {
-      console.log(`GameRenderer: Got placement confirmation for ${data.type} at (${data.x}, ${data.y})`);
-      handlePlaceItem(data.x, data.y);
+      console.log(`GameRenderer: Got item placement for ${data.type} at (${data.x}, ${data.y})`);
       
-      // Also publish this to the server state update bus to ensure the item appears immediately
+      // Create item data for immediate visual feedback
       const itemData = {
         items: [
           { 
@@ -123,12 +122,12 @@ const GameRenderer: React.FC<GameRendererProps> = ({ containerClassName = 'game-
     };
     
     const unsubPlacement = gameEvents.subscribe<{ type: string, x: number, y: number }>(
-      'PLACEMENT_CONFIRMED', 
+      'ITEM_PLACEMENT', 
       placementHandler
     );
     
     return () => unsubPlacement();
-  }, [handlePlaceItem]);
+  }, []);
   
   // Set up event bus for game resets
   useEffect(() => {

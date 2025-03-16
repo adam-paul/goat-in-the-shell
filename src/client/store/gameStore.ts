@@ -293,5 +293,12 @@ export const useGameStore = create<GameState>((set, get): GameState => {
   // This helps us avoid circular dependencies
   (window as any).__game_store_instance__ = store;
   
+  // Subscribe to item placement events
+  gameEvents.subscribe('ITEM_PLACEMENT', (data: any) => {
+    // Call the existing handlePlaceItem method which handles both UI state
+    // and publishes the PLACE_ITEM event for server communication via SocketEvents
+    store.handlePlaceItem(data.x, data.y);
+  });
+  
   return store;
 });

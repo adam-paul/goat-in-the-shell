@@ -266,7 +266,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
   // This allows us to avoid circular dependencies
   (window as any).__socket_instance__ = socketInstance;
   
-  // Set up event listener for player input
+  // Set up event listeners for game events
   useEffect(() => {
     // This handler listens for PLAYER_INPUT events and sends them to server
     const handlePlayerInput = (data: any) => {
@@ -275,12 +275,22 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
       }
     };
     
-    // Subscribe to player input events
-    const unsubscribe = gameEvents.subscribe('PLAYER_INPUT', handlePlayerInput);
+    // This handler listens for ITEM_PLACEMENT events and sends them to server
+    const handleItemPlacement = (data: any) => {
+      if (socketRef.current?.readyState === WebSocket.OPEN) {
+        console.log('SOCKET: Sending item placement to server:', data);
+        sendPlaceItem(data.type, data.x, data.y);
+      }
+    };
     
-    // Clean up subscription when component unmounts
+    // Subscribe to events
+    const unsubInput = gameEvents.subscribe('PLAYER_INPUT', handlePlayerInput);
+    const unsubPlacement = gameEvents.subscribe('ITEM_PLACEMENT', handleItemPlacement);
+    
+    // Clean up subscriptions when component unmounts
     return () => {
-      unsubscribe();
+      unsubInput();
+      unsubPlacement();
     };
   }, []);
   
