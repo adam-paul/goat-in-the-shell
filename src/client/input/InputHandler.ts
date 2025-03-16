@@ -1,6 +1,5 @@
 // src/client/input/InputHandler.ts
 import { useEffect, useState, useRef } from 'react';
-import { useSocket } from '../network';
 import { gameEvents } from '../utils/GameEventBus';
 
 // Input state definition
@@ -26,8 +25,6 @@ const initialInputState: InputState = {
  * @returns Object with active input state
  */
 export const useInputHandler = () => {
-  // Get the socket context for sending input to server
-  const socket = useSocket();
   
   // Track command input focus so we don't control the game when typing
   const [isCommandInputFocused, setIsCommandInputFocused] = useState(false);
@@ -108,30 +105,27 @@ export const useInputHandler = () => {
       if (!hasInputChanged()) return;
       
       const inputState = inputStateRef.current;
-      console.log('Input state changed, sending to server:', JSON.stringify(inputState));
+      console.log('Input state changed, publishing to event bus:', JSON.stringify(inputState));
       
-      // Publish to game event bus for Phaser
-      gameEvents.publish('PLAYER_INPUT', { ...inputState });
+      // Explicitly handle jump as either spacebar or up arrow
+      const isJumping = inputState.jump || inputState.up;
       
-      // Send to server if connected
-      if (socket.connected) {
-        // Explicitly handle jump as either spacebar or up arrow
-        const isJumping = inputState.jump || inputState.up;
-        
-        const inputToSend = {
-          left: inputState.left,
-          right: inputState.right,
-          jump: isJumping, // Explicitly set jump status
-          timestamp: Date.now()
-        };
-        
-        // Log jump input specifically for debugging
-        if (isJumping) {
-          console.log('JUMP INPUT detected and sent to server');
-        }
-        
-        socket.sendPlayerInput(inputToSend);
+      // Create the standardized input object
+      const inputToSend = {
+        left: inputState.left,
+        right: inputState.right,
+        jump: isJumping, // Explicitly set jump status
+        timestamp: Date.now()
+      };
+      
+      // Log jump input specifically for debugging
+      if (isJumping) {
+        console.log('JUMP INPUT detected and published');
       }
+      
+      // Publish to game event bus for both Phaser rendering AND server communication
+      // SocketProvider will pick this up and send it to server
+      gameEvents.publish('PLAYER_INPUT', inputToSend);
       
       // Update last sent state
       lastSentStateRef.current = { ...inputState };
@@ -259,7 +253,7 @@ export const useInputHandler = () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [isCommandInputFocused, socket.connected]);
+  }, [isCommandInputFocused]);
   
   return null;
 };

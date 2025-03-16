@@ -2,6 +2,7 @@ import React, { createContext, useContext, useRef, useState, useEffect } from 'r
 import { MESSAGE_TYPES, ITEMS } from '../../shared/constants';
 import type { NetworkMessage } from '../../shared/types';
 import socketEvents from './SocketEvents';
+import { gameEvents } from '../utils/GameEventBus';
 
 // Socket context with all the methods needed for network communication
 export interface SocketContextType {
@@ -264,6 +265,24 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
   // Expose the socket instance to the window for access from GameEventBus
   // This allows us to avoid circular dependencies
   (window as any).__socket_instance__ = socketInstance;
+  
+  // Set up event listener for player input
+  useEffect(() => {
+    // This handler listens for PLAYER_INPUT events and sends them to server
+    const handlePlayerInput = (data: any) => {
+      if (socketRef.current?.readyState === WebSocket.OPEN) {
+        sendPlayerInput(data);
+      }
+    };
+    
+    // Subscribe to player input events
+    const unsubscribe = gameEvents.subscribe('PLAYER_INPUT', handlePlayerInput);
+    
+    // Clean up subscription when component unmounts
+    return () => {
+      unsubscribe();
+    };
+  }, []);
   
   return (
     <SocketContext.Provider value={socketInstance}>
