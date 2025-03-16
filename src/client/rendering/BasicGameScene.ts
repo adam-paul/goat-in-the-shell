@@ -508,11 +508,8 @@ export default class BasicGameScene extends Phaser.Scene {
   private updateGameState(gameState: any): void {
     console.log('Received game state from server:', gameState);
     
-    // Find the correct state data structure
-    // This handles different ways the state might be nested
-    let state = gameState;
-    if (gameState.state) state = gameState.state;
-    if (gameState.payload?.state) state = gameState.payload.state;
+    // With our standardized format, gameState is already the correct state object
+    const state = gameState;
     
     // Store previous game status to detect changes
     const previousStatus = this.gameStatus;
@@ -816,9 +813,7 @@ export default class BasicGameScene extends Phaser.Scene {
   /**
    * Process game state from the server
    */
-  private processGameState(state: any): void {
-    // Projectile system removed
-    
+  private processGameState(state: any): void {    
     // Update game status if provided
     if (state.gameStatus) {
       console.log(`Game status: ${state.gameStatus}`);
@@ -834,33 +829,8 @@ export default class BasicGameScene extends Phaser.Scene {
       }
     }
     
-    // Also try fallback modes for legacy state formats
-    try {
-      // Handle different state structures that might come from server
-      const possibleItemSources = [
-        state.gameState?.items,
-        state.obstacles,
-        state.payload?.items
-      ];
-      
-      // Process each possible source
-      for (const items of possibleItemSources) {
-        if (items && Array.isArray(items)) {
-          items.forEach((item: any) => {
-            // Handle different item formats
-            const itemType = item.type;
-            const x = item.position?.x ?? item.x;
-            const y = item.position?.y ?? item.y;
-            
-            if (itemType && x !== undefined && y !== undefined) {
-              this.placeItem(itemType, x, y);
-            }
-          });
-        }
-      }
-    } catch (error) {
-      console.error('Error processing nested game state items:', error);
-    }
+    // With our standardized format, we only need to look in state.items
+    // Legacy format handling has been removed
   }
   
   private enterPlacementMode(itemType: string): void {

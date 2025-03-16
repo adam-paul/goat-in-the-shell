@@ -83,20 +83,23 @@ class SocketServer {
         
       socket.on('error', (err) => this.handleError(clientId, err));
       
-      // Send initial welcome message with game world data
+      // Send initial welcome message with standardized format
       this.sendMessage(clientId, {
         type: MESSAGE_TYPES.STATE_UPDATE,
         payload: {
-          clientId,
-          timestamp: Date.now(),
-          gameConfig: {
-            gravity: 1.0,
-            moveSpeed: 5.0,
-            jumpForce: 10.0,
+          state: {
+            clientId,
+            gameWorld: this.gameState.getGameWorld(),
+            gameConfig: {
+              gravity: 1.0,
+              moveSpeed: 5.0,
+              jumpForce: 10.0,
+            },
+            gameStatus: 'tutorial', // Default initial state for client
+            players: [],
+            items: []
           },
-          gameWorld: this.gameState.getGameWorld(), // Include game world data
-          // We don't set gameStatus here because the tutorial and mode select are client-side only
-          // The server will set proper state machine status when player joins a lobby
+          timestamp: Date.now()
         }
       });
     });
@@ -412,7 +415,15 @@ class SocketServer {
     // Override the players array with data from the registry
     state.players = playerState.players;
     
-    // Create the network message
+    // Ensure gameWorld is included
+    if (!state.gameWorld) {
+      state.gameWorld = instance.state.getGameWorld();
+    }
+    
+    // Ensure items is at least an empty array
+    if (!state.items) state.items = [];
+    
+    // Create the standardized network message
     const stateUpdateMessage = {
       type: MESSAGE_TYPES.STATE_UPDATE,
       payload: {
@@ -692,21 +703,26 @@ class SocketServer {
     if (client.instanceId) {
       const instance = this.instanceManager.getInstance(client.instanceId);
       if (instance) {
+        // Get complete state from instance
         const state = instance.state.getState();
         
-        // Note: We're ensuring gameWorld is always included in the state directly
-        // This ensures consistent data format for handling on client side
+        // Ensure gameWorld is included
         if (!state.gameWorld) {
           state.gameWorld = instance.state.getGameWorld();
         }
         
-        // Send state update including game world
+        // Ensure gameStatus is included in the state object
+        state.gameStatus = instance.stateMachine.getCurrentState();
+        
+        // Ensure clientId is included
+        state.clientId = clientId;
+        
+        // Send standardized state update
         this.sendMessage(clientId, {
           type: MESSAGE_TYPES.STATE_UPDATE,
           payload: {
             state: state,
-            timestamp: Date.now(),
-            gameStatus: instance.stateMachine.getCurrentState() // Include current game status from state machine
+            timestamp: Date.now()
           }
         });
         return;
@@ -716,11 +732,16 @@ class SocketServer {
     // If not in an instance, send global state
     const globalState = this.gameState.getState();
     
-    // Ensure gameWorld is always included in the state directly
-    if (!globalState.gameWorld) {
-      globalState.gameWorld = this.gameState.getGameWorld();
-    }
+    // Complete the state with all required fields
+    globalState.gameWorld = this.gameState.getGameWorld();
+    globalState.clientId = clientId;
+    globalState.gameStatus = 'tutorial'; // Default state for players not in an instance
     
+    // Ensure players and items are at least empty arrays if not present
+    if (!globalState.players) globalState.players = [];
+    if (!globalState.items) globalState.items = [];
+    
+    // Send standardized state update
     this.sendMessage(clientId, {
       type: MESSAGE_TYPES.STATE_UPDATE,
       payload: {

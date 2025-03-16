@@ -70,8 +70,6 @@ interface PlayerJumpEvent {
 export class PhysicsEngineInstance {
   private engine: Matter.Engine;
   private bodies: Map<string, Matter.Body> = new Map();
-  // Dart and projectile system has been removed
-  private lastUpdateTime: number = Date.now();
   private accumulator: number = 0;
   private worldBounds: Matter.Body[] = [];
   private parameters: Record<string, number>;

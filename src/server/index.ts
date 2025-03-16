@@ -136,8 +136,6 @@ gameEvents.subscribe<StartCountdownEvent>('START_COUNTDOWN', (data) => {
 // Initialize socket server
 const socketServer = createSocketServer(wss, gameState, gameLogic, instanceManager, playerRegistry);
 
-// Projectile system removed
-
 // Start the server
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {

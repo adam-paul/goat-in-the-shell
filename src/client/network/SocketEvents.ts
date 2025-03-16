@@ -21,8 +21,9 @@ class SocketEvents {
         console.log('SOCKET EVENTS: Received message:', message.type);
         
         // Process game state updates
-        if (message.type === 'STATE_UPDATE') {
+        if (message.type === MESSAGE_TYPES.STATE_UPDATE) {
           // State update received, will be processed by event handlers
+          console.log('SOCKET EVENTS: Received STATE_UPDATE message');
         }
         
         // Process and forward the message

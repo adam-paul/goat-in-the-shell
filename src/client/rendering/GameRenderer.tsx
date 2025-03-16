@@ -89,14 +89,12 @@ const GameRenderer: React.FC<GameRendererProps> = ({ containerClassName = 'game-
 
   // Initialize the game on component mount
   useEffect(() => {
+    // Initialize the Phaser game instance
     initGame(currentGameMode, playerRole);
     
-    // Immediately request initial state to ensure we have data for rendering
-    // before the countdown phase
-    console.log('GAME RENDERER: Initial mount, requesting initial state');
-    setTimeout(() => {
-      gameEvents.publish(MESSAGE_TYPES.REQUEST_INITIAL_STATE, {});
-    }, 100);
+    // Request initial state immediately
+    console.log('GAME RENDERER: Component mounted, requesting initial state');
+    gameEvents.publish(MESSAGE_TYPES.REQUEST_INITIAL_STATE, {});
     
     // Clean up on unmount
     return () => {
@@ -139,14 +137,12 @@ const GameRenderer: React.FC<GameRendererProps> = ({ containerClassName = 'game-
   // Set up event bus for game resets
   useEffect(() => {
     const resetHandler = (data: { mode: GameMode }) => {
+      // Reinitialize the game
       initGame(data.mode, playerRole);
       
-      // Request initial state again after reset
-      // This ensures we have rendering data after game reset
-      setTimeout(() => {
-        console.log('GAME RENDERER: Game reset, requesting state refresh');
-        gameEvents.publish(MESSAGE_TYPES.REQUEST_INITIAL_STATE, {});
-      }, 100);
+      // Request initial state again immediately after reset
+      console.log('GAME RENDERER: Game reset, requesting state refresh');
+      gameEvents.publish(MESSAGE_TYPES.REQUEST_INITIAL_STATE, {});
     };
     
     const unsubReset = gameEvents.subscribe<{ mode: GameMode }>(
@@ -163,34 +159,27 @@ const GameRenderer: React.FC<GameRendererProps> = ({ containerClassName = 'game-
   
   // Set up server state handling
   useEffect(() => {
-    // Function to handle server state updates
-    const handleServerState = (state: any) => {
-      // Process and update game state
-      console.log('GAME RENDERER: Received server state:', state);
-      updateGameState(state);
-      gameEvents.publish('SERVER_STATE_UPDATE', state);
-    };
-    
-    // Set up socket event listener for state updates
+    // Function to handle server state updates - simplified for standardized format
     const handleStateUpdate = (data: any) => {
-      console.log('GAME RENDERER: Received STATE_UPDATE with data:', data);
-      if (data && data.state) {
-        handleServerState(data.state);
-      } else if (data && data.payload && data.payload.state) {
-        // Handle alternative data structure that might come through event bus
-        handleServerState(data.payload.state);
-      } else if (data) {
-        // For initial state or other formats, just use the data directly
-        // This ensures we handle different state formats correctly
-        handleServerState(data);
+      if (!data) return;
+      
+      // With our standardized message format, we always expect data.payload.state
+      if (data.payload && data.payload.state) {
+        const state = data.payload.state;
+        console.log('GAME RENDERER: Received standardized state update:', state);
+        
+        // Update game state store
+        updateGameState(state);
+        
+        // Forward to rendering system
+        gameEvents.publish('SERVER_STATE_UPDATE', state);
+      } else {
+        console.warn('GAME RENDERER: Received invalid state update format:', data);
       }
     };
     
-    // Subscribe to STATE_UPDATE events from socket
+    // Subscribe to STATE_UPDATE events
     const unsubStateUpdate = gameEvents.subscribe(MESSAGE_TYPES.STATE_UPDATE, handleStateUpdate);
-    
-    // We've moved the REQUEST_INITIAL_STATE to the initial mount effect
-    // so we don't need to duplicate it here
     
     // Clean up
     return () => {
