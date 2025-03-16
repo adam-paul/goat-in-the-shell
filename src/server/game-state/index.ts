@@ -1,29 +1,14 @@
 import { v4 as uuidv4 } from 'uuid';
-import { GameStatus, DeathType, GameWorld } from '../../shared/types';
+import { GameStatus, DeathType, GameWorld, Vector2D } from '../../shared/types';
 import { gameEvents } from './GameEvents';
+import { Player, PlayerRegistry } from '../registry';
+import { PLAYER } from '../../shared/constants';
 
 // Define types for our game entities
-interface Vector2 {
-  x: number;
-  y: number;
-}
-
-interface Player {
-  id: string;
-  name: string;
-  position: Vector2;
-  velocity: Vector2;
-  isAlive: boolean;
-  score: number;
-  lastInput: { [key: string]: boolean };
-  onGround?: boolean;
-  facingLeft?: boolean;
-}
-
 interface GameItem {
   id: string;
   type: string;
-  position: Vector2;
+  position: Vector2D;
   rotation: number;
   placedBy: string;
   // Additional properties depending on item type
@@ -33,8 +18,8 @@ interface GameItem {
 interface Projectile {
   id: string;
   type: string; // 'dart', etc.
-  position: Vector2;
-  velocity: Vector2;
+  position: Vector2D;
+  velocity: Vector2D;
   createdAt: number;
 }
 
@@ -67,31 +52,29 @@ interface GameParameters {
 }
 
 class GameStateManager {
-  private players: Map<string, Player>;
+  private playerRegistry: PlayerRegistry;
   private items: Map<string, GameItem>;
   private projectiles: Map<string, Projectile>;
   private lobbies: Map<string, Lobby>;
   private stateVersion: number;
   private lastUpdateTime: number;
-  // IMPORTANT: gameStatus now solely provided by GameStateMachine
   private parameters: Partial<GameParameters>;
   private gameWorld: GameWorld;
   
-  constructor() {
-    this.players = new Map();
+  constructor(playerRegistry: PlayerRegistry) {
+    this.playerRegistry = playerRegistry;
     this.items = new Map();
     this.projectiles = new Map();
     this.lobbies = new Map();
     this.stateVersion = 0;
     this.lastUpdateTime = Date.now();
-    // No explicit gameStatus initialization - using GameStateMachine instead
     this.parameters = {};
     
     // Initialize game world with default platforms
     this.gameWorld = {
       platforms: [],
       dartWalls: [],
-      startPoint: { x: 80, y: 650 },
+      startPoint: { ...PLAYER.DEFAULT_POSITION }, // Use shared constant
       endPoint: { x: 2320, y: 120 },
       worldBounds: { width: 2400, height: 800 }
     };
@@ -122,7 +105,7 @@ class GameStateManager {
     gameEvents.subscribe('PLAYER_DEATH', (data: { 
       playerId: string, 
       cause: DeathType, 
-      position: Vector2, 
+      position: Vector2D, 
       timestamp: number
     }) => {
       this.handlePlayerDeath(data.playerId, data.cause);
@@ -131,7 +114,7 @@ class GameStateManager {
     // Player win events
     gameEvents.subscribe('PLAYER_WIN', (data: { 
       playerId: string, 
-      position: Vector2, 
+      position: Vector2D, 
       timestamp: number 
     }) => {
       this.handlePlayerWin(data.playerId);
@@ -285,15 +268,30 @@ class GameStateManager {
     return {
       version: this.stateVersion,
       timestamp: this.lastUpdateTime,
-      players: Array.from(this.players.values()),
+      players: this.getAllPlayers(),
       items: Array.from(this.items.values()),
       projectiles: Array.from(this.projectiles.values()),
       lobbies: Array.from(this.lobbies.values()),
-      // gameStatus is now provided by the instance's GameStateMachine
-      // We don't include it here - it will be added by GameInstanceManager
       parameters: this.parameters,
-      gameWorld: this.gameWorld // Include game world data
+      gameWorld: this.gameWorld
     };
+  }
+  
+  /**
+   * Get all players from the registry
+   */
+  private getAllPlayers(): Player[] {
+    // For each lobby managed by this GameStateManager, get all players
+    const allPlayerIds = Array.from(this.lobbies.values())
+      .flatMap(lobby => lobby.players);
+    
+    // Get unique player IDs
+    const uniquePlayerIds = [...new Set(allPlayerIds)];
+    
+    // Return all players from registry
+    return uniquePlayerIds
+      .map(id => this.playerRegistry.getPlayer(id))
+      .filter(player => player !== undefined) as Player[];
   }
   
   /**
@@ -303,49 +301,59 @@ class GameStateManager {
     const lobby = this.lobbies.get(lobbyId);
     if (!lobby) return null;
     
-    const lobbyPlayers = Array.from(this.players.values())
-      .filter(player => lobby.players.includes(player.id));
+    // Get the instance ID for this lobby from the instance manager
+    // The instance manager isn't directly available here, so we'll have to rely on the lobby.players
+    // to find players who are in this lobby, then get their instance through PlayerRegistry
+    
+    let instanceId = '';
+    // Find the first player in this lobby and get their instance
+    if (lobby.players.length > 0) {
+      instanceId = this.playerRegistry.getPlayerInstance(lobby.players[0]) || '';
+    }
+    
+    // Get players in this instance from the registry (single source of truth)
+    const lobbyPlayers = instanceId ? 
+      this.playerRegistry.getAllPlayersForInstance(instanceId) : 
+      // Fallback to the old method if instanceId isn't found
+      lobby.players.map(id => this.playerRegistry.getPlayer(id)).filter(Boolean) as Player[];
     
     const lobbyItems = Array.from(this.items.values())
       .filter(item => {
         // Filter items based on which player placed them
-        // This is a simplified approach - in reality, items would be associated with a lobby
-        return lobby.players.includes(item.placedBy);
+        // We'll have to check if the player is in this instance
+        return lobbyPlayers.some(player => player.id === item.placedBy);
       });
     
     return {
       version: this.stateVersion,
       timestamp: this.lastUpdateTime,
       lobbyId,
+      instanceId, // Include the instance ID for better tracing
       isGameActive: lobby.isGameActive,
       players: lobbyPlayers,
       items: lobbyItems,
       projectiles: Array.from(this.projectiles.values()),
-      // gameStatus is now provided by the instance's GameStateMachine
-      // We don't include it here - it will be added by GameInstanceManager
       parameters: this.parameters,
-      gameWorld: this.gameWorld // Include game world data
+      gameWorld: this.gameWorld
     };
   }
   
   /**
-   * Get a player by ID
+   * Get a player by ID - now uses registry
    */
   getPlayer(clientId: string): Player | undefined {
-    return this.players.get(clientId);
+    return this.playerRegistry.getPlayer(clientId);
   }
   
   /**
    * Validate item placement
-   * Note: This is a duplicate of the logic in GameLogicProcessor but operating
-   * directly on this GameStateManager instance
    */
   validateItemPlacement(itemData: any, clientId: string): boolean {
     console.log(`GAME STATE: Instance validating item placement for ${clientId}`);
     
-    // Check that the client exists in this GameStateManager
-    if (!this.players.has(clientId)) {
-      console.error(`GAME STATE: Player ${clientId} not found in this GameStateManager`);
+    // Check that the client exists in the player registry
+    if (!this.playerRegistry.getPlayer(clientId)) {
+      console.error(`GAME STATE: Player ${clientId} not found in PlayerRegistry`);
       return false;
     }
     
@@ -394,42 +402,34 @@ class GameStateManager {
   }
   
   /**
-   * Add a new player to the game
+   * Add a new player to the game - now delegates to registry
    */
   addPlayer(clientId: string, name: string): Player {
-    console.log(`GAME STATE: Adding player ${name} (${clientId}) to GameStateManager instance ${this.constructor.name}@${this.toString().split('\n')[0]}`);
+    console.log(`GAME STATE: Adding player ${name} (${clientId}) to GameStateManager via registry`);
     
-    // Starting position matches the original game's start point
-    const player: Player = {
-      id: clientId,
-      name: name || `Player-${clientId.substring(0, 4)}`,
-      position: { x: 80, y: 650 }, // Starting position from original game
-      velocity: { x: 0, y: 0 },
-      isAlive: true,
-      score: 0,
-      lastInput: {},
-      onGround: false,
-      facingLeft: false
-    };
-    
-    this.players.set(clientId, player);
-    console.log(`GAME STATE: Player registered successfully. Current player count: ${this.players.size}`);
-    return player;
+    // Use registry to add the player
+    return this.playerRegistry.addPlayer(clientId, name);
   }
   
   /**
    * Remove a player from the game
    */
   removePlayer(clientId: string): void {
-    this.players.delete(clientId);
+    // First, determine which instance/lobby the player is in
+    const instanceId = this.playerRegistry.getPlayerInstance(clientId);
     
-    // Remove player from all lobbies
+    // Remove player from registry - this is now the primary operation
+    // All other cleanup is secondary to this
+    this.playerRegistry.removePlayer(clientId);
+    
+    // Clean up lobby references (for backward compatibility)
     for (const [id, lobby] of this.lobbies) {
       const playerIndex = lobby.players.indexOf(clientId);
       if (playerIndex !== -1) {
+        // Remove from lobby's player array
         lobby.players.splice(playerIndex, 1);
         
-        // If lobby is now empty, consider removing it
+        // If lobby is now empty, consider removing it (except default lobby)
         if (lobby.players.length === 0 && id !== 'default') {
           this.lobbies.delete(id);
         } 
@@ -439,15 +439,18 @@ class GameStateManager {
         }
       }
     }
+    
+    // We don't need to handle instance cleanup here because GameInstanceManager.removePlayer
+    // is responsible for that, and it uses playerRegistry.getPlayerInstance directly
   }
   
   /**
    * Add player to a lobby
    */
   addPlayerToLobby(clientId: string, lobbyId: string, playerName: string): void {
-    // Create player if they don't exist
-    if (!this.players.has(clientId)) {
-      this.addPlayer(clientId, playerName);
+    // Create player if they don't exist in registry
+    if (!this.playerRegistry.getPlayer(clientId)) {
+      this.playerRegistry.addPlayer(clientId, playerName);
     }
     
     // Use existing or create new lobby
@@ -456,7 +459,7 @@ class GameStateManager {
       lobby = {
         id: lobbyId || uuidv4(),
         name: `Lobby ${this.lobbies.size + 1}`,
-        players: [],
+        players: [], // Still maintain this array for backward compatibility
         isGameActive: false,
         hostId: clientId, // First player becomes host
         createdAt: Date.now()
@@ -464,7 +467,8 @@ class GameStateManager {
       this.lobbies.set(lobby.id, lobby);
     }
     
-    // Add player to lobby if not already there
+    // Add player to lobby's player array (this is now just for backward compatibility)
+    // The authoritative source is the PlayerRegistry's playerToInstanceMap
     if (!lobby.players.includes(clientId)) {
       lobby.players.push(clientId);
     }
@@ -473,6 +477,9 @@ class GameStateManager {
     if (!lobby.hostId) {
       lobby.hostId = clientId;
     }
+    
+    // Note: The actual association of player to instance happens in 
+    // GameInstanceManager.addPlayerToInstance which calls playerRegistry.associatePlayerWithInstance
   }
   
   /**
@@ -486,17 +493,13 @@ class GameStateManager {
         
         // Reset all players in this lobby
         for (const playerId of lobby.players) {
-          const player = this.players.get(playerId);
+          const player = this.playerRegistry.getPlayer(playerId);
           if (player) {
-            player.position = { x: 80, y: 650 }; // Reset to start position
+            player.position = { ...PLAYER.DEFAULT_POSITION }; // Reset to start position
             player.velocity = { x: 0, y: 0 };
-            player.isAlive = true;
-            player.facingLeft = false;
+            this.playerRegistry.setPlayerAliveStatus(playerId, true);
           }
         }
-        
-        // Game status is now managed by GameStateMachine in the GameInstance
-        // Transition is done via GameInstanceManager, not directly here
         
         return true;
       }
@@ -508,7 +511,7 @@ class GameStateManager {
    * Apply player input to update their state
    */
   applyPlayerInput(inputData: any, clientId: string): void {
-    const player = this.players.get(clientId);
+    const player = this.playerRegistry.getPlayer(clientId);
     if (!player) return;
     
     // Store the input state
@@ -519,13 +522,11 @@ class GameStateManager {
       timestamp: inputData.timestamp || Date.now()
     };
     
-    player.lastInput = processedInput;
-    
-    // Update facing direction based on input
+    // Update player state based on input
     if (processedInput.left && !processedInput.right) {
-      player.facingLeft = true;
+      // Update player direction if needed
     } else if (processedInput.right && !processedInput.left) {
-      player.facingLeft = false;
+      // Update player direction if needed
     }
     
     // Actual movement will be handled by physics engine
@@ -536,13 +537,10 @@ class GameStateManager {
    */
   placeItem(itemData: any, clientId: string): GameItem | null {
     console.log(`GAME STATE: Placing item of type ${itemData.type} for client ${clientId}`);
-    console.log(`GAME STATE: Item data:`, JSON.stringify(itemData));
-    console.log(`GAME STATE: GameStateManager instance ${this.constructor.name}@${this.toString().split('\n')[0]} has ${this.players.size} players registered`);
-    console.log(`GAME STATE: Registered players: ${Array.from(this.players.keys()).join(', ')}`);
     
-    // Validate that the player exists
-    if (!this.players.has(clientId)) {
-      console.error(`GAME STATE: Cannot place item - player ${clientId} not found`);
+    // Validate that the player exists in registry
+    if (!this.playerRegistry.getPlayer(clientId)) {
+      console.error(`GAME STATE: Cannot place item - player ${clientId} not found in registry`);
       return null;
     }
     
@@ -662,14 +660,7 @@ class GameStateManager {
    * Handle player death event
    */
   private handlePlayerDeath(playerId: string, cause: DeathType): void {
-    const player = this.players.get(playerId);
-    if (!player || !player.isAlive) return;
-    
-    player.isAlive = false;
-    
-    // Game status transitions are handled by the GameStateMachine
-    // The GameEvents system will trigger the appropriate state change
-    
+    this.playerRegistry.setPlayerAliveStatus(playerId, false);
     console.log(`GameState: Player ${playerId} died from ${cause}`);
   }
   
@@ -677,14 +668,11 @@ class GameStateManager {
    * Handle player win event
    */
   private handlePlayerWin(playerId: string): void {
-    const player = this.players.get(playerId);
+    const player = this.playerRegistry.getPlayer(playerId);
     if (!player || !player.isAlive) return;
     
-    // Game status transitions are handled by the GameStateMachine
-    // The GameEvents system will trigger the appropriate state change
-    
     // Increment player score
-    player.score += 1;
+    this.playerRegistry.updatePlayerScore(playerId, (player.score || 0) + 1);
     
     console.log(`GameState: Player ${playerId} won!`);
   }
@@ -710,19 +698,18 @@ class GameStateManager {
    * Reset the game state
    */
   resetGameState(): void {
-    // Reset players
-    for (const player of this.players.values()) {
-      player.position = { x: 80, y: 650 };
-      player.velocity = { x: 0, y: 0 };
-      player.isAlive = true;
-      player.lastInput = {};
+    // Get all players from instances managed by this GameStateManager
+    const allPlayers = this.getAllPlayers();
+    
+    for (const player of allPlayers) {
+      // Reset player position and velocity through registry
+      this.playerRegistry.updatePlayerPosition(player.id, { ...PLAYER.DEFAULT_POSITION });
+      this.playerRegistry.updatePlayerVelocity(player.id, { x: 0, y: 0 });
+      this.playerRegistry.setPlayerAliveStatus(player.id, true);
     }
     
     // Clear projectiles
     this.projectiles.clear();
-    
-    // Note: Game status is now managed by GameStateMachine
-    // Status transitions happen through the state machine, not directly here
     
     console.log('Game state reset');
   }
@@ -732,22 +719,19 @@ class GameStateManager {
    */
   broadcastChatMessage(senderId: string, message: string, lobbyId: string): void {
     // This method would typically call into the network manager to actually send
-    // For now, we just store the message in the lobby state
     console.log(`Chat in lobby ${lobbyId}: ${senderId} says: ${message}`);
-    
-    // In a real implementation, this would trigger sending a message via the network manager
   }
 }
 
 import { GameInstanceManager } from './GameInstanceManager';
 
-export function setupGameStateManager(): GameStateManager {
-  return new GameStateManager();
+export function setupGameStateManager(playerRegistry: PlayerRegistry): GameStateManager {
+  return new GameStateManager(playerRegistry);
 }
 
-export function setupGameInstanceManager(): GameInstanceManager {
-  return new GameInstanceManager();
+export function setupGameInstanceManager(playerRegistry: PlayerRegistry): GameInstanceManager {
+  return new GameInstanceManager(playerRegistry);
 }
 
 export { GameStateManager, GameInstanceManager };
-export type { Player, GameItem, Projectile, Lobby, GameParameters };
+export type { GameItem, Projectile, Lobby, GameParameters };

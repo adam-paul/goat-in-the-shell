@@ -1,7 +1,8 @@
 import { v4 as uuidv4 } from 'uuid';
-import { GameStateManager, Player, Lobby } from './index';
+import { GameStateManager } from './index';
 import { GameStateMachine } from './GameStateMachine';
 import { GameStatus } from '../../shared/types';
+import { Player, PlayerRegistry } from '../registry';
 
 // Game instance represents an active game with its own independent state
 export interface GameInstance {
@@ -9,12 +10,10 @@ export interface GameInstance {
   lobbyId: string;
   state: GameStateManager;
   stateMachine: GameStateMachine;
-  players: string[];
   isActive: boolean;
   startTime: number;
   lastUpdateTime: number;
   updatePlayerActivity: (playerId: string) => void; // Method to update player activity
-  playerLastActivity?: Record<string, number>; // Track player activity
 }
 
 export class GameInstanceManager {
@@ -22,13 +21,13 @@ export class GameInstanceManager {
   private instances: Map<string, GameInstance>;
   // Map of lobby ID to instance ID for quick lookups
   private lobbyToInstanceMap: Map<string, string>;
-  // Map of player ID to instance ID
-  private playerToInstanceMap: Map<string, string>;
+  // PlayerRegistry as source of truth for players
+  private playerRegistry: PlayerRegistry;
   
-  constructor() {
+  constructor(playerRegistry: PlayerRegistry) {
     this.instances = new Map();
     this.lobbyToInstanceMap = new Map();
-    this.playerToInstanceMap = new Map();
+    this.playerRegistry = playerRegistry;
   }
   
   /**
@@ -43,37 +42,29 @@ export class GameInstanceManager {
     }
     
     // Create a new GameStateManager instance for this game
-    const state = new GameStateManager();
+    const state = new GameStateManager(this.playerRegistry);
     console.log(`[GameInstanceManager] Created new GameStateManager for instance: ${state.constructor.name}@${state.toString().split('\n')[0]}`);
     
     // Create the new game instance
     const instanceId = uuidv4();
     
     // Create a new GameStateMachine for this instance
-    // Always initialize with 'select' for single player or 'lobby' for multiplayer
-    // (we handle tutorial and modeSelect on client only)
-    const initialGameState: GameStatus = 'select'; // Will be 'select' for all players now
+    const initialGameState: GameStatus = 'select';
     const stateMachine = new GameStateMachine(initialGameState, instanceId);
-    
-    // Track player activity
-    const playerLastActivity: Record<string, number> = {};
-    players.forEach(id => playerLastActivity[id] = Date.now());
     
     const instance: GameInstance = {
       id: instanceId,
       lobbyId,
       state,
       stateMachine,
-      players: [...players],
       isActive: false,
       startTime: 0,
       lastUpdateTime: Date.now(),
-      playerLastActivity,
-      
-      // Method to update player activity timestamp
-      updatePlayerActivity(playerId: string): void {
-        if (this.playerLastActivity && this.players.includes(playerId)) {
-          this.playerLastActivity[playerId] = Date.now();
+      updatePlayerActivity: (playerId: string): void => {
+        // Just check if player exists in registry and belongs to this instance
+        const playerInstanceId = this.playerRegistry.getPlayerInstance(playerId);
+        if (playerInstanceId === instanceId) {
+          // Update activity if needed (could track in a separate Map if needed)
         }
       }
     };
@@ -82,17 +73,17 @@ export class GameInstanceManager {
     this.instances.set(instanceId, instance);
     this.lobbyToInstanceMap.set(lobbyId, instanceId);
     
-    // Add all players to the instance's GameStateManager
+    // Associate players with instance in registry
     players.forEach(playerId => {
-      // Get player name if available
       const playerName = playerNames?.[playerId] || `Player-${playerId.substring(0, 4)}`;
       
-      // Add player to the instance's state manager
-      console.log(`INSTANCE MANAGER: Adding player ${playerName} (${playerId}) to instance ${instanceId}'s GameStateManager`);
-      instance.state.addPlayer(playerId, playerName);
+      // Make sure player exists in registry
+      if (!this.playerRegistry.getPlayer(playerId)) {
+        this.playerRegistry.addPlayer(playerId, playerName);
+      }
       
-      // Map player to instance
-      this.playerToInstanceMap.set(playerId, instanceId);
+      // Associate with this instance
+      this.playerRegistry.associatePlayerWithInstance(playerId, instanceId);
     });
     
     return instance;
@@ -132,10 +123,11 @@ export class GameInstanceManager {
    * Get a game instance by player ID
    */
   getInstanceByPlayer(playerId: string): GameInstance | null {
-    const instanceId = this.playerToInstanceMap.get(playerId);
+    // Use registry instead of local map
+    const instanceId = this.playerRegistry.getPlayerInstance(playerId);
     if (!instanceId) return null;
     
-    return this.getInstance(instanceId);
+    return this.instances.get(instanceId) || null;
   }
   
   /**
@@ -153,13 +145,6 @@ export class GameInstanceManager {
         // Update instance state
         instance.state.update(deltaTime);
         instance.lastUpdateTime = now;
-        
-        // Every 100ms (10fps), emit a state update event
-        if (now % 100 < 16) { // This ensures we emit at ~10Hz rate
-          // We'll let the socket server handle broadcasting
-          // The event system or direct calls could broadcast this state
-          // to clients in the future
-        }
       } else if (instance.isActive && !isGameplayActive) {
         // Instance is active but not in gameplay state
         // No physics updates needed, but still track the time
@@ -175,11 +160,12 @@ export class GameInstanceManager {
     const instance = this.instances.get(instanceId);
     if (!instance) return false;
     
-    // Remove all player mappings for this instance
-    instance.players.forEach(playerId => {
-      if (this.playerToInstanceMap.get(playerId) === instanceId) {
-        this.playerToInstanceMap.delete(playerId);
-      }
+    // Get the players associated with this instance and remove associations
+    const instancePlayers = this.playerRegistry.getInstancePlayers(instanceId);
+    instancePlayers.forEach(playerId => {
+      // Just remove the association, don't delete the player
+      // This allows players to be reassigned to another instance
+      this.playerRegistry.associatePlayerWithInstance(playerId, '');
     });
     
     // Remove lobby mapping
@@ -203,23 +189,15 @@ export class GameInstanceManager {
     const instance = this.instances.get(instanceId);
     if (!instance) return false;
     
-    // Add player to instance tracking array
-    if (!instance.players.includes(playerId)) {
-      instance.players.push(playerId);
-    }
-    
-    // Add player to the instance's GameStateManager - this is critical for item placement!
+    // Get or create player in registry
     const name = playerName || `Player-${playerId.substring(0, 4)}`;
-    console.log(`INSTANCE MANAGER: Adding player ${name} (${playerId}) to existing instance ${instanceId}'s GameStateManager`);
-    instance.state.addPlayer(playerId, name);
     
-    // Map player to instance
-    this.playerToInstanceMap.set(playerId, instanceId);
-    
-    // Initialize player activity tracking
-    if (instance.playerLastActivity) {
-      instance.playerLastActivity[playerId] = Date.now();
+    if (!this.playerRegistry.getPlayer(playerId)) {
+      this.playerRegistry.addPlayer(playerId, name);
     }
+    
+    // Associate player with this instance
+    this.playerRegistry.associatePlayerWithInstance(playerId, instanceId);
     
     return true;
   }
@@ -228,23 +206,18 @@ export class GameInstanceManager {
    * Remove a player from their game instance
    */
   removePlayer(playerId: string): boolean {
-    const instanceId = this.playerToInstanceMap.get(playerId);
+    const instanceId = this.playerRegistry.getPlayerInstance(playerId);
     if (!instanceId) return false;
     
     const instance = this.instances.get(instanceId);
     if (!instance) return false;
     
-    // Remove player from instance
-    const index = instance.players.indexOf(playerId);
-    if (index !== -1) {
-      instance.players.splice(index, 1);
-    }
+    // Remove player association from registry
+    this.playerRegistry.associatePlayerWithInstance(playerId, '');
     
-    // Remove player mapping
-    this.playerToInstanceMap.delete(playerId);
-    
-    // If instance has no more players, consider removing it
-    if (instance.players.length === 0) {
+    // Check if instance has players left
+    const remainingPlayers = this.playerRegistry.getInstancePlayers(instanceId);
+    if (remainingPlayers.length === 0) {
       this.terminateInstance(instanceId);
     }
     
@@ -258,8 +231,8 @@ export class GameInstanceManager {
     const instance = this.instances.get(instanceId);
     if (!instance) return false;
     
-    // Create a new state manager but keep the same instance ID and players
-    const state = new GameStateManager();
+    // Create a new state manager with the player registry
+    const state = new GameStateManager(this.playerRegistry);
     
     instance.state = state;
     instance.isActive = false;

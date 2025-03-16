@@ -2,6 +2,18 @@
 // Central type definitions for the game
 
 // ==================
+// Basic Types
+// ==================
+
+/**
+ * 2D Vector type used throughout the game
+ */
+export interface Vector2D {
+  x: number;
+  y: number;
+}
+
+// ==================
 // Game State Types
 // ==================
 

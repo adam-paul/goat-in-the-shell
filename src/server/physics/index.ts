@@ -1,8 +1,11 @@
 import Matter from 'matter-js';
-import { GameStateManager, Player, GameItem, setupGameInstanceManager } from '../game-state';
+import { GameStateManager, GameItem, setupGameInstanceManager } from '../game-state';
 import { DeathType } from '../../shared/types';
 import { gameEvents } from '../game-state/GameEvents';
 import { PHYSICS, ITEMS } from '../../shared/constants';
+import { PlayerRegistry, Player } from '../registry';
+import { Vector2D } from '../../shared/types';
+import { GameInstanceManager } from '../game-state/GameInstanceManager';
 
 // Constants for physics simulation
 const PHYSICS_UPDATE_RATE = 60; // Updates per second
@@ -60,84 +63,76 @@ const COLLISION_MASKS = {
   DEATH_ZONE: CATEGORIES.PLAYER
 };
 
+interface PlayerMoveEvent {
+  playerId: string;
+  force: Vector2D;
+}
+
+interface PlayerJumpEvent {
+  playerId: string;
+}
+
 export class PhysicsEngine {
   private engine: Matter.Engine;
   private gameState: GameStateManager;
-  private instanceManager: any;
-  private bodies: Map<string, Matter.Body>;
-  private lastUpdateTime: number;
-  private accumulator: number;
-  private worldBounds: Matter.Body[];
-  private parameters: Record<string, number>;
-  private dartTimer: NodeJS.Timeout | null = null;
-  private lastDartTime: number = 0;
+  private playerRegistry: PlayerRegistry;
+  private instanceManager: GameInstanceManager;
+  private bodies: Map<string, Matter.Body> = new Map();
   private darts: Map<string, {
     body: Matter.Body;
     createdAt: number;
     lifetime: number;
   }> = new Map();
+  private dartTimer: NodeJS.Timeout | null = null;
+  private lastUpdateTime: number = Date.now();
+  private accumulator: number = 0;
+  private worldBounds: Matter.Body[] = [];
+  private parameters: Record<string, number>;
 
-  constructor(gameState: GameStateManager, instanceManager?: any) {
-    this.instanceManager = instanceManager;
+  constructor(
+    gameState: GameStateManager,
+    instanceManager: GameInstanceManager,
+    playerRegistry: PlayerRegistry,
+    parameters = {
+      dart_frequency: 2000,
+      dart_wall_height: 200
+    }
+  ) {
     this.gameState = gameState;
-    console.log(`[PhysicsEngine] Initialized with GameStateManager: ${gameState.constructor.name}@${gameState.toString().split('\n')[0]}`);
-    this.bodies = new Map();
-    this.lastUpdateTime = Date.now();
-    this.accumulator = 0;
-    this.worldBounds = [];
-    this.parameters = { ...DEFAULT_PARAMETERS };
-    
-    // Listen for physics activation events, which might trigger dart shooting
-    gameEvents.subscribe('PHYSICS_ACTIVATE', (data: any) => {
-      console.log(`[PhysicsEngine] Physics activated for instance ${data.instanceId}, ready for dart shooting`);
-      
-      // Immediately activate physics - the state machine ensures this only happens
-      // at the end of the countdown, right before transition to 'playing' state
-      console.log(`[PhysicsEngine] Starting physics simulation for instance ${data.instanceId}`);
-      this.engine.timing.timeScale = 1;
-      
-      // The dart timer is already started when the PhysicsEngine is created
-      // Darts will only fire when there are active 'playing' instances
-    });
-    
-    // Listen for item placement events
-    gameEvents.subscribe('ITEM_PLACED', (data: any) => {
-      console.log(`[PhysicsEngine] Item placed event received:`, data);
-      if (data && data.item) {
-        this.registerItemWithPhysics(data.item);
-      }
-    });
-    
-    // Create a Matter.js engine with enhanced settings
+    this.instanceManager = instanceManager;
+    this.playerRegistry = playerRegistry;
+    this.parameters = parameters;
+
+    // Create physics engine
     this.engine = Matter.Engine.create({
-      gravity: {
-        x: 0,
-        y: this.parameters.gravity
-      },
-      positionIterations: 8,  // Increase from default (6) for better collision detection
-      velocityIterations: 8   // Increase from default (4) for better collision detection
+      gravity: { x: 0, y: PHYSICS.GRAVITY }
     });
 
-    // Add collision event handling
+    // Create collision categories and collision handling
     Matter.Events.on(this.engine, 'collisionStart', this.handleCollisionStart.bind(this));
     
-    // Request game world data from GameStateManager
-    const gameWorld = gameState.getGameWorld();
-    
-    // Add world bounds
-    this.createWorldBounds();
-    
-    // Create physics bodies from game world data
-    this.createPlatformsFromGameWorld(gameWorld);
-    
-    // Create death zone at bottom
-    this.createDeathZone();
-    
-    // Start the engine update loop
-    this.startPhysicsLoop();
-    
-    // NOTE: We don't start the dart timer here anymore
-    // It will be started after the countdown completes via the PHYSICS_ACTIVATE event
+    // Subscribe to game events
+    gameEvents.subscribe('PLAYER_MOVE', (data: PlayerMoveEvent) => {
+      this.applyForce(data.playerId, data.force);
+    });
+
+    gameEvents.subscribe('PLAYER_JUMP', (data: PlayerJumpEvent) => {
+      const body = this.bodies.get(data.playerId);
+      if (!body) return;
+
+      // Only allow jumping if on ground
+      if (this.isBodyOnGround(body)) {
+        Matter.Body.applyForce(body, body.position, { x: 0, y: -PHYSICS.PLAYER_JUMP_FORCE });
+      }
+    });
+
+    // Start dart shooting timer if enabled
+    if (parameters.dart_frequency > 0) {
+      this.dartTimer = setInterval(() => this.shootDarts(), parameters.dart_frequency);
+    }
+
+    // Initial sync
+    this.syncGameState();
   }
   
   /**
@@ -513,43 +508,60 @@ export class PhysicsEngine {
    * Apply forces to players based on their inputs
    */
   private applyPlayerForces(): void {
-    const gameState = this.gameState.getState();
+    // Get all active instances
+    const instances = this.instanceManager.getAllInstances();
+    if (!instances.length) return;
     
-    for (const player of gameState.players) {
-      // Skip if player is not alive
-      if (!player.isAlive) continue;
+    // Process each active instance
+    for (const instance of instances) {
+      // Skip instances that aren't in playing state
+      if (!instance.isActive || !instance.stateMachine.isGameplayActive()) continue;
       
-      const body = this.bodies.get(player.id);
-      if (!body) continue;
+      // Get players for this instance from PlayerRegistry
+      const activePlayers = this.playerRegistry.getAllPlayersForInstance(instance.id);
+      if (!activePlayers.length) continue;
       
-      // Apply horizontal movement force - match original implementation behavior
-      if (player.lastInput.left) {
-        // Set a fixed leftward velocity instead of applying force
-        // This creates more responsive movement matching original implementation
-        Matter.Body.setVelocity(body, {
-          x: -6, // Fixed velocity that feels like -200 in Phaser
-          y: body.velocity.y // Maintain vertical velocity
-        });
-      } else if (player.lastInput.right) {
-        // Set a fixed rightward velocity instead of applying force
-        Matter.Body.setVelocity(body, {
-          x: 6, // Fixed velocity that feels like 200 in Phaser
-          y: body.velocity.y // Maintain vertical velocity
-        });
-      } else {
-        // In original implementation, player comes to a full stop when not pressing keys
-        Matter.Body.setVelocity(body, {
-          x: 0, // Full stop (no sliding)
-          y: body.velocity.y // Maintain vertical velocity
-        });
-      }
-      
-      // Apply jump force if on ground and jump pressed
-      if (player.lastInput.jump && this.isBodyOnGround(body)) {
-        Matter.Body.setVelocity(body, {
-          x: body.velocity.x,
-          y: -this.parameters.player_jump_force * 20 // Scale to match Phaser physics
-        });
+      // Apply forces to each player
+      for (const player of activePlayers) {
+        // Skip if player is not alive
+        if (!player.isAlive) continue;
+        
+        const body = this.bodies.get(player.id);
+        if (!body) continue;
+        
+        // Get player input state from game state (TODO: Move this to PlayerRegistry)
+        const gameState = instance.state.getState();
+        const playerState = gameState.players.find((p: { id: string }) => p.id === player.id);
+        if (!playerState?.lastInput) continue;
+        
+        // Apply horizontal movement force - match original implementation behavior
+        if (playerState.lastInput.left) {
+          // Set a fixed leftward velocity instead of applying force
+          Matter.Body.setVelocity(body, {
+            x: -6, // Fixed velocity that feels like -200 in Phaser
+            y: body.velocity.y // Maintain vertical velocity
+          });
+        } else if (playerState.lastInput.right) {
+          // Set a fixed rightward velocity instead of applying force
+          Matter.Body.setVelocity(body, {
+            x: 6, // Fixed velocity that feels like 200 in Phaser
+            y: body.velocity.y // Maintain vertical velocity
+          });
+        } else {
+          // In original implementation, player comes to a full stop when not pressing keys
+          Matter.Body.setVelocity(body, {
+            x: 0, // Full stop (no sliding)
+            y: body.velocity.y // Maintain vertical velocity
+          });
+        }
+        
+        // Apply jump force if on ground and jump pressed
+        if (playerState.lastInput.jump && this.isBodyOnGround(body)) {
+          Matter.Body.setVelocity(body, {
+            x: body.velocity.x,
+            y: -this.parameters.player_jump_force * 20 // Scale to match Phaser physics
+          });
+        }
       }
     }
   }
@@ -632,353 +644,48 @@ export class PhysicsEngine {
   }
   
   /**
-   * Shoot darts from walls
+   * Sync physics state with game state
    */
-  private shootDarts(): void {
-    const gameState = this.gameState.getState();
-    const now = Date.now();
-    
-    // Log physics world state before shooting darts
-    console.log(`[PhysicsEngine] Verifying physics world before shooting darts:`);
-    this.logPhysicsBodies();
-    
-    console.log(`[PhysicsEngine] shootDarts checking with GameStateManager: ${this.gameState.constructor.name}@${this.gameState.toString().split('\n')[0]}`);
-    console.log(`[PhysicsEngine] Root GameStateManager is: ${(global as any).rootGameState.constructor.name}@${(global as any).rootGameState.toString().split('\n')[0]}`);
-    
-    // Access the global instance manager
-    const instanceManager = (global as any).gameInstanceManager;
-    if (!instanceManager) {
-      console.log('[PhysicsEngine] No global instance manager found');
-      return;
-    }
-    
-    // Find the instance that contains this gameState
-    const instances = instanceManager.getAllInstances();
-    console.log(`[PhysicsEngine] Found ${instances.length} game instances. Looking for matching state object...`);
-    
-    let stateMachine = null;
-    let found = false;
-    
-    for (const instance of instances) {
-      console.log(`[PhysicsEngine] Checking instance ${instance.id}: ${instance.state.constructor.name}@${instance.state.toString().split('\n')[0]}`);
-      
-      if (instance.state === this.gameState) {
-        found = true;
-        stateMachine = instance.stateMachine;
-        console.log(`[PhysicsEngine] Found matching instance ${instance.id} with state ${stateMachine.getCurrentState()}`);
-        break;
-      }
-    }
-    
-    if (!found) {
-      console.log(`[PhysicsEngine] No matching instance found for this GameStateManager!`);
-    }
-    
-    // Check if game is currently in playing state
-    if (!stateMachine || stateMachine.getCurrentState() !== 'playing') {
-      console.log(`[PhysicsEngine] Not shooting darts - game status is not 'playing'`);
-      return;
-    }
-    
-    console.log(`[PhysicsEngine] Looking for dart walls to shoot from. Game status is 'playing'`);
-    
-    // Count built-in walls and placed walls
-    let builtInWalls = gameState.gameWorld?.dartWalls?.length || 0;
-    let placedWalls = gameState.items.filter((item: { type: string }) => item.type === 'dart_wall').length;
-    console.log(`[PhysicsEngine] Found ${builtInWalls} built-in dart walls and ${placedWalls} placed dart walls`);
-
-    // Check game world dart walls too
-    if (gameState.gameWorld && gameState.gameWorld.dartWalls && gameState.gameWorld.dartWalls.length > 0) {
-      console.log(`[PhysicsEngine] Processing ${gameState.gameWorld.dartWalls.length} built-in dart walls`);
-      
-      for (const wall of gameState.gameWorld.dartWalls) {
-        // Get wall position
-        const wallX = wall.position.x;
-        const wallY = wall.position.y;
-        const wallHeight = wall.height || this.parameters.dart_wall_height;
-        
-        // Check if last shoot time is tracked for this wall
-        const dartWallId = wall.id;
-        const lastShootTime = this.dartTimer ? this.darts.get(`lastShoot_${dartWallId}`)?.createdAt || 0 : 0;
-        
-        // Only shoot if enough time has passed since last shot for this wall
-        if (now - lastShootTime < this.parameters.dart_frequency) {
-          console.log(`[PhysicsEngine] Skipping wall ${dartWallId} - cooldown not elapsed`);
-          continue; // Skip this wall until it's time to shoot again
-        }
-        
-        console.log(`[PhysicsEngine] Wall ${dartWallId} ready to shoot darts at position (${wallX}, ${wallY})`);
-        
-        // Update last shoot time
-        this.darts.set(`lastShoot_${dartWallId}`, {
-          body: null as any, // Not an actual dart body
-          createdAt: now,
-          lifetime: this.parameters.dart_frequency
-        });
-        
-        // Create three darts per wall at different heights (matching original implementation)
-        const positions = [
-          wallY - wallHeight * 0.3, // Top dart
-          wallY,                    // Middle dart
-          wallY + wallHeight * 0.3  // Bottom dart
-        ];
-        
-        positions.forEach((dartY, index) => {
-          // Create dart body (small rectangle)
-          const dartWidth = PHYSICS.DART_WIDTH;
-          const dartHeight = PHYSICS.DART_HEIGHT;
-          
-          const dart = Matter.Bodies.rectangle(
-            wallX + 15, // Offset from wall
-            dartY,
-            dartWidth,  // Width from constants
-            dartHeight, // Height from constants
-            {
-              label: `dart_${Date.now()}_${Math.random()}`,
-              frictionAir: 0,         // No air friction
-              friction: 0,            // No friction
-              restitution: 0,         // No bounce
-              inertia: Infinity,      // Prevent rotation
-              isSensor: false,        // Allow physical collisions
-              collisionFilter: {
-                category: CATEGORIES.DART,
-                mask: COLLISION_MASKS.DART // Use the consistent mask
-              }
-            }
-          );
-          
-          // Set velocity exactly as in original implementation
-          Matter.Body.setVelocity(dart, {
-            x: -this.parameters.dart_speed,
-            y: 0
-          });
-          
-          // Add to world
-          Matter.Composite.add(this.engine.world, dart);
-          
-          // Track the dart
-          const dartId = `dart_${dartWallId}_${now}_${index}`;
-          this.darts.set(dartId, {
-            body: dart,
-            createdAt: now,
-            lifetime: 10000 // 10 seconds lifetime, same as original
-          });
-          
-          // Add to game state for client rendering
-          this.gameState.addProjectile({
-            id: dartId,
-            type: 'dart',
-            position: { x: wallX + 15, y: dartY },
-            velocity: { x: -this.parameters.dart_speed, y: 0 },
-            createdAt: now
-          });
-          
-          console.log(`[PhysicsEngine] Created dart from built-in wall at (${wallX + 15}, ${dartY})`);
-        });
-      }
-    }
-    
-    // Find all placed dart walls
-    for (const item of gameState.items) {
-      if (item.type !== 'dart_wall') continue;
-      
-      // Get wall position
-      const wallX = item.position.x;
-      const wallY = item.position.y;
-      const wallHeight = item.properties.height || this.parameters.dart_wall_height;
-      
-      // Check if last shoot time is tracked for this wall
-      const dartWallId = item.id;
-      const lastShootTime = this.dartTimer ? this.darts.get(`lastShoot_${dartWallId}`)?.createdAt || 0 : 0;
-      
-      // Only shoot if enough time has passed since last shot for this wall
-      // This mimics the original implementation's timing system
-      if (now - lastShootTime < this.parameters.dart_frequency) {
-        console.log(`[PhysicsEngine] Skipping wall ${dartWallId} - cooldown not elapsed`);
-        continue; // Skip this wall until it's time to shoot again
-      }
-      
-      console.log(`[PhysicsEngine] Wall ${dartWallId} ready to shoot darts at position (${wallX}, ${wallY})`);
-      
-      // Update last shoot time
-      this.darts.set(`lastShoot_${dartWallId}`, {
-        body: null as any, // Not an actual dart body
-        createdAt: now,
-        lifetime: this.parameters.dart_frequency
-      });
-      
-      // Create three darts per wall at different heights (matching original implementation)
-      const positions = [
-        wallY - wallHeight * 0.3, // Top dart
-        wallY,                    // Middle dart
-        wallY + wallHeight * 0.3  // Bottom dart
-      ];
-      
-      positions.forEach((dartY, index) => {
-        // Create dart body (small rectangle)
-        const dartWidth = PHYSICS.DART_WIDTH;
-        const dartHeight = PHYSICS.DART_HEIGHT;
-        
-        const dart = Matter.Bodies.rectangle(
-          wallX + 15, // Offset from wall
-          dartY,
-          dartWidth,  // Width from constants
-          dartHeight, // Height from constants
-          {
-            label: `dart_${Date.now()}_${Math.random()}`,
-            frictionAir: 0,         // No air friction
-            friction: 0,            // No friction
-            restitution: 0,         // No bounce
-            inertia: Infinity,      // Prevent rotation
-            isSensor: false,        // Allow physical collisions
-            collisionFilter: {
-              category: CATEGORIES.DART,
-              mask: COLLISION_MASKS.DART // Use the consistent mask
-            }
-          }
-        );
-        
-        // Set velocity exactly as in original implementation
-        Matter.Body.setVelocity(dart, {
-          x: -this.parameters.dart_speed,
-          y: 0
-        });
-        
-        // Add to world
-        Matter.Composite.add(this.engine.world, dart);
-        
-        // Track the dart
-        const dartId = `dart_${dartWallId}_${now}_${index}`;
-        this.darts.set(dartId, {
-          body: dart,
-          createdAt: now,
-          lifetime: 10000 // 10 seconds lifetime, same as original
-        });
-        
-        // Add to game state for client rendering
-        this.gameState.addProjectile({
-          id: dartId,
-          type: 'dart',
-          position: { x: wallX + 15, y: dartY },
-          velocity: { x: -this.parameters.dart_speed, y: 0 },
-          createdAt: now
-        });
-        
-        console.log(`[PhysicsEngine] Created dart from placed wall at (${wallX + 15}, ${dartY})`);
-      });
-    }
-  }
-  
-  private handleCollisionStart(event: Matter.IEventCollision<Matter.Engine>): void {
-    event.pairs.forEach((pair) => {
-      const bodyA = pair.bodyA;
-      const bodyB = pair.bodyB;
-      
-      // Enhanced collision logging
-      console.log(`[PhysicsEngine] Collision detected:`, {
-        bodyA: {
-          label: bodyA.label,
-          position: bodyA.position,
-          category: bodyA.collisionFilter.category,
-          mask: bodyA.collisionFilter.mask
-        },
-        bodyB: {
-          label: bodyB.label,
-          position: bodyB.position,
-          category: bodyB.collisionFilter.category,
-          mask: bodyB.collisionFilter.mask
-        }
-      });
-      
-      // Handle dart collisions
-      if (bodyA.label.includes('dart_') || bodyB.label.includes('dart_')) {
-        const dart = bodyA.label.includes('dart_') ? bodyA : bodyB;
-        const other = bodyA.label.includes('dart_') ? bodyB : bodyA;
-        
-        // Handle dart hitting shield
-        if (other.label.includes('shield_')) {
-          console.log(`[PhysicsEngine] SHIELD COLLISION DETECTED:`, {
-            dartPosition: dart.position,
-            shieldPosition: other.position,
-            dartVelocity: dart.velocity
-          });
-          
-          // Remove the dart
-          Matter.Composite.remove(this.engine.world, dart);
-          // Remove from tracking
-          for (const [dartId, dartInfo] of this.darts.entries()) {
-            if (dartInfo.body === dart) {
-              this.darts.delete(dartId);
-              console.log(`[PhysicsEngine] Removed dart ${dartId} after shield collision`);
-              break;
-            }
-          }
-          // Emit event for visual effects
-          gameEvents.publish('DART_HIT_SHIELD', {
-            position: dart.position,
-            velocity: dart.velocity
-          });
-        }
-        // Handle dart hitting player
-        else if (other.label.includes('player_')) {
-          console.log(`[PhysicsEngine] Dart hit player`);
-          // Remove the dart
-          Matter.Composite.remove(this.engine.world, dart);
-          // Remove from tracking
-          for (const [dartId, dartInfo] of this.darts.entries()) {
-            if (dartInfo.body === dart) {
-              this.darts.delete(dartId);
-              break;
-            }
-          }
-          // Emit death event
-          gameEvents.publish('PLAYER_DEATH', {
-            type: 'dart' as DeathType,
-            position: other.position
-          });
-        }
-      }
-    });
-  }
-
   private syncGameState(): void {
-    const gameState = this.gameState.getState();
+    // Get all active instances
+    const instances = this.instanceManager.getAllInstances();
+    if (!instances.length) return;
     
-    // Sync player positions
-    for (const player of gameState.players) {
-      const body = this.bodies.get(player.id);
+    // Process each active instance
+    for (const instance of instances) {
+      // Skip instances that aren't in playing state
+      if (!instance.isActive || !instance.stateMachine.isGameplayActive()) continue;
       
-      // Create body if it doesn't exist and player is alive
-      if (!body && player.isAlive) {
-        this.createPlayerBody(player);
-        continue;
-      }
+      // Get players for this instance from PlayerRegistry
+      const activePlayers = this.playerRegistry.getAllPlayersForInstance(instance.id);
+      if (!activePlayers.length) continue;
       
-      // Update player state from physics
-      if (body) {
-        player.position.x = body.position.x;
-        player.position.y = body.position.y;
-        player.velocity.x = body.velocity.x;
-        player.velocity.y = body.velocity.y;
-        player.onGround = this.isBodyOnGround(body);
-      }
-    }
-    
-    // Update projectile positions (darts)
-    for (const [dartId, dart] of this.darts.entries()) {
-      // Skip entries that don't have actual bodies (like lastShoot trackers)
-      if (!dart.body) continue;
-      
-      this.gameState.updateProjectile(dartId, {
-        position: { 
-          x: dart.body.position.x, 
-          y: dart.body.position.y 
-        },
-        velocity: { 
-          x: dart.body.velocity.x, 
-          y: dart.body.velocity.y 
+      // Sync player positions
+      for (const player of activePlayers) {
+        const body = this.bodies.get(player.id);
+        
+        // Create body if it doesn't exist and player is alive
+        if (!body && player.isAlive) {
+          this.createPlayerBody(player);
+          continue;
         }
-      });
+        
+        // Update player state from physics
+        if (body) {
+          this.playerRegistry.updatePlayerPosition(player.id, {
+            x: body.position.x,
+            y: body.position.y
+          });
+          this.playerRegistry.updatePlayerVelocity(player.id, {
+            x: body.velocity.x,
+            y: body.velocity.y
+          });
+          
+          // Update onGround status using PlayerRegistry
+          const onGround = this.isBodyOnGround(body);
+          this.playerRegistry.updatePlayerGroundStatus(player.id, onGround);
+        }
+      }
     }
   }
 
@@ -1028,17 +735,12 @@ export class PhysicsEngine {
   }
 
   private handlePlayerDeath(playerId: string, cause: DeathType): void {
-    const gameState = this.gameState.getState();
-    const players = gameState.players as Array<{
-      id: string;
-      isAlive: boolean;
-      position: { x: number; y: number };
-    }>;
-    
-    const player = players.find(p => p.id === playerId);
+    // Get player from registry
+    const player = this.playerRegistry.getPlayer(playerId);
     
     if (player && player.isAlive) {
-      player.isAlive = false;
+      // Update player alive state via registry
+      this.playerRegistry.setPlayerAliveStatus(playerId, false);
       console.log(`Player ${playerId} died from ${cause}`);
       
       // Publish death event to game logic
@@ -1073,14 +775,8 @@ export class PhysicsEngine {
   }
 
   private handlePlayerWin(playerId: string): void {
-    const gameState = this.gameState.getState();
-    const players = gameState.players as Array<{
-      id: string;
-      isAlive: boolean;
-      position: { x: number; y: number };
-    }>;
-    
-    const player = players.find(p => p.id === playerId);
+    // Get player from registry
+    const player = this.playerRegistry.getPlayer(playerId);
     
     if (player && player.isAlive) {
       console.log(`Player ${playerId} won!`);
@@ -1094,18 +790,21 @@ export class PhysicsEngine {
     }
   }
 
-  private createPlayerBody(player: Player): void {
-    // Create a rectangular body for the player with goat-like dimensions
+  private createPlayerBody(player: Player): Matter.Body {
+    const { id, position } = player;
+    
+    // Create player body with standard dimensions
     const body = Matter.Bodies.rectangle(
-      player.position.x,
-      player.position.y,
-      30, // width - similar to original goat hitbox
-      40, // height - similar to original goat hitbox
+      position.x,
+      position.y,
+      30, // width - standard player hitbox width
+      40, // height - standard player hitbox height
       {
-        label: `player_${player.id}`,
-        friction: 0.01,
-        frictionAir: 0.05,
-        restitution: 0.2,
+        label: `player_${id}`,
+        inertia: Infinity, // Prevent rotation
+        friction: PHYSICS.GROUND_FRICTION,
+        frictionAir: PHYSICS.AIR_FRICTION,
+        restitution: PHYSICS.RESTITUTION,
         collisionFilter: {
           category: CATEGORIES.PLAYER,
           mask: COLLISION_MASKS.PLAYER
@@ -1113,11 +812,13 @@ export class PhysicsEngine {
       }
     );
     
-    // Store the body
-    this.bodies.set(player.id, body);
-    
-    // Add the body to the physics world
+    // Add to world and track
     Matter.Composite.add(this.engine.world, body);
+    this.bodies.set(id, body);
+    
+    console.log(`[PhysicsEngine] Created physics body for player ${id} at position:`, position);
+    
+    return body;
   }
 
   createGameItem(item: GameItem): Matter.Body {
@@ -1379,11 +1080,303 @@ export class PhysicsEngine {
     
     return body;
   }
+
+  private handleCollisionStart(event: Matter.IEventCollision<Matter.Engine>): void {
+    event.pairs.forEach((pair) => {
+      const bodyA = pair.bodyA;
+      const bodyB = pair.bodyB;
+      
+      // Enhanced collision logging
+      console.log(`[PhysicsEngine] Collision detected:`, {
+        bodyA: {
+          label: bodyA.label,
+          position: bodyA.position,
+          category: bodyA.collisionFilter.category,
+          mask: bodyA.collisionFilter.mask
+        },
+        bodyB: {
+          label: bodyB.label,
+          position: bodyB.position,
+          category: bodyB.collisionFilter.category,
+          mask: bodyB.collisionFilter.mask
+        }
+      });
+      
+      // Handle dart collisions
+      if (bodyA.label.includes('dart_') || bodyB.label.includes('dart_')) {
+        const dart = bodyA.label.includes('dart_') ? bodyA : bodyB;
+        const other = bodyA.label.includes('dart_') ? bodyB : bodyA;
+        
+        // Handle dart hitting shield
+        if (other.label.includes('shield_')) {
+          console.log(`[PhysicsEngine] SHIELD COLLISION DETECTED:`, {
+            dartPosition: dart.position,
+            shieldPosition: other.position,
+            dartVelocity: dart.velocity
+          });
+          
+          // Remove the dart
+          Matter.Composite.remove(this.engine.world, dart);
+          // Remove from tracking
+          for (const [dartId, dartInfo] of this.darts.entries()) {
+            if (dartInfo.body === dart) {
+              this.darts.delete(dartId);
+              console.log(`[PhysicsEngine] Removed dart ${dartId} after shield collision`);
+              break;
+            }
+          }
+          // Emit event for visual effects
+          gameEvents.publish('DART_HIT_SHIELD', {
+            position: dart.position,
+            velocity: dart.velocity
+          });
+        }
+        // Handle dart hitting player
+        else if (other.label.includes('player_')) {
+          console.log(`[PhysicsEngine] Dart hit player`);
+          // Remove the dart
+          Matter.Composite.remove(this.engine.world, dart);
+          // Remove from tracking
+          for (const [dartId, dartInfo] of this.darts.entries()) {
+            if (dartInfo.body === dart) {
+              this.darts.delete(dartId);
+              break;
+            }
+          }
+          // Get player ID from body label
+          const playerId = other.label.split('_')[1];
+          // Emit death event
+          gameEvents.publish('PLAYER_DEATH', {
+            type: 'dart' as DeathType,
+            playerId,
+            position: other.position
+          });
+        }
+      }
+    });
+  }
+
+  /**
+   * Apply force to a player's physics body
+   */
+  public applyForce(playerId: string, force: Vector2D): void {
+    const body = this.bodies.get(playerId);
+    if (!body) {
+      console.log(`[PhysicsEngine] No physics body found for player ${playerId}`);
+      return;
+    }
+
+    // Get player from registry to check if they're alive
+    const player = this.playerRegistry.getPlayer(playerId);
+    if (!player || !player.isAlive) {
+      console.log(`[PhysicsEngine] Player ${playerId} is not alive or not found`);
+      return;
+    }
+
+    // Apply force at the center of mass
+    Matter.Body.applyForce(body, body.position, force);
+  }
+
+  /**
+   * Shoot darts from walls
+   */
+  private shootDarts(): void {
+    const now = Date.now();
+    const gameState = this.gameState.getState();
+    const players = gameState.players;
+    if (!players.length) return;
+
+    const instance = this.instanceManager.getInstanceByPlayer(players[0].id);
+    if (!instance) return;
+    
+    // Log physics world state before shooting darts
+    console.log(`[PhysicsEngine] Verifying physics world before shooting darts:`);
+    this.logPhysicsBodies();
+    
+    // Count built-in walls and placed walls
+    let builtInWalls = gameState.gameWorld?.dartWalls?.length || 0;
+    let placedWalls = gameState.items.filter((item: { type: string }) => item.type === 'dart_wall').length;
+    console.log(`[PhysicsEngine] Found ${builtInWalls} built-in dart walls and ${placedWalls} placed dart walls`);
+
+    // Check game world dart walls too
+    if (gameState.gameWorld && gameState.gameWorld.dartWalls && gameState.gameWorld.dartWalls.length > 0) {
+      console.log(`[PhysicsEngine] Processing ${gameState.gameWorld.dartWalls.length} built-in dart walls`);
+      
+      for (const wall of gameState.gameWorld.dartWalls) {
+        // Get wall position
+        const wallX = wall.position.x;
+        const wallY = wall.position.y;
+        const wallHeight = wall.height || this.parameters.dart_wall_height;
+        
+        // Check if last shoot time is tracked for this wall
+        const dartWallId = wall.id;
+        const lastShootTime = this.dartTimer ? this.darts.get(`lastShoot_${dartWallId}`)?.createdAt || 0 : 0;
+        
+        // Only shoot if enough time has passed since last shot for this wall
+        if (now - lastShootTime < this.parameters.dart_frequency) {
+          console.log(`[PhysicsEngine] Skipping wall ${dartWallId} - cooldown not elapsed`);
+          continue; // Skip this wall until it's time to shoot again
+        }
+        
+        console.log(`[PhysicsEngine] Wall ${dartWallId} ready to shoot darts at position (${wallX}, ${wallY})`);
+        
+        // Update last shoot time
+        this.darts.set(`lastShoot_${dartWallId}`, {
+          body: null as any, // Not an actual dart body
+          createdAt: now,
+          lifetime: this.parameters.dart_frequency
+        });
+        
+        // Create three darts per wall at different heights
+        const positions = [
+          wallY - wallHeight * 0.3, // Top dart
+          wallY,                    // Middle dart
+          wallY + wallHeight * 0.3  // Bottom dart
+        ];
+        
+        positions.forEach((dartY, index) => {
+          // Create dart body
+          const dart = Matter.Bodies.rectangle(
+            wallX + 15, // Offset from wall
+            dartY,
+            PHYSICS.DART_WIDTH,
+            PHYSICS.DART_HEIGHT,
+            {
+              label: `dart_${Date.now()}_${Math.random()}`,
+              frictionAir: 0,
+              friction: 0,
+              restitution: 0,
+              inertia: Infinity,
+              isSensor: false,
+              collisionFilter: {
+                category: CATEGORIES.DART,
+                mask: COLLISION_MASKS.DART
+              }
+            }
+          );
+          
+          // Set velocity
+          Matter.Body.setVelocity(dart, {
+            x: -this.parameters.dart_speed,
+            y: 0
+          });
+          
+          // Add to world
+          Matter.Composite.add(this.engine.world, dart);
+          
+          // Track the dart
+          const dartId = `dart_${dartWallId}_${now}_${index}`;
+          this.darts.set(dartId, {
+            body: dart,
+            createdAt: now,
+            lifetime: 10000 // 10 seconds lifetime
+          });
+          
+          // Add to game state for client rendering
+          this.gameState.addProjectile({
+            id: dartId,
+            type: 'dart',
+            position: { x: wallX + 15, y: dartY },
+            velocity: { x: -this.parameters.dart_speed, y: 0 },
+            createdAt: now
+          });
+          
+          console.log(`[PhysicsEngine] Created dart from built-in wall at (${wallX + 15}, ${dartY})`);
+        });
+      }
+    }
+    
+    // Find all placed dart walls
+    for (const item of gameState.items) {
+      if (item.type !== 'dart_wall') continue;
+      
+      // Get wall position
+      const wallX = item.position.x;
+      const wallY = item.position.y;
+      const wallHeight = item.properties.height || this.parameters.dart_wall_height;
+      
+      // Check if last shoot time is tracked for this wall
+      const dartWallId = item.id;
+      const lastShootTime = this.dartTimer ? this.darts.get(`lastShoot_${dartWallId}`)?.createdAt || 0 : 0;
+      
+      // Only shoot if enough time has passed since last shot for this wall
+      if (now - lastShootTime < this.parameters.dart_frequency) {
+        console.log(`[PhysicsEngine] Skipping wall ${dartWallId} - cooldown not elapsed`);
+        continue; // Skip this wall until it's time to shoot again
+      }
+      
+      console.log(`[PhysicsEngine] Wall ${dartWallId} ready to shoot darts at position (${wallX}, ${wallY})`);
+      
+      // Update last shoot time
+      this.darts.set(`lastShoot_${dartWallId}`, {
+        body: null as any, // Not an actual dart body
+        createdAt: now,
+        lifetime: this.parameters.dart_frequency
+      });
+      
+      // Create three darts per wall at different heights
+      const positions = [
+        wallY - wallHeight * 0.3, // Top dart
+        wallY,                    // Middle dart
+        wallY + wallHeight * 0.3  // Bottom dart
+      ];
+      
+      positions.forEach((dartY, index) => {
+        // Create dart body
+        const dart = Matter.Bodies.rectangle(
+          wallX + 15, // Offset from wall
+          dartY,
+          PHYSICS.DART_WIDTH,
+          PHYSICS.DART_HEIGHT,
+          {
+            label: `dart_${Date.now()}_${Math.random()}`,
+            frictionAir: 0,
+            friction: 0,
+            restitution: 0,
+            inertia: Infinity,
+            isSensor: false,
+            collisionFilter: {
+              category: CATEGORIES.DART,
+              mask: COLLISION_MASKS.DART
+            }
+          }
+        );
+        
+        // Set velocity
+        Matter.Body.setVelocity(dart, {
+          x: -this.parameters.dart_speed,
+          y: 0
+        });
+        
+        // Add to world
+        Matter.Composite.add(this.engine.world, dart);
+        
+        // Track the dart
+        const dartId = `dart_${dartWallId}_${now}_${index}`;
+        this.darts.set(dartId, {
+          body: dart,
+          createdAt: now,
+          lifetime: 10000 // 10 seconds lifetime
+        });
+        
+        // Add to game state for client rendering
+        this.gameState.addProjectile({
+          id: dartId,
+          type: 'dart',
+          position: { x: wallX + 15, y: dartY },
+          velocity: { x: -this.parameters.dart_speed, y: 0 },
+          createdAt: now
+        });
+        
+        console.log(`[PhysicsEngine] Created dart from placed wall at (${wallX + 15}, ${dartY})`);
+      });
+    }
+  }
 }
 
 /**
  * Create and set up a physics engine instance
  */
-export function setupPhysicsEngine(gameState: GameStateManager, instanceManager?: any): PhysicsEngine {
-  return new PhysicsEngine(gameState, instanceManager);
+export function setupPhysicsEngine(gameState: GameStateManager, playerRegistry: PlayerRegistry, instanceManager?: any): PhysicsEngine {
+  return new PhysicsEngine(gameState, instanceManager, playerRegistry);
 }

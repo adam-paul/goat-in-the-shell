@@ -6,6 +6,7 @@ import { GameStateManager } from '../game-state';
 import { GameLogicProcessor } from '../logic';
 import { GameInstanceManager } from '../game-state/GameInstanceManager';
 import { gameEvents } from '../game-state/GameEvents';
+import { PlayerRegistry } from '../registry';
 
 // Client connection tracking
 interface ClientConnection {
@@ -24,18 +25,21 @@ class SocketServer {
   private gameState: GameStateManager;
   private gameLogic: GameLogicProcessor;
   private instanceManager: GameInstanceManager;
+  private playerRegistry: PlayerRegistry;
   private pingIntervalId: NodeJS.Timeout | null = null;
   
   constructor(
     wss: WebSocketServer, 
     gameState: GameStateManager, 
     gameLogic: GameLogicProcessor,
-    instanceManager: GameInstanceManager
+    instanceManager: GameInstanceManager,
+    playerRegistry: PlayerRegistry
   ) {
     this.wss = wss;
     this.gameState = gameState;
     this.gameLogic = gameLogic;
     this.instanceManager = instanceManager;
+    this.playerRegistry = playerRegistry;
     
     // Initialize WebSocket server
     this.setupWebSocketServer();
@@ -200,16 +204,23 @@ class SocketServer {
   private handleDisconnect(clientId: string, code?: number, reason?: string) {
     console.log(`SERVER: Client ${clientId} disconnected. Code: ${code}, Reason: ${reason || 'none'}`);
     
+    // Get player instance before cleaning up
+    const instanceId = this.playerRegistry.getPlayerInstance(clientId);
+    let instancePlayers: string[] = [];
+    
+    if (instanceId) {
+      instancePlayers = this.playerRegistry.getInstancePlayers(instanceId);
+    }
+    
     // Clean up game state
     this.gameState.removePlayer(clientId);
     
     // Remove from instance if applicable
-    const instance = this.instanceManager.getInstanceByPlayer(clientId);
-    if (instance) {
+    if (instanceId) {
       this.instanceManager.removePlayer(clientId);
       
       // Notify remaining players
-      instance.players.forEach(playerId => {
+      instancePlayers.forEach(playerId => {
         if (playerId !== clientId) {
           this.sendMessage(playerId, {
             type: MESSAGE_TYPES.EVENT,
@@ -222,6 +233,9 @@ class SocketServer {
         }
       });
     }
+    
+    // Remove from registry
+    this.playerRegistry.removePlayer(clientId);
     
     // Remove from tracked clients
     this.clients.delete(clientId);
@@ -253,19 +267,23 @@ class SocketServer {
       return;
     }
     
-    // Update client info
+    // Store minimal client info - we'll get everything else from PlayerRegistry
     client.playerName = playerName;
-    client.lobbyId = lobbyId || 'default';
     
-    console.log(`SERVER: Player ${playerName} (${clientId}) joining lobby ${client.lobbyId}`);
+    // Default lobby ID if none provided
+    const targetLobbyId = lobbyId || 'default';
     
-    // Make sure we have a lobby ID
-    const targetLobbyId = client.lobbyId || 'default';
+    console.log(`SERVER: Player ${playerName} (${clientId}) joining lobby ${targetLobbyId}`);
     
-    // Add to global lobby tracking (root GameStateManager)
+    // 1. Register player in PlayerRegistry first - single source of truth
+    if (!this.playerRegistry.getPlayer(clientId)) {
+      this.playerRegistry.addPlayer(clientId, playerName);
+    }
+    
+    // 2. Add player to lobby in GameStateManager
     this.gameState.addPlayerToLobby(clientId, targetLobbyId, playerName);
     
-    // Find or create game instance
+    // 3. Find or create game instance
     let instance = this.instanceManager.getInstanceByLobby(targetLobbyId);
     
     if (!instance) {
@@ -273,26 +291,11 @@ class SocketServer {
       const playerNames = { [clientId]: playerName };
       instance = this.instanceManager.createInstance(targetLobbyId, [clientId], playerNames);
       console.log(`SERVER: Created new game instance ${instance.id} for lobby ${targetLobbyId}`);
-      
-      // Double check player registration
-      if (!instance.state.getPlayer(clientId)) {
-        console.error(`SERVER: Player ${clientId} not found in instance ${instance.id} after creation - doing direct registration`);
-        instance.state.addPlayer(clientId, playerName);
-      }
     } else {
-      // Add to existing instance with player name
+      // Add to existing instance
       this.instanceManager.addPlayerToInstance(instance.id, clientId, playerName);
       console.log(`SERVER: Added player ${playerName} to existing instance ${instance.id}`);
-      
-      // Double check player registration
-      if (!instance.state.getPlayer(clientId)) {
-        console.error(`SERVER: Player ${clientId} still not registered in instance ${instance.id} - doing direct registration`);
-        instance.state.addPlayer(clientId, playerName);
-      }
     }
-    
-    // Update client with instance ID
-    client.instanceId = instance.id;
     
     // Get the current game state from the state machine
     const currentGameState = instance.stateMachine.getCurrentState();
@@ -300,23 +303,24 @@ class SocketServer {
     // Notify the game state about the status change
     instance.state.handleGameStatusChange(currentGameState);
     
-    // Notify player of successful join
+    // Notify player of successful join - use instance ID from PlayerRegistry for consistency
+    const instanceId = this.playerRegistry.getPlayerInstance(clientId);
+    
     this.sendMessage(clientId, {
       type: MESSAGE_TYPES.EVENT,
       payload: {
         eventType: 'LOBBY_JOINED',
-        lobbyId: client.lobbyId,
-        instanceId: instance.id,
-        // Don't send gameStatus here, as client is already in mode select
+        lobbyId: targetLobbyId,
+        instanceId: instanceId, // Use value from PlayerRegistry
         timestamp: Date.now()
       }
     });
     
-    // We don't send a state update yet - client will request transitions when needed
-    console.log(`SERVER: Client ${clientId} joined lobby ${client.lobbyId} with state ${currentGameState}`);
+    console.log(`SERVER: Client ${clientId} joined lobby ${targetLobbyId} with state ${currentGameState}`);
     
-    // Notify other players in the lobby
-    instance.players.forEach(playerId => {
+    // Notify other players in the same instance - use PlayerRegistry to get the list
+    const instancePlayers = this.playerRegistry.getInstancePlayers(instanceId || '');
+    instancePlayers.forEach(playerId => {
       if (playerId !== clientId) {
         this.sendMessage(playerId, {
           type: MESSAGE_TYPES.EVENT,
@@ -329,26 +333,54 @@ class SocketServer {
         });
       }
     });
+    
+    // Publish an event for other components that might need to know
+    gameEvents.publish('PLAYER_JOINED_INSTANCE', {
+      playerId: clientId,
+      playerName,
+      instanceId,
+      lobbyId: targetLobbyId,
+      timestamp: Date.now()
+    });
   }
   
   /**
    * Handle player input
    */
   private handlePlayerInput(clientId: string, data: any) {
-    // Get the game instance this player belongs to
-    const instance = this.instanceManager.getInstanceByPlayer(clientId);
+    // Get instance from player registry
+    const instanceId = this.playerRegistry.getPlayerInstance(clientId);
+    if (!instanceId) {
+      console.warn(`CLIENT: ${clientId} not associated with any instance`);
+      return;
+    }
+    
+    const instance = this.instanceManager.getInstance(instanceId);
     if (!instance) {
-      console.warn(`CLIENT: ${clientId} not in a game instance`);
+      console.warn(`SERVER: Instance ${instanceId} not found`);
       return;
     }
     
-    // Validate the input
+    // Validate input format
     if (!this.gameLogic.validatePlayerInput(data, clientId)) {
-      console.warn(`SERVER: Invalid player input from client ${clientId}`);
+      console.warn(`SERVER: Invalid input format from client ${clientId}`);
       return;
     }
     
-    // Apply the input to the instance's game state
+    // Check if game is active
+    if (!instance.stateMachine.isGameplayActive()) {
+      console.log(`Game not active in instance ${instanceId}, state: ${instance.stateMachine.getCurrentState()}`);
+      return;
+    }
+    
+    // Get player - no need for re-registration
+    const player = this.playerRegistry.getPlayer(clientId);
+    if (!player || !player.isAlive) {
+      console.warn(`SERVER: Player ${clientId} not found or not alive`);
+      return;
+    }
+    
+    // Apply input using the instance's state manager
     instance.state.applyPlayerInput(data, clientId);
     
     // Send state update to client faster for better responsiveness (50ms)
@@ -367,11 +399,17 @@ class SocketServer {
    * Broadcast the current game state to all clients in an instance
    */
   public broadcastGameState(instance: any): void {
-    // Get the game state
+    // Get the game state - includes items, projectiles, etc.
     const state = instance.state.getState();
     
     // Add the current game status from the state machine
     state.gameStatus = instance.stateMachine.getCurrentState();
+    
+    // Get player data from PlayerRegistry - the single source of truth
+    const playerState = this.playerRegistry.getInstanceStateSnapshot(instance.id);
+    
+    // Override the players array with data from the registry
+    state.players = playerState.players;
     
     // Log projectiles count for debugging
     const projectileCount = state.projectiles ? state.projectiles.length : 0;
@@ -395,29 +433,20 @@ class SocketServer {
   private handlePlaceItem(clientId: string, data: any) {
     console.log(`SERVER: Handling PLACE_ITEM from client ${clientId}:`, JSON.stringify(data));
     
-    // Get the game instance this player belongs to
-    const instance = this.instanceManager.getInstanceByPlayer(clientId);
+    // Get instance from player registry
+    const instanceId = this.playerRegistry.getPlayerInstance(clientId);
+    if (!instanceId) {
+      console.error(`SERVER: Client ${clientId} not associated with any instance`);
+      return;
+    }
+    
+    const instance = this.instanceManager.getInstance(instanceId);
     if (!instance) {
-      console.error(`SERVER: Client ${clientId} not associated with a game instance`);
+      console.error(`SERVER: Instance ${instanceId} not found`);
       return;
     }
     
     console.log(`SERVER: Player is in instance ${instance.id}, validating placement...`);
-    
-    // Debug log unique identifiers for the GameStateManager instances
-    console.log(`SERVER: Instance state GameStateManager identity: ${instance.state.constructor.name}@${instance.state.toString().split('\n')[0]}`);
-    console.log(`SERVER: Root GameStateManager identity: ${this.gameState.constructor.name}@${this.gameState.toString().split('\n')[0]}`);
-    
-    // Make sure the player exists in the instance's GameStateManager 
-    // (This should have happened when joining the lobby)
-    if (!instance.state.getPlayer(clientId)) {
-      console.error(`SERVER DEBUG: Player ${clientId} not found in instance ${instance.id}'s GameStateManager, trying to register...`);
-      const playerName = this.clients.get(clientId)?.playerName || `Player-${clientId.substring(0, 4)}`;
-      
-      // Register the player directly in the instance's GameStateManager 
-      instance.state.addPlayer(clientId, playerName);
-      console.log(`SERVER DEBUG: Player ${clientId} manually registered to instance ${instance.id}`);
-    }
     
     // Validate item placement with the correct GameStateManager instance
     const isValid = instance.state.validateItemPlacement(data, clientId);
@@ -487,10 +516,16 @@ class SocketServer {
       return;
     }
     
-    // Get the game instance this player belongs to
-    const instance = this.instanceManager.getInstanceByPlayer(clientId);
+    // Get instance from player registry
+    const instanceId = this.playerRegistry.getPlayerInstance(clientId);
+    if (!instanceId) {
+      console.warn(`SERVER: Client ${clientId} not associated with any instance`);
+      return;
+    }
+    
+    const instance = this.instanceManager.getInstance(instanceId);
     if (!instance) {
-      console.warn(`SERVER: Client ${clientId} not associated with a game instance`);
+      console.warn(`SERVER: Instance ${instanceId} not found`);
       return;
     }
     
@@ -712,27 +747,66 @@ class SocketServer {
    * Send a message to all clients in a lobby
    */
   broadcastToLobby(lobbyId: string, message: NetworkMessage) {
+    if (!lobbyId) {
+      console.warn(`SERVER: Cannot broadcast to lobby with empty ID`);
+      return;
+    }
+    
     console.log(`SERVER: Broadcasting to lobby ${lobbyId}`);
     
-    this.clients.forEach(client => {
-      if (client.lobbyId === lobbyId && client.socket.readyState === WebSocket.OPEN) {
-        client.socket.send(JSON.stringify(message));
-      }
+    // Get the instance associated with this lobby
+    const instance = this.instanceManager.getInstanceByLobby(lobbyId);
+    if (!instance) {
+      console.warn(`SERVER: Cannot broadcast - no instance found for lobby ${lobbyId}`);
+      return;
+    }
+    
+    // Use PlayerRegistry to get all players in this instance
+    const instanceId = instance.id;
+    const players = this.playerRegistry.getInstancePlayers(instanceId);
+    
+    console.log(`SERVER: Broadcasting to lobby ${lobbyId} (instance ${instanceId}) with ${players.length} players`);
+    
+    // Send message to each player
+    players.forEach(playerId => {
+      this.sendMessage(playerId, message);
     });
+    
+    // Add a debug log for empty lobbies
+    if (players.length === 0) {
+      console.warn(`SERVER: Broadcast to lobby ${lobbyId} had no players to send to`);
+    }
   }
   
   /**
    * Send a message to all clients in a game instance
    */
   broadcastToInstance(instanceId: string, message: NetworkMessage) {
+    if (!instanceId) {
+      console.warn(`SERVER: Cannot broadcast to instance with empty ID`);
+      return;
+    }
+    
+    // Get instance to verify it exists
     const instance = this.instanceManager.getInstance(instanceId);
-    if (!instance) return;
+    if (!instance) {
+      console.warn(`SERVER: Cannot broadcast - instance ${instanceId} not found`);
+      return;
+    }
     
-    console.log(`SERVER: Broadcasting to instance ${instanceId} with ${instance.players.length} players`);
+    // Get all players in this instance directly from PlayerRegistry
+    const players = this.playerRegistry.getInstancePlayers(instanceId);
+    console.log(`SERVER: Broadcasting to instance ${instanceId} with ${players.length} players`);
     
-    instance.players.forEach(playerId => {
+    // Send message to each player
+    players.forEach(playerId => {
       this.sendMessage(playerId, message);
     });
+    
+    // Add a debug log for empty instances
+    if (players.length === 0) {
+      console.warn(`SERVER: Broadcast to instance ${instanceId} had no players to send to`);
+    }
   }
   
   /**

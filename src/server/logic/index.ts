@@ -1,7 +1,8 @@
 import { GameStateManager } from '../game-state';
 import { PhysicsEngine } from '../physics';
 import { gameEvents } from '../game-state/GameEvents';
-import { DeathType } from '../../shared/types';
+import { DeathType, Vector2D } from '../../shared/types';
+import { PLAYER } from '../../shared/constants';
 
 class GameLogicProcessor {
   private gameState: GameStateManager;
@@ -23,7 +24,7 @@ class GameLogicProcessor {
     gameEvents.subscribe<{
       playerId: string;
       cause: DeathType;
-      position: { x: number; y: number };
+      position: Vector2D;
     }>('PLAYER_DEATH', (data) => {
       this.handlePlayerDeath(data.playerId, data.cause);
     });
@@ -31,7 +32,7 @@ class GameLogicProcessor {
     // Handle player win
     gameEvents.subscribe<{
       playerId: string;
-      position: { x: number; y: number };
+      position: Vector2D;
     }>('PLAYER_WIN', (data) => {
       this.handlePlayerWin(data.playerId);
     });
@@ -60,19 +61,9 @@ class GameLogicProcessor {
    * Validate player input before applying it to the game state
    */
   validatePlayerInput(inputData: any, clientId: string): boolean {
-    // Check that the client exists
-    const state = this.gameState.getState();
-    const player = state.players.find((p: any) => p.id === clientId);
-    if (!player) return false;
-    
-    // Check that the game is active
-    const activeInAnyLobby = state.lobbies.some((lobby: any) => 
-      lobby.isGameActive && lobby.players.includes(clientId)
-    );
-    if (!activeInAnyLobby) return false;
-    
-    // Check that the player is alive
-    if (!player.isAlive) return false;
+    // Validate the input format only - player state checks are done elsewhere 
+    // This simplifies the validation logic as player state is now checked at
+    // the socket server level using PlayerRegistry
     
     // Check that the input is valid
     if (typeof inputData !== 'object') return false;
@@ -80,7 +71,10 @@ class GameLogicProcessor {
     // Validate specific input keys
     const validKeys = ['left', 'right', 'jump'];
     for (const key in inputData) {
-      if (!validKeys.includes(key) || typeof inputData[key] !== 'boolean') {
+      if (key === 'timestamp') continue;
+      if (key === 'up' || key === 'down') continue;
+      
+      if (!validKeys.includes(key) && typeof inputData[key] !== 'boolean') {
         return false;
       }
     }
@@ -307,12 +301,13 @@ class GameLogicProcessor {
     console.log(`Processing AI command: ${command} from ${clientId} in lobby ${lobbyId}`);
     
     // In a real implementation, this would parse the command and return an action
+    const position: Vector2D = { x: 300, y: 300 };
     return {
       success: true,
       action: {
         type: 'place_item',
         itemType: 'platform',
-        position: { x: 300, y: 300 },
+        position,
         properties: { width: 100, height: 20 }
       }
     };
@@ -330,7 +325,7 @@ class GameLogicProcessor {
     for (const playerId of lobby.players) {
       const player = state.players.find((p: any) => p.id === playerId);
       if (player) {
-        player.position = { x: 100, y: 100 };
+        player.position = { ...PLAYER.DEFAULT_POSITION };
         player.velocity = { x: 0, y: 0 };
         player.isAlive = true;
       }

@@ -1,6 +1,7 @@
 import { WebSocketServer } from 'ws';
 import { GameStateManager, GameInstanceManager } from '../game-state';
 import { GameLogicProcessor } from '../logic';
+import { PlayerRegistry } from '../registry';
 import { SocketServer } from './SocketServer';
 
 /**
@@ -10,9 +11,10 @@ function createSocketServer(
   wss: WebSocketServer,
   gameState: GameStateManager,
   gameLogic: GameLogicProcessor,
-  gameInstanceManager: GameInstanceManager
+  gameInstanceManager: GameInstanceManager,
+  playerRegistry: PlayerRegistry
 ): SocketServer {
-  return new SocketServer(wss, gameState, gameLogic, gameInstanceManager);
+  return new SocketServer(wss, gameState, gameLogic, gameInstanceManager, playerRegistry);
 }
 
 export { 

@@ -5,6 +5,7 @@ import { setupGameStateManager, setupGameInstanceManager } from './game-state';
 import { GameLogicProcessor } from './logic';
 import { setupPhysicsEngine } from './physics';
 import { gameEvents } from './game-state/GameEvents';
+import { PlayerRegistry } from './registry';
 
 // Create a basic HTTP server
 const server = http.createServer((req, res) => {
@@ -15,13 +16,19 @@ const server = http.createServer((req, res) => {
 // Create WebSocket server
 const wss = new WebSocketServer({ server });
 
+// Create player registry as the single source of truth for player data
+const playerRegistry = new PlayerRegistry();
+console.log(`[SERVER] Created PlayerRegistry`);
+
 // Create game managers
-const gameState = setupGameStateManager();
-console.log(`[SERVER] Created root GameStateManager: ${gameState.constructor.name}@${gameState.toString().split('\n')[0]}`); 
-const instanceManager = setupGameInstanceManager();
-// Pass instanceManager to PhysicsEngine so it doesn't need to use global state
-const physics = setupPhysicsEngine(gameState, instanceManager);
-console.log(`[SERVER] Created PhysicsEngine with root GameStateManager`); 
+const gameState = setupGameStateManager(playerRegistry);
+console.log(`[SERVER] Created root GameStateManager with PlayerRegistry`);
+const instanceManager = setupGameInstanceManager(playerRegistry);
+console.log(`[SERVER] Created GameInstanceManager with PlayerRegistry`);
+
+// Pass instanceManager and playerRegistry to PhysicsEngine
+const physics = setupPhysicsEngine(gameState, playerRegistry, instanceManager);
+console.log(`[SERVER] Created PhysicsEngine with GameStateManager, PlayerRegistry, and InstanceManager`); 
 const gameLogic = new GameLogicProcessor(gameState, physics);
 
 // Set up physics-state synchronization
@@ -129,7 +136,7 @@ gameEvents.subscribe<StartCountdownEvent>('START_COUNTDOWN', (data) => {
 });
 
 // Initialize socket server
-const socketServer = createSocketServer(wss, gameState, gameLogic, instanceManager);
+const socketServer = createSocketServer(wss, gameState, gameLogic, instanceManager, playerRegistry);
 
 // Listen for projectile updates and broadcast to clients
 gameEvents.subscribe('PROJECTILES_UPDATED', (data) => {

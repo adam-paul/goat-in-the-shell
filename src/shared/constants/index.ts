@@ -27,7 +27,7 @@ export const NETWORK = {
 
 // Player configurations
 export const PLAYER = {
-  DEFAULT_POSITION: { x: 100, y: 100 },
+  DEFAULT_POSITION: { x: 80, y: 650 },
   WIDTH: 30,
   HEIGHT: 50,
   MOVE_SPEED: 5,
