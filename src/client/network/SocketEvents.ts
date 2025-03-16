@@ -21,15 +21,13 @@ class SocketEvents {
         console.log('SOCKET EVENTS: Received message:', message.type);
         
         // Process game state updates
-        if (message.type === 'STATE_UPDATE') {
-          // Update the game store directly - it will publish the updated state
+        if (message.type === 'STATE_UPDATE' || message.type === 'INITIAL_STATE') {
+          // Handle unified state format
           const store = (window as any).__game_store_instance__;
-          if (store && store.updateGameState && message.payload?.state) {
-            // Let the store handle the state update and publishing
-            store.updateGameState(message.payload.state);
+          if (store && store.updateGameState && message.payload) {
+            // Store the entire unified state object
+            store.updateGameState(message.payload);
           }
-          // We no longer publish directly to SERVER_STATE_UPDATE
-          // The gameStore will do this as the single source of truth
         }
         
         // Process and forward the message

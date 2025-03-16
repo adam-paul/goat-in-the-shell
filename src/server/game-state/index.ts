@@ -1,20 +1,19 @@
 import { v4 as uuidv4 } from 'uuid';
-import { GameStatus, DeathType, GameWorld, Vector2D } from '../../shared/types';
+import { 
+  GameStatus, 
+  DeathType, 
+  GameWorld, 
+  Vector2D, 
+  UnifiedGameState,
+  GameItem,
+  GameParameters,
+  Player
+} from '../../shared/types';
 import { gameEvents } from './GameEvents';
-import { Player, PlayerRegistry } from '../registry';
+import { PlayerRegistry } from '../registry';
 import { PLAYER } from '../../shared/constants';
 
-// Define types for our game entities
-interface GameItem {
-  id: string;
-  type: string;
-  position: Vector2D;
-  rotation: number;
-  placedBy: string;
-  // Additional properties depending on item type
-  properties: Record<string, any>;
-}
-
+// Define lobby type for internal use
 interface Lobby {
   id: string;
   name: string;
@@ -24,33 +23,17 @@ interface Lobby {
   createdAt: number;
 }
 
-interface GameParameters {
-  gravity: number;
-  player_move_speed: number;
-  player_jump_force: number;
-  dart_speed: number;
-  dart_frequency: number;
-  platform_width: number;
-  platform_height: number;
-  spike_width: number;
-  spike_height: number;
-  oscillator_width: number;
-  oscillator_height: number;
-  oscillator_distance: number;
-  shield_width: number;
-  shield_height: number;
-  dart_wall_height: number;
-  tilt: number;
-}
-
 class GameStateManager {
-  private playerRegistry: PlayerRegistry;
   private items: Map<string, GameItem>;
   private lobbies: Map<string, Lobby>;
   private stateVersion: number;
   private lastUpdateTime: number;
   private parameters: Partial<GameParameters>;
   private gameWorld: GameWorld;
+  
+  // Make PlayerRegistry accessible to other components
+  public playerRegistry: PlayerRegistry;
+  public instanceManager: any; // Will be set by GameInstanceManager
   
   // Debug identifier for instance tracking
   public _debugId: string = Math.random().toString(36).substring(2, 7);
@@ -210,22 +193,100 @@ class GameStateManager {
   }
   
   /**
-   * Get the complete game state
+   * Get the unified game state with a consistent structure
+   * This is the new central method for getting game state
    */
-  getState(): any {
+  getState(instanceId?: string, clientId?: string): UnifiedGameState {
+    // Start with the global state structure
+    let state: UnifiedGameState = this.getGlobalState();
+    
+    // Add instance-specific data if an instance ID is provided
+    if (instanceId) {
+      state = this.getInstanceState(instanceId);
+    }
+    
+    // Add client-specific data if a client ID is provided
+    if (clientId) {
+      state = this.getClientState(clientId, state);
+    }
+    
+    return state;
+  }
+  
+  /**
+   * Get the global state (no instance-specific data)
+   */
+  private getGlobalState(): UnifiedGameState {
     return {
-      version: this.stateVersion,
-      timestamp: this.lastUpdateTime,
-      players: this.getAllPlayers(),
-      items: Array.from(this.items.values()),
-      lobbies: Array.from(this.lobbies.values()),
-      parameters: this.parameters,
-      gameWorld: this.gameWorld
+      timestamp: Date.now(),
+      version: this.stateVersion++,
+      
+      // World configuration remains constant (for now)
+      world: this.gameWorld,
+      
+      // No instance-specific data in global state
+      instance: null,
+      
+      // No client-specific data yet
+      client: {
+        id: '',
+        playerData: null
+      }
     };
   }
   
   /**
-   * Get all players from the registry
+   * Get instance-specific state
+   */
+  private getInstanceState(instanceId: string): UnifiedGameState {
+    // Start with global state
+    const state = this.getGlobalState();
+    
+    // Get players for this instance
+    const players = this.playerRegistry.getAllPlayersForInstance(instanceId);
+    
+    // Get items for this instance
+    const items = Array.from(this.items.values())
+      .filter(item => players.some(player => player.id === item.placedBy));
+    
+    // Handle case where instance doesn't exist
+    if (players.length === 0) {
+      return state;
+    }
+    
+    // Add instance-specific data
+    state.instance = {
+      id: instanceId,
+      status: 'playing', // Default to playing - will be overridden by state machine status later
+      items: items,
+      players: players,
+      parameters: this.parameters as GameParameters
+    };
+    
+    return state;
+  }
+  
+  /**
+   * Add client-specific data to a state object
+   */
+  private getClientState(clientId: string, baseState: UnifiedGameState): UnifiedGameState {
+    // Create a copy to avoid modifying the original
+    const state = { ...baseState };
+    
+    // Get the player data for this client
+    const playerData = this.playerRegistry.getPlayer(clientId);
+    
+    // Add client-specific data
+    state.client = {
+      id: clientId,
+      playerData: playerData || null
+    };
+    
+    return state;
+  }
+  
+  /**
+   * Get all players from the registry (helper method)
    */
   private getAllPlayers(): Player[] {
     // For each lobby managed by this GameStateManager, get all players
@@ -243,45 +304,20 @@ class GameStateManager {
   
   /**
    * Get a snapshot of the state for a specific lobby
+   * Legacy method - redirects to new unified state
    */
   getLobbyState(lobbyId: string): any {
     const lobby = this.lobbies.get(lobbyId);
     if (!lobby) return null;
     
-    // Get the instance ID for this lobby from the instance manager
-    // The instance manager isn't directly available here, so we'll have to rely on the lobby.players
-    // to find players who are in this lobby, then get their instance through PlayerRegistry
-    
+    // Get instance ID for this lobby (using first player)
     let instanceId = '';
-    // Find the first player in this lobby and get their instance
     if (lobby.players.length > 0) {
       instanceId = this.playerRegistry.getPlayerInstance(lobby.players[0]) || '';
     }
     
-    // Get players in this instance from the registry (single source of truth)
-    const lobbyPlayers = instanceId ? 
-      this.playerRegistry.getAllPlayersForInstance(instanceId) : 
-      // Fallback to the old method if instanceId isn't found
-      lobby.players.map(id => this.playerRegistry.getPlayer(id)).filter(Boolean) as Player[];
-    
-    const lobbyItems = Array.from(this.items.values())
-      .filter(item => {
-        // Filter items based on which player placed them
-        // We'll have to check if the player is in this instance
-        return lobbyPlayers.some(player => player.id === item.placedBy);
-      });
-    
-    return {
-      version: this.stateVersion,
-      timestamp: this.lastUpdateTime,
-      lobbyId,
-      instanceId, // Include the instance ID for better tracing
-      isGameActive: lobby.isGameActive,
-      players: lobbyPlayers,
-      items: lobbyItems,
-      parameters: this.parameters,
-      gameWorld: this.gameWorld
-    };
+    // Use our new unified state method
+    return this.getState(instanceId);
   }
   
   /**
@@ -289,6 +325,13 @@ class GameStateManager {
    */
   getPlayer(clientId: string): Player | undefined {
     return this.playerRegistry.getPlayer(clientId);
+  }
+  
+  /**
+   * Get all lobbies
+   */
+  getLobbies(): Map<string, Lobby> {
+    return this.lobbies;
   }
   
   /**

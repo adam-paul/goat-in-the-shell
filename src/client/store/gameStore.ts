@@ -121,13 +121,46 @@ export const useGameStore = create<GameState>((set, get): GameState => {
   
   // Server state setters
   setGameConfig: (config: any) => set(() => ({ gameConfig: config })),
-  updateGameState: (state: any) => {
-    // Update the store state
-    set(() => ({ gameState: state }));
+  updateGameState: (unifiedState: any) => {
+    // Update the store with unified state
+    set(() => ({ gameState: unifiedState }));
+    
+    // Update client ID if provided
+    if (unifiedState.client && unifiedState.client.id) {
+      set(state => {
+        // Only update if it's different to avoid unnecessary re-renders
+        if (state.clientId !== unifiedState.client.id) {
+          return { clientId: unifiedState.client.id };
+        }
+        return {};
+      });
+    }
+    
+    // Update instance ID if provided
+    if (unifiedState.instance && unifiedState.instance.id) {
+      set(state => {
+        // Only update if it's different
+        if (state.instanceId !== unifiedState.instance.id) {
+          return { instanceId: unifiedState.instance.id };
+        }
+        return {};
+      });
+    }
+    
+    // Update game status if provided in instance data
+    if (unifiedState.instance && unifiedState.instance.status) {
+      set(state => {
+        // Only update if it's different
+        if (state.gameStatus !== unifiedState.instance.status) {
+          return { gameStatus: unifiedState.instance.status };
+        }
+        return {};
+      });
+    }
     
     // After updating the store state, publish to GameEventBus for BasicGameScene
     // This ensures the store is the single source of truth that drives the game scene
-    gameEvents.publish('SERVER_STATE_UPDATE', state);
+    gameEvents.publish('SERVER_STATE_UPDATE', unifiedState);
   },
   
   

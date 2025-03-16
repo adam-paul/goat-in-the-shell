@@ -1,7 +1,7 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { randomUUID } from 'crypto';
 import { MESSAGE_TYPES } from '../../shared/constants';
-import type { NetworkMessage } from '../../shared/types';
+import type { NetworkMessage, UnifiedGameState } from '../../shared/types';
 import { GameStateManager } from '../game-state';
 import { GameLogicProcessor } from '../logic';
 import { GameInstanceManager } from '../game-state/GameInstanceManager';
@@ -83,21 +83,12 @@ class SocketServer {
         
       socket.on('error', (err) => this.handleError(clientId, err));
       
-      // Send initial welcome message with game world data
+      // Send initial welcome message with unified game state
+      const unifiedState = this.gameState.getState(undefined, clientId);
+      
       this.sendMessage(clientId, {
         type: MESSAGE_TYPES.INITIAL_STATE,
-        payload: {
-          clientId,
-          timestamp: Date.now(),
-          gameConfig: {
-            gravity: 1.0,
-            moveSpeed: 5.0,
-            jumpForce: 10.0,
-          },
-          gameWorld: this.gameState.getGameWorld(), // Include game world data
-          // We don't set gameStatus here because the tutorial and mode select are client-side only
-          // The server will set proper state machine status when player joins a lobby
-        }
+        payload: unifiedState
       });
     });
   }
@@ -313,6 +304,10 @@ class SocketServer {
     // Notify player of successful join - use instance ID from PlayerRegistry for consistency
     const instanceId = this.playerRegistry.getPlayerInstance(clientId);
     
+    // Store the instanceId in the client object to ensure future request_initial_state calls
+    // return instance-specific state instead of global state
+    client.instanceId = instanceId;
+    
     this.sendMessage(clientId, {
       type: MESSAGE_TYPES.EVENT,
       payload: {
@@ -398,60 +393,34 @@ class SocketServer {
   
   /**
    * Broadcast the current game state to all clients in an instance
+   * Uses the unified game state structure
    */
   public broadcastGameState(instance: any): void {
-    // Get the game state - includes items, projectiles, etc.
-    const state = instance.state.getState();
-    
-    // Add the current game status from the state machine
-    state.gameStatus = instance.stateMachine.getCurrentState();
-    
-    // Check if we have projectiles in the state
-    if (!state.projectiles || state.projectiles.length === 0) {
-      console.log(`[DEBUG] Instance ${instance.id} has no projectiles in state - investigate why`);
-    } else {
-      console.log(`[DEBUG] Instance ${instance.id} has ${state.projectiles.length} projectiles in state`);
+    // Get the players in this instance
+    const players = this.playerRegistry.getInstancePlayers(instance.id);
+    if (players.length === 0) {
+      console.log(`[SocketServer] No players in instance ${instance.id} to broadcast to`);
+      return;
     }
     
-    // Get player data from PlayerRegistry - the single source of truth
-    const playerState = this.playerRegistry.getInstanceStateSnapshot(instance.id);
-    
-    // Override the players array with data from the registry
-    state.players = playerState.players;
-    
-    // Log projectiles count for debugging
-    const projectileCount = state.projectiles ? state.projectiles.length : 0;
-    
-    // Enhanced logging for projectiles
-    if (projectileCount > 0) {
-      console.log(`[DART SYSTEM] Broadcasting state with ${projectileCount} projectiles to ${playerState.players.length} players in instance ${instance.id}`);
+    // For each player, create and send a personalized state
+    players.forEach(playerId => {
+      // Get unified state for this instance and client
+      const unifiedState = instance.state.getState(instance.id, playerId);
       
-      // Log details of the first few projectiles for debugging
-      state.projectiles.slice(0, 3).forEach((proj: any, i: number) => {
-        console.log(`[DART SYSTEM] Projectile ${i}: id=${proj.id}, type=${proj.type}, pos=(${proj.position.x}, ${proj.position.y}), vel=(${proj.velocity.x}, ${proj.velocity.y})`);
-      });
-    }
-    
-    // Debug - check the state before sending
-    console.log(`[SocketServer] State to broadcast - projectiles: ${state.projectiles?.length || 'undefined'}`);
-    
-    // Create the network message
-    const stateUpdateMessage = {
-      type: MESSAGE_TYPES.STATE_UPDATE,
-      payload: {
-        state,
-        timestamp: Date.now()
+      // Set the correct game status from state machine
+      if (unifiedState.instance) {
+        unifiedState.instance.status = instance.stateMachine.getCurrentState();
       }
-    };
-    
-    // Debug - verify the structure of the message
-    console.log(`[SocketServer] Message to send - has projectiles: ${stateUpdateMessage.payload.state.projectiles ? 'yes' : 'no'}`);
-    if (stateUpdateMessage.payload.state.projectiles) {
-      console.log(`[SocketServer] Message projectiles count: ${stateUpdateMessage.payload.state.projectiles.length}`);
-    }
-    
-    // Send state update to all clients
-    this.broadcastToInstance(instance.id, stateUpdateMessage);
+      
+      // Projectiles have been deprecated
+      
+      // Send personalized state update to this client
+      this.sendMessage(playerId, {
+        type: MESSAGE_TYPES.STATE_UPDATE,
+        payload: unifiedState
+      });
+    });
   }
   
   /**
@@ -717,36 +686,26 @@ class SocketServer {
     const client = this.clients.get(clientId);
     if (!client) return;
     
-    // If client is in a game instance, send that instance's state
-    if (client.instanceId) {
-      const instance = this.instanceManager.getInstance(client.instanceId);
-      if (instance) {
-        const state = instance.state.getState();
-        
-        // Send state update including game world
-        this.sendMessage(clientId, {
-          type: MESSAGE_TYPES.STATE_UPDATE,
-          payload: {
-            state: state,
-            timestamp: Date.now(),
-            gameWorld: instance.state.getGameWorld(), // Include game world data
-            gameStatus: instance.stateMachine.getCurrentState() // Include current game status from state machine
-          }
-        });
-        return;
+    // Get the instanceId from client object (if available)
+    const instanceId = client.instanceId;
+    
+    // Get unified state using our new structure
+    // This will automatically handle instance-specific vs global state
+    const unifiedState = this.gameState.getState(instanceId, clientId);
+    
+    // If we have an instance, add current game status from state machine
+    if (instanceId) {
+      const instance = this.instanceManager.getInstance(instanceId);
+      if (instance && unifiedState.instance) {
+        // Set the correct status from state machine
+        unifiedState.instance.status = instance.stateMachine.getCurrentState();
       }
     }
     
-    // If not in an instance, send global state
-    const globalState = this.gameState.getState();
-    
+    // Send unified state to client
     this.sendMessage(clientId, {
       type: MESSAGE_TYPES.STATE_UPDATE,
-      payload: {
-        state: globalState,
-        timestamp: Date.now(),
-        gameWorld: this.gameState.getGameWorld() // Include game world data
-      }
+      payload: unifiedState
     });
   }
   

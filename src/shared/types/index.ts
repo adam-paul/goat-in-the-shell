@@ -53,6 +53,91 @@ export interface GameWorld {
 }
 
 /**
+ * Player information with position, velocity, and state
+ */
+export interface Player {
+  id: string;
+  name: string;
+  position: Vector2D;
+  velocity: Vector2D;
+  isAlive: boolean;
+  score: number;
+  onGround?: boolean;
+  facingLeft?: boolean;
+  lastInput?: {
+    left?: boolean;
+    right?: boolean;
+    jump?: boolean;
+    up?: boolean;
+    down?: boolean;
+    timestamp?: number;
+  };
+}
+
+/**
+ * Game item with position and properties
+ */
+export interface GameItem {
+  id: string;
+  type: string;
+  position: Vector2D;
+  rotation: number;
+  placedBy: string;
+  properties: Record<string, any>;
+}
+
+// Projectiles have been deprecated
+
+/**
+ * Game physics parameters
+ */
+export interface GameParameters {
+  gravity: number;
+  player_move_speed: number;
+  player_jump_force: number;
+  dart_speed: number;
+  dart_frequency: number;
+  platform_width: number;
+  platform_height: number;
+  spike_width: number;
+  spike_height: number;
+  oscillator_width: number;
+  oscillator_height: number;
+  oscillator_distance: number;
+  shield_width: number;
+  shield_height: number;
+  dart_wall_height: number;
+  tilt: number;
+}
+
+/**
+ * Unified game state structure - single source of truth
+ */
+export interface UnifiedGameState {
+  // Metadata
+  timestamp: number;
+  version: number;
+  
+  // World configuration (static)
+  world: GameWorld;
+  
+  // Instance-specific data (null for global state)
+  instance: {
+    id: string;
+    status: GameStatus;
+    items: GameItem[];
+    players: Player[];
+    parameters: GameParameters;
+  } | null;
+  
+  // Client-specific data (populated by server before sending)
+  client: {
+    id: string;
+    playerData: Player | null; // This client's player data for convenience
+  };
+}
+
+/**
  * Options for obstacles that can be placed by the prompter
  */
 export interface ItemOption {
@@ -253,17 +338,7 @@ export interface CommandResultMessage extends NetworkMessage {
  */
 export interface InitialStateMessage extends NetworkMessage {
   type: 'INITIAL_STATE';
-  payload: {
-    clientId: string;
-    timestamp: number;
-    instanceId?: string;
-    gameConfig: {
-      gravity: number;
-      moveSpeed: number;
-      jumpForce: number;
-      [key: string]: any;
-    }
-  };
+  payload: UnifiedGameState;
 }
 
 /**
@@ -271,28 +346,7 @@ export interface InitialStateMessage extends NetworkMessage {
  */
 export interface StateUpdateMessage extends NetworkMessage {
   type: 'STATE_UPDATE';
-  payload: {
-    timestamp: number;
-    state: {
-      players: Array<{
-        id: string;
-        name: string;
-        position: { x: number; y: number };
-        velocity: { x: number; y: number };
-        isAlive: boolean;
-        score: number;
-      }>;
-      items: Array<{
-        id: string;
-        type: string;
-        position: { x: number; y: number };
-        rotation: number;
-        placedBy: string;
-        properties: Record<string, any>;
-      }>;
-      gameStatus: GameStatus;
-    };
-  };
+  payload: UnifiedGameState;
 }
 
 /**

@@ -97,31 +97,32 @@ class GameLogicProcessor {
       return false;
     }
     
-    // Check that the client exists
-    const state = this.gameState.getState();
-    const player = state.players.find((p: any) => p.id === clientId);
+    // Get the instance ID for this client
+    const instanceId = this.gameState.playerRegistry.getPlayerInstance(clientId);
+    if (!instanceId) {
+      console.error(`VALIDATION: Client ${clientId} not associated with any instance`);
+      return false;
+    }
+    
+    // Get player from registry directly
+    const player = this.gameState.playerRegistry.getPlayer(clientId);
     if (!player) {
-      console.error(`VALIDATION: Client ${clientId} not found in players list`);
+      console.error(`VALIDATION: Client ${clientId} not found in player registry`);
       return false;
     }
     
-    // Check that the game is in placement phase (not running)
-    // Find what lobby the player is in
-    let playerLobby;
-    for (const lobby of state.lobbies) {
-      if (lobby.players.includes(clientId)) {
-        playerLobby = lobby;
-        break;
-      }
-    }
-    
-    if (!playerLobby) {
-      console.error(`VALIDATION: Client ${clientId} not found in any lobby`);
+    // Use instance from registry instead of looping through lobbies
+    const instance = this.gameState.instanceManager.getInstance(instanceId);
+    if (!instance) {
+      console.error(`VALIDATION: Instance ${instanceId} not found`);
       return false;
     }
     
-    if (playerLobby.isGameActive) {
-      console.error(`VALIDATION: Can't place items during active gameplay in lobby ${playerLobby.id}`);
+    // Check if the game is active
+    const isGameActive = instance.stateMachine.isGameplayActive();
+    
+    if (isGameActive) {
+      console.error(`VALIDATION: Can't place items during active gameplay in instance ${instanceId}`);
       return false; // Can't place items during active gameplay
     }
     
@@ -259,34 +260,42 @@ class GameLogicProcessor {
    * Check if a client is authorized to start a game
    */
   canStartGame(clientId: string): boolean {
-    const state = this.gameState.getState();
+    // Get all lobbies from the game state directly
+    const lobbies = Array.from(this.gameState.getLobbies().values());
     
     // Check if the client is a host in any lobby
-    return state.lobbies.some((lobby: any) => lobby.hostId === clientId);
+    return lobbies.some(lobby => lobby.hostId === clientId);
   }
   
   /**
    * Check if a game round is complete
    */
   checkRoundComplete(lobbyId: string): boolean {
-    const state = this.gameState.getState();
-    const lobby = state.lobbies.find((lobby: any) => lobby.id === lobbyId);
-    if (!lobby || !lobby.isGameActive) return false;
+    // Get lobby from instance manager via the first player
+    const lobby = Array.from(this.gameState.getLobbies().values())
+      .find(lobby => lobby.id === lobbyId);
     
-    // Get all players in this lobby
-    const lobbyPlayers = state.players.filter((player: any) => 
-      lobby.players.includes(player.id)
-    );
+    if (!lobby) return false;
     
-    // Check if all players are dead or if any player reached the goal
-    const allDead = lobbyPlayers.every((player: any) => !player.isAlive);
+    // Get the instance ID using the first player in the lobby
+    let instanceId = '';
+    if (lobby.players.length > 0) {
+      instanceId = this.gameState.playerRegistry.getPlayerInstance(lobby.players[0]) || '';
+    }
     
-    // In a real game, we would also check win conditions here
-    // const anyWinner = lobbyPlayers.some(player => 
-    //   player.position.x > 750 && player.position.y < 100
-    // );
+    if (!instanceId) return false;
     
-    return allDead; // || anyWinner;
+    // Get instance state
+    const instance = this.gameState.instanceManager.getInstance(instanceId);
+    if (!instance || !instance.stateMachine.isGameplayActive()) return false;
+    
+    // Get players directly from registry
+    const lobbyPlayers = this.gameState.playerRegistry.getAllPlayersForInstance(instanceId);
+    
+    // Check if all players are dead
+    const allDead = lobbyPlayers.every(player => !player.isAlive);
+    
+    return allDead;
   }
   
   /**
@@ -314,26 +323,36 @@ class GameLogicProcessor {
    * Reset the game state for a new round
    */
   startNewRound(lobbyId: string): void {
-    const state = this.gameState.getState();
-    const lobby = state.lobbies.find((lobby: any) => lobby.id === lobbyId);
+    // Get the lobby
+    const lobby = Array.from(this.gameState.getLobbies().values())
+      .find(lobby => lobby.id === lobbyId);
+    
     if (!lobby) return;
     
-    // Reset all players in this lobby
+    // Get the instance ID
+    let instanceId = '';
+    if (lobby.players.length > 0) {
+      instanceId = this.gameState.playerRegistry.getPlayerInstance(lobby.players[0]) || '';
+    }
+    
+    if (!instanceId) return;
+    
+    // Get instance
+    const instance = this.gameState.instanceManager.getInstance(instanceId);
+    if (!instance) return;
+    
+    // Reset all players in this instance
     for (const playerId of lobby.players) {
-      const player = state.players.find((p: any) => p.id === playerId);
+      const player = this.gameState.playerRegistry.getPlayer(playerId);
       if (player) {
-        player.position = { ...PLAYER.DEFAULT_POSITION };
-        player.velocity = { x: 0, y: 0 };
-        player.isAlive = true;
+        this.gameState.playerRegistry.updatePlayerPosition(playerId, { ...PLAYER.DEFAULT_POSITION });
+        this.gameState.playerRegistry.updatePlayerVelocity(playerId, { x: 0, y: 0 });
+        this.gameState.playerRegistry.setPlayerAliveStatus(playerId, true);
       }
     }
     
-    // Remove temporary items (those that are specific to a round)
-    // This would typically include items that were placed during the round
-    // but not the permanent level elements
-    
-    // Start the game
-    lobby.isGameActive = true;
+    // Start the game using state machine
+    instance.stateMachine.transitionTo('playing');
   }
 }
 

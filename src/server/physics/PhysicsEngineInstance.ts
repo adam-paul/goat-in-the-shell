@@ -313,19 +313,24 @@ export class PhysicsEngineInstance {
       const body = this.bodies.get(player.id);
       if (!body) continue;
       
-      // Get player input state from game state 
-      const gameState = this.gameState.getState();
-      const playerState = gameState.players.find((p: { id: string }) => p.id === player.id);
-      if (!playerState?.lastInput) continue;
+      // Get instance state with player input data
+      const instanceState = this.gameState.getState(this.instanceId);
+      
+      // If no instance data, skip
+      if (!instanceState.instance) continue;
+      
+      // Find player in instance state
+      const instancePlayer = instanceState.instance.players.find(p => p.id === player.id);
+      if (!instancePlayer?.lastInput) continue;
       
       // Apply horizontal movement force - match original implementation behavior
-      if (playerState.lastInput.left) {
+      if (instancePlayer.lastInput.left) {
         // Set a fixed leftward velocity instead of applying force
         Matter.Body.setVelocity(body, {
           x: -6, // Fixed velocity
           y: body.velocity.y // Maintain vertical velocity
         });
-      } else if (playerState.lastInput.right) {
+      } else if (instancePlayer.lastInput.right) {
         // Set a fixed rightward velocity instead of applying force
         Matter.Body.setVelocity(body, {
           x: 6, // Fixed velocity
@@ -340,7 +345,7 @@ export class PhysicsEngineInstance {
       }
       
       // Apply jump force if on ground and jump pressed
-      if (playerState.lastInput.jump && this.isBodyOnGround(body)) {
+      if (instancePlayer.lastInput.jump && this.isBodyOnGround(body)) {
         Matter.Body.setVelocity(body, {
           x: body.velocity.x,
           y: -this.parameters.player_jump_force * 20 // Scale to match original physics
@@ -353,9 +358,13 @@ export class PhysicsEngineInstance {
    * Update physics for special items like oscillating platforms
    */
   private updateSpecialItemPhysics(): void {
-    const gameState = this.gameState.getState();
+    const instanceState = this.gameState.getState(this.instanceId);
     
-    for (const item of gameState.items) {
+    // Skip if no instance data
+    if (!instanceState.instance) return;
+    
+    // Process each item in the instance
+    for (const item of instanceState.instance.items) {
       const body = this.bodies.get(item.id);
       if (!body) continue;
       

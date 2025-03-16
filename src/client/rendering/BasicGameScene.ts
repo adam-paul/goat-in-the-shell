@@ -505,60 +505,57 @@ export default class BasicGameScene extends Phaser.Scene {
     }
   }
   
-  private updateGameState(gameState: any): void {
-    console.log('Received game state from server:', gameState);
+  private updateGameState(unifiedState: any): void {
+    console.log('Received unified game state from server:', unifiedState);
     
-    // Find the correct state data structure
-    // This handles different ways the state might be nested
-    let state = gameState;
-    if (gameState.state) state = gameState.state;
-    if (gameState.payload?.state) state = gameState.payload.state;
-    
-    // Store previous game status to detect changes
-    const previousStatus = this.gameStatus;
-    
-    // We never clear items during normal gameplay updates
-    // Instead, only track new items that need to be added
-    
-    // Store client ID if provided
-    if (state.clientId) {
-      this.clientId = state.clientId;
+    // Store the client ID if available
+    if (unifiedState.client && unifiedState.client.id) {
+      this.clientId = unifiedState.client.id;
     }
     
+    // Always update the world from the unified state
+    if (unifiedState.world) {
+      this.updateWorldFromServer(unifiedState.world);
+    }
+    
+    // If there's no instance data, this is global state - nothing more to do
+    if (!unifiedState.instance) {
+      console.log('Received global state (no instance data)');
+      return;
+    }
+    
+    // Get the instance data
+    const instance = unifiedState.instance;
+    
     // Update game status if provided
-    if (state.gameStatus) {
-      this.gameStatus = state.gameStatus;
+    if (instance.status) {
+      const previousStatus = this.gameStatus;
+      this.gameStatus = instance.status;
       
       // Update game start state based on status
-      if (state.gameStatus === 'playing') {
+      if (instance.status === 'playing') {
         this.gameStarted = true;
         this.gameOver = false;
         this.gameWon = false;
-      } else if (state.gameStatus === 'gameover') {
+      } else if (instance.status === 'gameover') {
         this.gameOver = true;
         this.gameStarted = false;
-      } else if (state.gameStatus === 'win') {
+      } else if (instance.status === 'win') {
         this.gameWon = true;
         this.gameStarted = false;
       }
+      
+      // Only clear placed items on game reset or when we're explicitly going back to select mode
+      if (instance.status === 'reset' || instance.status === 'select') {
+        console.log('Clearing all placed items due to reset or new game');
+        this.clearPlacedItems();
+      }
     }
     
-    // Handle the game world data (platforms, start/end points)
-    if (state.gameWorld) {
-      this.updateWorldFromServer(state.gameWorld);
-    }
-    
-    // Only clear placed items on game reset or when we're explicitly going back to select mode
-    // This ensures items persist throughout gameplay
-    if (this.gameStatus === 'reset' || this.gameStatus === 'select') {
-      console.log('Clearing all placed items due to reset or new game');
-      this.clearPlacedItems();
-    }
-    
-    // Handle players from state
-    if (state.players && Array.isArray(state.players)) {
+    // Handle players from instance data
+    if (instance.players && Array.isArray(instance.players)) {
       // Process each player
-      state.players.forEach((player: any) => {
+      instance.players.forEach((player: any) => {
         if (!player) return;
         
         // Check if this is our player
@@ -607,14 +604,13 @@ export default class BasicGameScene extends Phaser.Scene {
       });
     }
     
-    // Handle items from state - maintain a set of placed items by ID
-    // to avoid duplicating items on state updates
-    if (state.items && Array.isArray(state.items)) {
+    // Handle items from instance data
+    if (instance.items && Array.isArray(instance.items)) {
       // Track what IDs we've already placed
       const existingItemIds = this.placedItems.map(item => item.id);
       
       // Process each item from the state
-      state.items.forEach((item: any) => {
+      instance.items.forEach((item: any) => {
         // Skip if this item is already placed (avoid duplicates)
         if (item.id && existingItemIds.includes(item.id)) {
           return;
@@ -633,15 +629,11 @@ export default class BasicGameScene extends Phaser.Scene {
               (placedItem.gameObject as Phaser.GameObjects.Rectangle).rotation = item.rotation;
             }
           }
-        } else if (item.x !== undefined && item.y !== undefined) {
-          // Alternative format
-          this.placeItem(item.type, item.x, item.y, item.id);
         }
       });
     }
     
-    // Process game state
-    this.processGameState(state);
+    // Projectiles have been deprecated
   }
   
   /**
