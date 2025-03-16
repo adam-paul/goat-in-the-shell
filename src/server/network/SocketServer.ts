@@ -28,6 +28,10 @@ class SocketServer {
   private playerRegistry: PlayerRegistry;
   private pingIntervalId: NodeJS.Timeout | null = null;
   
+  private inputBroadcastIntervals: Map<string, { intervalId: NodeJS.Timeout; timeoutId: NodeJS.Timeout }> = new Map();
+  private fixedBroadcastIntervalId: NodeJS.Timeout | null = null;
+  private readonly BROADCAST_INTERVAL = 100; // milliseconds
+  
   constructor(
     wss: WebSocketServer, 
     gameState: GameStateManager, 
@@ -46,6 +50,9 @@ class SocketServer {
     
     // Start health check interval (every 30 seconds)
     this.startPingInterval(30000);
+    
+    // Start fixed broadcast interval for all active game instances
+    this.startFixedBroadcastInterval();
   }
   
   /**
@@ -380,19 +387,13 @@ class SocketServer {
       return;
     }
     
-    // Apply input using the instance's state manager
+    // Apply input using the instance's state manager - just update the input state
+    // The main physics loop will handle the actual physics updates
+    // This creates a clear separation between input handling and physics/state updates
     instance.state.applyPlayerInput(data, clientId);
     
-    // Send state update to client faster for better responsiveness (50ms)
-    // on input received. This helps reduce perceived latency.
-    const stateBroadcast = setInterval(() => {
-      this.broadcastGameState(instance);
-    }, 50);
-    
-    // Stop the fast update after 200ms
-    setTimeout(() => {
-      clearInterval(stateBroadcast);
-    }, 200);
+    // No need to create intervals here - the fixed broadcast interval will handle state updates
+    // This prevents the explosion of intervals we were seeing before
   }
   
   /**
@@ -904,6 +905,37 @@ class SocketServer {
   }
   
   /**
+   * Start a fixed interval to broadcast game state for all active instances
+   */
+  private startFixedBroadcastInterval(): void {
+    // Clear any existing interval
+    if (this.fixedBroadcastIntervalId) {
+      clearInterval(this.fixedBroadcastIntervalId);
+    }
+    
+    // Set up a regular interval to broadcast state updates
+    this.fixedBroadcastIntervalId = setInterval(() => {
+      // Get all active game instances
+      const instances = this.instanceManager.getAllInstances();
+      
+      // Only broadcast for active instances
+      instances.forEach(instance => {
+        if (instance.isActive && instance.stateMachine.isGameplayActive()) {
+          // Get players in this instance
+          const players = this.playerRegistry.getInstancePlayers(instance.id);
+          
+          // Only broadcast if there are players
+          if (players.length > 0) {
+            this.broadcastGameState(instance);
+          }
+        }
+      });
+    }, this.BROADCAST_INTERVAL);
+    
+    console.log(`SERVER: Started fixed broadcast interval at ${this.BROADCAST_INTERVAL}ms`);
+  }
+  
+  /**
    * Shutdown the socket server
    */
   shutdown() {
@@ -914,6 +946,19 @@ class SocketServer {
       clearInterval(this.pingIntervalId);
       this.pingIntervalId = null;
     }
+    
+    // Clear fixed broadcast interval
+    if (this.fixedBroadcastIntervalId) {
+      clearInterval(this.fixedBroadcastIntervalId);
+      this.fixedBroadcastIntervalId = null;
+    }
+    
+    // Clear any remaining input broadcast intervals
+    this.inputBroadcastIntervals.forEach(({ intervalId, timeoutId }) => {
+      clearInterval(intervalId);
+      clearTimeout(timeoutId);
+    });
+    this.inputBroadcastIntervals.clear();
     
     // Close all client connections
     this.clients.forEach((client, clientId) => {
