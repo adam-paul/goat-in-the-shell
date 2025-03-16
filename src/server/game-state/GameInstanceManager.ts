@@ -45,6 +45,10 @@ export class GameInstanceManager {
     const state = new GameStateManager(this.playerRegistry);
     console.log(`[GameInstanceManager] Created new GameStateManager for instance: ${state.constructor.name}@${state.toString().split('\n')[0]}`);
     
+    // Initialize game world with default platforms and dart walls
+    state.initializeGameWorld();
+    console.log(`[GameInstanceManager] Initialized game world with platforms and dart walls for instance`);
+    
     // Create the new game instance
     const instanceId = uuidv4();
     

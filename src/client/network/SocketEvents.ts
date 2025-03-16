@@ -18,7 +18,27 @@ class SocketEvents {
     socket.onmessage = (event) => {
       try {
         const message = JSON.parse(event.data) as NetworkMessage;
-        console.log('SOCKET EVENTS: Received message:', message);
+        console.log('SOCKET EVENTS: Received message:', message.type);
+        
+        // Special logging for STATE_UPDATE messages
+        if (message.type === 'STATE_UPDATE') {
+          // Check if the message has the full expected structure
+          console.log(`[SOCKET TRACE] Message structure: payload=${!!message.payload}, state=${!!message.payload?.state}`);
+          
+          // Check for projectiles array
+          if (message.payload?.state?.projectiles) {
+            const projectiles = message.payload.state.projectiles;
+            console.log(`[DART TRACE] Socket received STATE_UPDATE with ${projectiles.length} projectiles`);
+            
+            // Log the first few projectiles
+            if (projectiles.length > 0) {
+              console.log('[DART TRACE] First projectile:', JSON.stringify(projectiles[0]));
+            }
+          } else {
+            console.warn('[DART TRACE] Socket received STATE_UPDATE without projectiles array');
+            console.log('[DART TRACE] Payload state keys:', message.payload?.state ? Object.keys(message.payload.state).join(', ') : 'no state');
+          }
+        }
         
         // Process and forward the message
         this.forwardToGameEventBus(message);

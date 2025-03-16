@@ -61,6 +61,9 @@ class GameStateManager {
   private parameters: Partial<GameParameters>;
   private gameWorld: GameWorld;
   
+  // Debug identifier for instance tracking
+  public _debugId: string = Math.random().toString(36).substring(2, 7);
+  
   constructor(playerRegistry: PlayerRegistry) {
     this.playerRegistry = playerRegistry;
     this.items = new Map();
@@ -151,7 +154,7 @@ class GameStateManager {
   /**
    * Initialize game world with default platforms
    */
-  private initializeGameWorld(): void {
+  public initializeGameWorld(): void {
     // Create ground segments
     const segmentWidth = 200;
     const gapWidth = 100;
@@ -626,7 +629,15 @@ class GameStateManager {
       createdAt: projectile.createdAt || Date.now()
     };
     
+    console.log(`[GameState] Adding projectile ${id} of type ${newProjectile.type} at position (${newProjectile.position.x}, ${newProjectile.position.y})`);
+    console.log(`[GameState] Projectile velocity: (${newProjectile.velocity.x}, ${newProjectile.velocity.y})`);
+    
+    // Store projectile
     this.projectiles.set(id, newProjectile);
+    
+    // Log total projectiles for verification
+    console.log(`[GameState] Total projectiles in state: ${this.projectiles.size}`);
+    
     return newProjectile;
   }
   

@@ -1,5 +1,6 @@
 import { Vector2D } from '../../shared/types';
 import { PLAYER } from '../../shared/constants';
+import { gameEvents } from '../game-state/GameEvents';
 
 export interface Player {
   id: string;
@@ -73,10 +74,6 @@ export class PlayerRegistry {
       const oldPosition = { ...player.position };
       player.position = position;
       
-      // Import gameEvents to publish position change
-      // This is imported here rather than at the top to avoid circular dependencies
-      const { gameEvents } = require('../game-state/GameEvents');
-      
       // Publish event for position change
       gameEvents.publish('PLAYER_POSITION_CHANGED', {
         playerId: id,
@@ -93,9 +90,6 @@ export class PlayerRegistry {
     if (player) {
       const oldVelocity = { ...player.velocity };
       player.velocity = velocity;
-      
-      // Import gameEvents to publish velocity change
-      const { gameEvents } = require('../game-state/GameEvents');
       
       // Publish event for velocity change
       gameEvents.publish('PLAYER_VELOCITY_CHANGED', {
@@ -115,9 +109,6 @@ export class PlayerRegistry {
       if (player.isAlive !== isAlive) {
         const oldStatus = player.isAlive;
         player.isAlive = isAlive;
-        
-        // Import gameEvents to publish status change
-        const { gameEvents } = require('../game-state/GameEvents');
         
         // Publish event for alive status change
         gameEvents.publish('PLAYER_ALIVE_STATUS_CHANGED', {
@@ -140,9 +131,6 @@ export class PlayerRegistry {
       const oldScore = player.score;
       player.score = score;
       
-      // Import gameEvents to publish score change
-      const { gameEvents } = require('../game-state/GameEvents');
-      
       // Publish event for score change
       gameEvents.publish('PLAYER_SCORE_CHANGED', {
         playerId: id,
@@ -162,9 +150,6 @@ export class PlayerRegistry {
       
       // Only emit event if the status changed
       if (oldGroundStatus !== isOnGround) {
-        // Import gameEvents to publish ground status change
-        const { gameEvents } = require('../game-state/GameEvents');
-        
         // Publish event for ground status change
         gameEvents.publish('PLAYER_GROUND_STATUS_CHANGED', {
           playerId: id,
@@ -184,9 +169,6 @@ export class PlayerRegistry {
       
       // Only emit event if the direction changed
       if (oldDirection !== facingLeft) {
-        // Import gameEvents to publish facing direction change
-        const { gameEvents } = require('../game-state/GameEvents');
-        
         // Publish event for facing direction change
         gameEvents.publish('PLAYER_FACING_CHANGED', {
           playerId: id,
