@@ -144,21 +144,9 @@ const GameRenderer: React.FC<GameRendererProps> = ({ containerClassName = 'game-
     return () => unsubReset();
   }, [playerRole]);
   
-  // Set up event bus for player input
-  useEffect(() => {
-    const playerInputHandler = (input: unknown) => {
-      if (socket.connected) {
-        socket.sendPlayerInput(input);
-      }
-    };
-    
-    const unsubPlayerInput = gameEvents.subscribe(
-      'PLAYER_INPUT', 
-      playerInputHandler
-    );
-    
-    return () => unsubPlayerInput();
-  }, [socket]);
+  // We've removed redundant player input handler that sent to server
+  // BasicGameScene already handles local visual updates via the PLAYER_INPUT events
+  // InputHandler already sends these inputs to the server directly
   
   // Set up server state handling
   useEffect(() => {
