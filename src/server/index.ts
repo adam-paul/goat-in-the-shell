@@ -3,7 +3,6 @@ import http from 'http';
 import { createSocketServer } from './network';
 import { setupGameStateManager, setupGameInstanceManager } from './game-state';
 import { GameLogicProcessor } from './logic';
-import { setupPhysicsEngine } from './physics';
 import { gameEvents } from './game-state/GameEvents';
 import { PlayerRegistry } from './registry';
 
@@ -26,12 +25,11 @@ console.log(`[SERVER] Created root GameStateManager with PlayerRegistry`);
 const instanceManager = setupGameInstanceManager(playerRegistry);
 console.log(`[SERVER] Created GameInstanceManager with PlayerRegistry`);
 
-// Pass instanceManager and playerRegistry to PhysicsEngine
-const physics = setupPhysicsEngine(gameState, playerRegistry, instanceManager);
-console.log(`[SERVER] Created PhysicsEngine with GameStateManager, PlayerRegistry, and InstanceManager`); 
-const gameLogic = new GameLogicProcessor(gameState, physics);
+// Initialize game logic processor without a global physics engine
+const gameLogic = new GameLogicProcessor(gameState);
+console.log(`[SERVER] Created GameLogicProcessor`);
 
-// Set up physics-state synchronization
+// Set up instance update loop
 let lastUpdateTime = Date.now();
 const PHYSICS_UPDATE_RATE = 16; // ~60fps
 setInterval(() => {
@@ -39,7 +37,7 @@ setInterval(() => {
   const deltaTime = now - lastUpdateTime;
   lastUpdateTime = now;
   
-  // Update game instances
+  // Update all game instances (physics is now handled per-instance)
   instanceManager.updateInstances(deltaTime);
 }, PHYSICS_UPDATE_RATE);
 

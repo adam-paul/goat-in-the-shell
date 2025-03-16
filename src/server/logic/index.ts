@@ -1,16 +1,13 @@
 import { GameStateManager } from '../game-state';
-import { PhysicsEngine } from '../physics';
 import { gameEvents } from '../game-state/GameEvents';
 import { DeathType, Vector2D } from '../../shared/types';
 import { PLAYER } from '../../shared/constants';
 
 class GameLogicProcessor {
   private gameState: GameStateManager;
-  private physics: PhysicsEngine;
   
-  constructor(gameState: GameStateManager, physics: PhysicsEngine) {
+  constructor(gameState: GameStateManager) {
     this.gameState = gameState;
-    this.physics = physics;
     
     // Set up event listeners for game events
     this.setupEventListeners();
@@ -341,10 +338,9 @@ class GameLogicProcessor {
 }
 
 export function setupGameLogicProcessor(
-  gameState: GameStateManager,
-  physics: PhysicsEngine
+  gameState: GameStateManager
 ): GameLogicProcessor {
-  return new GameLogicProcessor(gameState, physics);
+  return new GameLogicProcessor(gameState);
 }
 
 export { GameLogicProcessor };

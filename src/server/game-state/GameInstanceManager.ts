@@ -3,6 +3,7 @@ import { GameStateManager } from './index';
 import { GameStateMachine } from './GameStateMachine';
 import { GameStatus } from '../../shared/types';
 import { Player, PlayerRegistry } from '../registry';
+import { PhysicsEngineInstance } from '../physics/PhysicsEngineInstance';
 
 // Game instance represents an active game with its own independent state
 export interface GameInstance {
@@ -10,6 +11,7 @@ export interface GameInstance {
   lobbyId: string;
   state: GameStateManager;
   stateMachine: GameStateMachine;
+  physics: PhysicsEngineInstance; // Instance-specific physics engine
   isActive: boolean;
   startTime: number;
   lastUpdateTime: number;
@@ -41,26 +43,31 @@ export class GameInstanceManager {
       this.terminateInstance(existingInstanceId);
     }
     
+    // Create the new game instance ID
+    const instanceId = uuidv4();
+    
     // Create a new GameStateManager instance for this game
     const state = new GameStateManager(this.playerRegistry);
-    console.log(`[GameInstanceManager] Created new GameStateManager for instance: ${state.constructor.name}@${state.toString().split('\n')[0]}`);
+    console.log(`[GameInstanceManager] Created new GameStateManager for instance ${instanceId}: ${state.constructor.name}@${state.toString().split('\n')[0]}`);
     
     // Initialize game world with default platforms and dart walls
     state.initializeGameWorld();
-    console.log(`[GameInstanceManager] Initialized game world with platforms and dart walls for instance`);
-    
-    // Create the new game instance
-    const instanceId = uuidv4();
+    console.log(`[GameInstanceManager] Initialized game world with platforms and dart walls for instance ${instanceId}`);
     
     // Create a new GameStateMachine for this instance
     const initialGameState: GameStatus = 'select';
     const stateMachine = new GameStateMachine(initialGameState, instanceId);
+    
+    // Create a new physics engine for this instance
+    const physics = new PhysicsEngineInstance(instanceId, state, this.playerRegistry);
+    console.log(`[GameInstanceManager] Created PhysicsEngineInstance for instance ${instanceId}`);
     
     const instance: GameInstance = {
       id: instanceId,
       lobbyId,
       state,
       stateMachine,
+      physics,
       isActive: false,
       startTime: 0,
       lastUpdateTime: Date.now(),
@@ -146,11 +153,26 @@ export class GameInstanceManager {
       const isGameplayActive = instance.stateMachine.isGameplayActive();
       
       if (instance.isActive && isGameplayActive) {
+        // Start the dart timer if not already started
+        if (instance.physics) {
+          instance.physics.startDartTimer();
+        }
+        
+        // Update physics for this instance
+        if (instance.physics) {
+          instance.physics.update(deltaTime);
+        }
+        
         // Update instance state
         instance.state.update(deltaTime);
         instance.lastUpdateTime = now;
       } else if (instance.isActive && !isGameplayActive) {
         // Instance is active but not in gameplay state
+        // Stop dart timer if it's running
+        if (instance.physics) {
+          instance.physics.stopDartTimer();
+        }
+        
         // No physics updates needed, but still track the time
         instance.lastUpdateTime = now;
       }
@@ -163,6 +185,13 @@ export class GameInstanceManager {
   terminateInstance(instanceId: string): boolean {
     const instance = this.instances.get(instanceId);
     if (!instance) return false;
+    
+    // Stop dart timers and clean up physics engine
+    if (instance.physics) {
+      instance.physics.stopDartTimer();
+      instance.physics.destroy();
+      console.log(`[GameInstanceManager] Cleaned up physics engine for instance ${instanceId}`);
+    }
     
     // Get the players associated with this instance and remove associations
     const instancePlayers = this.playerRegistry.getInstancePlayers(instanceId);
@@ -179,6 +208,7 @@ export class GameInstanceManager {
     
     // Remove the instance itself
     this.instances.delete(instanceId);
+    console.log(`[GameInstanceManager] Terminated instance ${instanceId}`);
     
     return true;
   }
@@ -235,13 +265,30 @@ export class GameInstanceManager {
     const instance = this.instances.get(instanceId);
     if (!instance) return false;
     
+    // Clean up existing physics engine
+    if (instance.physics) {
+      instance.physics.stopDartTimer();
+      instance.physics.destroy();
+    }
+    
     // Create a new state manager with the player registry
     const state = new GameStateManager(this.playerRegistry);
     
+    // Initialize game world with default platforms and dart walls
+    state.initializeGameWorld();
+    
+    // Create a new physics engine for this instance
+    const physics = new PhysicsEngineInstance(instanceId, state, this.playerRegistry);
+    console.log(`[GameInstanceManager] Created new PhysicsEngineInstance for restarted instance ${instanceId}`);
+    
+    // Update the instance
     instance.state = state;
+    instance.physics = physics;
     instance.isActive = false;
     instance.startTime = 0;
     instance.lastUpdateTime = Date.now();
+    
+    console.log(`[GameInstanceManager] Restarted instance ${instanceId}`);
     
     return true;
   }
