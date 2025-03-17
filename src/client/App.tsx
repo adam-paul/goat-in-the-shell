@@ -273,8 +273,12 @@ function App() {
       </header>
       
       <div className="game-relative-container">
-        {/* Game container - now using GameRenderer component */}
-        <GameRenderer />
+        {/* Show game renderer only after mode selection - don't render game world during tutorial or mode selection */}
+        {!(gameStatus === 'tutorial' || gameStatus === 'modeSelect') ? (
+          <GameRenderer />
+        ) : (
+          <div className="pre-game-background"></div>
+        )}
         
         {/* Overlay UI based on game status */}
         {(gameStatus === 'tutorial' || gameStatus === 'modeSelect' || gameStatus === 'lobby' || 

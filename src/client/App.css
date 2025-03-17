@@ -46,6 +46,17 @@ body {
 
 .game-relative-container {
   position: relative;
+  width: 100%;
+}
+
+/* Dark background to show before game world loads */
+.pre-game-background {
+  width: 100%;
+  height: 600px;
+  background-color: #1a1a2e;
+  border: 2px solid #e94560;
+  border-radius: 8px;
+  box-shadow: 0 0 20px rgba(233, 69, 96, 0.3);
 }
 
 /* Item Selection Panel */
