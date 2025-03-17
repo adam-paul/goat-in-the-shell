@@ -108,10 +108,13 @@ class GameLogicProcessor {
     // Check that the game is in placement phase (not running)
     // Find what lobby the player is in
     let playerLobby;
-    for (const lobby of state.lobbies) {
-      if (lobby.players.includes(clientId)) {
-        playerLobby = lobby;
-        break;
+    // Handle potentially undefined lobbies due to UniversalGameState type
+    if (state.lobbies && Array.isArray(state.lobbies)) {
+      for (const lobby of state.lobbies) {
+        if (lobby.players?.includes(clientId)) {
+          playerLobby = lobby;
+          break;
+        }
       }
     }
     
@@ -262,7 +265,8 @@ class GameLogicProcessor {
     const state = this.gameState.getState();
     
     // Check if the client is a host in any lobby
-    return state.lobbies.some((lobby: any) => lobby.hostId === clientId);
+    return !!(state.lobbies && Array.isArray(state.lobbies) && 
+      state.lobbies.some((lobby: any) => lobby.hostId === clientId));
   }
   
   /**
@@ -270,7 +274,8 @@ class GameLogicProcessor {
    */
   checkRoundComplete(lobbyId: string): boolean {
     const state = this.gameState.getState();
-    const lobby = state.lobbies.find((lobby: any) => lobby.id === lobbyId);
+    const lobby = state.lobbies && Array.isArray(state.lobbies) ? 
+      state.lobbies.find((lobby: any) => lobby.id === lobbyId) : undefined;
     if (!lobby || !lobby.isGameActive) return false;
     
     // Get all players in this lobby
@@ -315,7 +320,8 @@ class GameLogicProcessor {
    */
   startNewRound(lobbyId: string): void {
     const state = this.gameState.getState();
-    const lobby = state.lobbies.find((lobby: any) => lobby.id === lobbyId);
+    const lobby = state.lobbies && Array.isArray(state.lobbies) ?
+      state.lobbies.find((lobby: any) => lobby.id === lobbyId) : undefined;
     if (!lobby) return;
     
     // Reset all players in this lobby

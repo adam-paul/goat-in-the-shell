@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
-import { GameStatus, DeathType, GameWorld, Vector2D } from '../../shared/types';
+import { GameStatus, DeathType, GameWorld, Vector2D, Player, UniversalGameState } from '../../shared/types';
 import { gameEvents } from './GameEvents';
-import { Player, PlayerRegistry } from '../registry';
+import { PlayerRegistry } from '../registry';
 import { PLAYER } from '../../shared/constants';
 
 // Define types for our game entities
@@ -208,17 +208,32 @@ class GameStateManager {
   }
   
   /**
-   * Get the complete game state
+   * Get the complete game state formatted according to UniversalGameState interface
    */
-  getState(): any {
+  getState(): UniversalGameState {
     return {
+      // Version and metadata
       version: this.stateVersion,
       timestamp: this.lastUpdateTime,
+      
+      // We don't know the instance/lobby IDs here - those will be added by the instance manager
+      // The GameStateMachine will also add the correct gameStatus
+      gameStatus: 'playing' as GameStatus, // Default, will be overridden
+      
+      // Players and world elements
       players: this.getAllPlayers(),
+      gameWorld: this.gameWorld,
+      
+      // Items placed in the game
       items: Array.from(this.items.values()),
-      lobbies: Array.from(this.lobbies.values()),
+      
+      // Game parameters and configuration
       parameters: this.parameters,
-      gameWorld: this.gameWorld
+      gameConfig: {
+        gravity: this.parameters.gravity || 0.5,
+        moveSpeed: this.parameters.player_move_speed || 5,
+        jumpForce: this.parameters.player_jump_force || 12
+      }
     };
   }
   
@@ -240,18 +255,15 @@ class GameStateManager {
   }
   
   /**
-   * Get a snapshot of the state for a specific lobby
+   * Get a snapshot of the state for a specific lobby in UniversalGameState format
    */
-  getLobbyState(lobbyId: string): any {
+  getLobbyState(lobbyId: string): UniversalGameState | null {
     const lobby = this.lobbies.get(lobbyId);
     if (!lobby) return null;
     
     // Get the instance ID for this lobby from the instance manager
-    // The instance manager isn't directly available here, so we'll have to rely on the lobby.players
-    // to find players who are in this lobby, then get their instance through PlayerRegistry
-    
+    // We'll have to rely on the lobby.players to find the associated instance
     let instanceId = '';
-    // Find the first player in this lobby and get their instance
     if (lobby.players.length > 0) {
       instanceId = this.playerRegistry.getPlayerInstance(lobby.players[0]) || '';
     }
@@ -262,23 +274,37 @@ class GameStateManager {
       // Fallback to the old method if instanceId isn't found
       lobby.players.map(id => this.playerRegistry.getPlayer(id)).filter(Boolean) as Player[];
     
+    // Filter items to only include those placed by players in this lobby
     const lobbyItems = Array.from(this.items.values())
       .filter(item => {
-        // Filter items based on which player placed them
-        // We'll have to check if the player is in this instance
         return lobbyPlayers.some(player => player.id === item.placedBy);
       });
     
+    // Create a UniversalGameState
     return {
+      // Version and metadata
       version: this.stateVersion,
       timestamp: this.lastUpdateTime,
       lobbyId,
-      instanceId, // Include the instance ID for better tracing
-      isGameActive: lobby.isGameActive,
+      instanceId,
+      
+      // Game status (will be overridden by GameStateMachine)
+      gameStatus: 'playing' as GameStatus,
+      
+      // Players and world elements
       players: lobbyPlayers,
+      gameWorld: this.gameWorld,
+      
+      // Items in the game
       items: lobbyItems,
+      
+      // Game parameters and configuration
       parameters: this.parameters,
-      gameWorld: this.gameWorld
+      gameConfig: {
+        gravity: this.parameters.gravity || 0.5,
+        moveSpeed: this.parameters.player_move_speed || 5,
+        jumpForce: this.parameters.player_jump_force || 12
+      }
     };
   }
   

@@ -139,6 +139,94 @@ export interface CommandRequest {
 }
 
 // ==================
+// Player Types
+// ==================
+
+/**
+ * Player entity with position, state and properties
+ */
+export interface Player {
+  id: string;
+  name: string;
+  position: Vector2D;
+  velocity: Vector2D;
+  isAlive: boolean;
+  score: number;
+  onGround?: boolean;
+  facingLeft?: boolean;
+  // Added for physics engine
+  lastInput?: {
+    left?: boolean;
+    right?: boolean;
+    jump?: boolean;
+    timestamp?: number;
+  };
+}
+
+// ==================
+// Game State Types
+// ==================
+
+/**
+ * Universal Game State - the complete representation of game state
+ * Used for synchronization between server and client
+ */
+export interface UniversalGameState {
+  // Version and metadata
+  version?: number;
+  timestamp: number;
+  instanceId?: string;
+  lobbyId?: string;
+  clientId?: string; // Added for backward compatibility
+  
+  // Game status
+  gameStatus: GameStatus;
+  deathType?: DeathType;
+  
+  // Players and entities
+  players: Player[];
+  
+  // Game world definition
+  gameWorld: GameWorld;
+  
+  // Items and obstacles placed in the game
+  items: Array<{
+    id: string;
+    type: string;
+    position: Vector2D;
+    rotation: number;
+    placedBy: string;
+    properties: Record<string, any>;
+  }>;
+  
+  // Legacy server data
+  lobbies?: any[]; // Added for backward compatibility
+  
+  // Game configuration
+  gameConfig?: {
+    gravity: number;
+    moveSpeed: number;
+    jumpForce: number;
+    [key: string]: any;
+  };
+  
+  // Game parameters
+  parameters?: any; // Changed to support different parameter formats
+  
+  // Round information
+  round?: {
+    number: number;
+    startTime: number;
+    timeRemaining: number;
+    isCompleted: boolean;
+  };
+  
+  // Multiplayer information
+  playerRoles?: Record<string, PlayerRole>;
+  gameMode?: GameMode;
+}
+
+// ==================
 // Game Instance Types
 // ==================
 
@@ -266,14 +354,7 @@ export interface InitialStateMessage extends NetworkMessage {
   type: 'INITIAL_STATE';
   payload: {
     clientId: string;
-    timestamp: number;
-    instanceId?: string;
-    gameConfig: {
-      gravity: number;
-      moveSpeed: number;
-      jumpForce: number;
-      [key: string]: any;
-    }
+    state: UniversalGameState;
   };
 }
 
@@ -283,26 +364,7 @@ export interface InitialStateMessage extends NetworkMessage {
 export interface StateUpdateMessage extends NetworkMessage {
   type: 'STATE_UPDATE';
   payload: {
-    timestamp: number;
-    state: {
-      players: Array<{
-        id: string;
-        name: string;
-        position: { x: number; y: number };
-        velocity: { x: number; y: number };
-        isAlive: boolean;
-        score: number;
-      }>;
-      items: Array<{
-        id: string;
-        type: string;
-        position: { x: number; y: number };
-        rotation: number;
-        placedBy: string;
-        properties: Record<string, any>;
-      }>;
-      gameStatus: GameStatus;
-    };
+    state: UniversalGameState;
   };
 }
 

@@ -38,7 +38,6 @@ class GameEventBus {
    * @param data Event data
    */
   publish<T>(event: string, data: T): void {
-    console.log(`GameEventBus: Publishing server event '${event}'`, data);
     if (!this.listeners[event]) return;
     this.listeners[event].forEach(callback => {
       try {

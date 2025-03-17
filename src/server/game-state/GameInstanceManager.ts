@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { GameStateManager } from './index';
 import { GameStateMachine } from './GameStateMachine';
 import { GameStatus } from '../../shared/types';
-import { Player, PlayerRegistry } from '../registry';
+import { PlayerRegistry } from '../registry';
 import { PhysicsEngineInstance } from '../physics/PhysicsEngineInstance';
 
 // Game instance represents an active game with its own independent state

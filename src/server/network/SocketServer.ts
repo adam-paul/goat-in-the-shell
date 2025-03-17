@@ -1,7 +1,7 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { randomUUID } from 'crypto';
 import { MESSAGE_TYPES } from '../../shared/constants';
-import type { NetworkMessage } from '../../shared/types';
+import type { NetworkMessage, GameStatus, UniversalGameState } from '../../shared/types';
 import { GameStateManager } from '../game-state';
 import { GameLogicProcessor } from '../logic';
 import { GameInstanceManager } from '../game-state/GameInstanceManager';
@@ -400,24 +400,45 @@ class SocketServer {
    * Broadcast the current game state to all clients in an instance
    */
   public broadcastGameState(instance: any): void {
-    // Get the game state - includes items, etc.
-    const state = instance.state.getState();
-    
-    // Add the current game status from the state machine
-    state.gameStatus = instance.stateMachine.getCurrentState();
+    // Get base game state - includes items, etc.
+    const baseState = instance.state.getState();
     
     // Get player data from PlayerRegistry - the single source of truth
     const playerState = this.playerRegistry.getInstanceStateSnapshot(instance.id);
     
-    // Override the players array with data from the registry
-    state.players = playerState.players;
+    // Create a unified game state object conforming to UniversalGameState interface
+    const unifiedState = {
+      // Version and metadata
+      version: baseState.version || 0,
+      timestamp: Date.now(),
+      instanceId: instance.id,
+      lobbyId: instance.lobbyId,
+      
+      // Game status
+      gameStatus: instance.stateMachine.getCurrentState(),
+      deathType: baseState.deathType,
+      
+      // Players and entities
+      players: playerState.players,
+      
+      // Game world definition
+      gameWorld: baseState.gameWorld,
+      
+      // Items and obstacles placed in the game
+      items: baseState.items || [],
+      
+      // Game configuration
+      gameConfig: baseState.parameters || {},
+      
+      // Game parameters
+      parameters: baseState.parameters || {}
+    };
     
-    // Create the network message
+    // Create the network message using the interface's structure
     const stateUpdateMessage = {
       type: MESSAGE_TYPES.STATE_UPDATE,
       payload: {
-        state,
-        timestamp: Date.now()
+        state: unifiedState
       }
     };
     
@@ -692,16 +713,30 @@ class SocketServer {
     if (client.instanceId) {
       const instance = this.instanceManager.getInstance(client.instanceId);
       if (instance) {
-        const state = instance.state.getState();
+        const baseState = instance.state.getState();
+        const playerState = this.playerRegistry.getInstanceStateSnapshot(instance.id);
         
-        // Send state update including game world
+        // Create a unified game state conforming to UniversalGameState interface
+        const unifiedState = {
+          version: baseState.version || 0,
+          timestamp: Date.now(),
+          instanceId: instance.id,
+          lobbyId: instance.lobbyId,
+          gameStatus: instance.stateMachine.getCurrentState(),
+          deathType: baseState.deathType,
+          players: playerState.players,
+          gameWorld: baseState.gameWorld || instance.state.getGameWorld(),
+          items: baseState.items || [],
+          gameConfig: baseState.parameters || {},
+          parameters: baseState.parameters || {}
+        };
+        
+        // Send initial state message
         this.sendMessage(clientId, {
-          type: MESSAGE_TYPES.STATE_UPDATE,
+          type: MESSAGE_TYPES.INITIAL_STATE,
           payload: {
-            state: state,
-            timestamp: Date.now(),
-            gameWorld: instance.state.getGameWorld(), // Include game world data
-            gameStatus: instance.stateMachine.getCurrentState() // Include current game status from state machine
+            clientId: clientId,
+            state: unifiedState
           }
         });
         return;
@@ -710,13 +745,23 @@ class SocketServer {
     
     // If not in an instance, send global state
     const globalState = this.gameState.getState();
+    const gameWorld = this.gameState.getGameWorld();
+    
+    // Create a unified global state
+    const unifiedGlobalState = {
+      version: globalState.version || 0,
+      timestamp: Date.now(),
+      gameStatus: 'tutorial' as GameStatus, // Default state for new connections
+      players: globalState.players || [],
+      gameWorld: gameWorld,
+      items: globalState.items || []
+    };
     
     this.sendMessage(clientId, {
-      type: MESSAGE_TYPES.STATE_UPDATE,
+      type: MESSAGE_TYPES.INITIAL_STATE,
       payload: {
-        state: globalState,
-        timestamp: Date.now(),
-        gameWorld: this.gameState.getGameWorld() // Include game world data
+        clientId: clientId,
+        state: unifiedGlobalState
       }
     });
   }

@@ -1,9 +1,9 @@
 import Matter from 'matter-js';
 import { GameStateManager } from '../game-state';
-import { DeathType, Vector2D } from '../../shared/types';
+import { DeathType, Vector2D, Player } from '../../shared/types';
 import { gameEvents } from '../game-state/GameEvents';
 import { PHYSICS, ITEMS } from '../../shared/constants';
-import { PlayerRegistry, Player } from '../registry';
+import { PlayerRegistry } from '../registry';
 
 // Constants for physics simulation
 const PHYSICS_UPDATE_RATE = 60; // Updates per second

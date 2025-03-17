@@ -1,17 +1,6 @@
-import { Vector2D } from '../../shared/types';
+import { Vector2D, Player } from '../../shared/types';
 import { PLAYER } from '../../shared/constants';
 import { gameEvents } from '../game-state/GameEvents';
-
-export interface Player {
-  id: string;
-  name: string;
-  position: Vector2D;
-  velocity: Vector2D;
-  isAlive: boolean;
-  score: number;
-  onGround?: boolean;
-  facingLeft?: boolean;
-}
 
 export class PlayerRegistry {
   private players: Map<string, Player> = new Map();

@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { gameEvents } from '../utils/GameEventBus';
-import { ItemType, GameStatus } from '../../shared/types';
+import { ItemType, GameStatus, UniversalGameState } from '../../shared/types';
 import { getParameterValue } from '../game/parameters';
 import { PHYSICS } from '../../shared/constants';
 import GoatSprite from './GoatSprite';
@@ -505,14 +505,24 @@ export default class BasicGameScene extends Phaser.Scene {
     }
   }
   
-  private updateGameState(gameState: any): void {
-    console.log('Received game state from server:', gameState);
+  private updateGameState(gameStateData: any): void {
+    console.log('Received game state from server:', gameStateData);
     
-    // Find the correct state data structure
-    // This handles different ways the state might be nested
-    let state = gameState;
-    if (gameState.state) state = gameState.state;
-    if (gameState.payload?.state) state = gameState.payload.state;
+    // Extract the UniversalGameState from whatever format it came in
+    // This handles both the old format and the new unified format
+    let state: UniversalGameState;
+    
+    // Handle different possible structures to find the actual state object
+    if (gameStateData.state) {
+      // New format: state is directly in the payload
+      state = gameStateData.state;
+    } else if (gameStateData.payload?.state) {
+      // New format wrapped in a message object
+      state = gameStateData.payload.state;
+    } else {
+      // Legacy format or direct state object
+      state = gameStateData;
+    }
     
     // Store previous game status to detect changes
     const previousStatus = this.gameStatus;
@@ -520,7 +530,7 @@ export default class BasicGameScene extends Phaser.Scene {
     // We never clear items during normal gameplay updates
     // Instead, only track new items that need to be added
     
-    // Store client ID if provided
+    // Store client ID if provided in legacy format
     if (state.clientId) {
       this.clientId = state.clientId;
     }

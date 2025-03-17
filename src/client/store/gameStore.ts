@@ -5,7 +5,8 @@ import {
   DeathType, 
   ItemType, 
   GameMode, 
-  PlayerRole 
+  PlayerRole,
+  UniversalGameState
 } from '../../shared/types';
 import { gameEvents } from '../utils/GameEventBus';
 import { ITEMS } from '../../shared/constants';
@@ -37,8 +38,13 @@ interface GameStateData {
   instanceId: string;
   
   // Server state
-  gameConfig: any;
-  gameState: any;
+  gameConfig: {
+    gravity: number;
+    moveSpeed: number;
+    jumpForce: number;
+    [key: string]: any;
+  };
+  gameState: UniversalGameState;
 }
 
 // Define the complete store interface with actions
@@ -95,9 +101,25 @@ export const useGameStore = create<GameState>((set, get): GameState => {
   clientId: '',
   instanceId: '',
   
-  // Server state
-  gameConfig: {},
-  gameState: {},
+  // Server state with defaults
+  gameConfig: {
+    gravity: 0.5,
+    moveSpeed: 5,
+    jumpForce: 12
+  },
+  gameState: {
+    version: 0,
+    timestamp: Date.now(),
+    gameStatus: 'tutorial',
+    players: [],
+    gameWorld: {
+      platforms: [],
+      startPoint: { x: 100, y: 100 },
+      endPoint: { x: 2320, y: 120 },
+      worldBounds: { width: 2400, height: 800 }
+    },
+    items: []
+  } as UniversalGameState,
   
   // State setters
   setGameStatus: (status: GameStatus) => set(() => ({ gameStatus: status })),
@@ -121,7 +143,16 @@ export const useGameStore = create<GameState>((set, get): GameState => {
   
   // Server state setters
   setGameConfig: (config: any) => set(() => ({ gameConfig: config })),
-  updateGameState: (state: any) => set(() => ({ gameState: state })),
+  updateGameState: (state: UniversalGameState) => set((current) => {
+    // Update local game status if it's provided in the universal state
+    if (state.gameStatus && state.gameStatus !== current.gameStatus) {
+      return { 
+        gameState: state,
+        gameStatus: state.gameStatus
+      };
+    }
+    return { gameState: state };
+  }),
   
   
   // Game item placement helpers
@@ -271,7 +302,19 @@ export const useGameStore = create<GameState>((set, get): GameState => {
       networkConnected: false,
       errorMessage: '',
       instanceId: '',
-      gameState: {}
+      gameState: {
+        version: 0,
+        timestamp: Date.now(),
+        gameStatus: 'modeSelect',
+        players: [],
+        gameWorld: {
+          platforms: [],
+          startPoint: { x: 100, y: 100 },
+          endPoint: { x: 2320, y: 120 },
+          worldBounds: { width: 2400, height: 800 }
+        },
+        items: []
+      }
     }));
     
     // Reinitialize the game

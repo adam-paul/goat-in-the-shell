@@ -69,7 +69,9 @@ const PositionDebug: React.FC = () => {
     
     // Update instance ID if available in game state
     if (gameState && gameState.instanceId && gameState.instanceId !== ids.instanceId) {
-      setIds(prev => ({ ...prev, instanceId: gameState.instanceId }));
+      // Force instanceId to be string (avoids TypeScript error)
+      const instanceId = String(gameState.instanceId);
+      setIds(prev => ({ ...prev, instanceId }));
     }
   }, [gameState, ids.instanceId, ids.playerId]);
   

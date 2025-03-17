@@ -1,5 +1,5 @@
 import { MESSAGE_TYPES } from '../../shared/constants';
-import type { NetworkMessage } from '../../shared/types';
+import type { NetworkMessage, StateUpdateMessage, InitialStateMessage, UniversalGameState } from '../../shared/types';
 import { gameEvents } from '../utils/GameEventBus';
 
 /**
@@ -22,10 +22,14 @@ class SocketEvents {
         
         // Process game state updates
         if (message.type === 'STATE_UPDATE') {
+          // Get the state from the payload
+          const stateUpdate = message as StateUpdateMessage;
+          const gameState = stateUpdate.payload?.state;
+          
           // Update the game state in the store immediately
           const store = (window as any).__game_store_instance__;
-          if (store && store.updateGameState && message.payload?.state) {
-            store.updateGameState(message.payload.state);
+          if (store && store.updateGameState && gameState) {
+            store.updateGameState(gameState);
           }
         }
         
@@ -201,19 +205,27 @@ class SocketEvents {
     }
     // Handle initial state message
     else if (type === 'INITIAL_STATE') {
-      // We don't update game status from initial state anymore - tutorial and mode select are client-side
-      // Store the clientId and other config data
-      console.log('Received initial state from server with clientId:', payload.clientId);
+      // Parse as initial state message
+      const initialStateMsg = message as InitialStateMessage;
+      const state = initialStateMsg.payload?.state;
+      const clientId = initialStateMsg.payload?.clientId;
+      
+      console.log('Received initial state from server with clientId:', clientId);
       
       // Set client ID in the store immediately
       const store = (window as any).__game_store_instance__;
-      if (store && store.setClientId && payload.clientId) {
-        store.setClientId(payload.clientId);
+      if (store && store.setClientId && clientId) {
+        store.setClientId(clientId);
       }
       
-      // Also store game config if available
-      if (store && store.setGameConfig && payload.gameConfig) {
-        store.setGameConfig(payload.gameConfig);
+      // Store game config if available
+      if (store && store.setGameConfig && state?.gameConfig) {
+        store.setGameConfig(state.gameConfig);
+      }
+      
+      // Update the full game state using our unified format
+      if (store && store.updateGameState && state) {
+        store.updateGameState(state);
       }
       
       // Publish the original message to the game event bus
