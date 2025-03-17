@@ -602,13 +602,19 @@ export default class BasicGameScene extends Phaser.Scene {
             // If using Phaser physics body, update that too
             const sprite = this.goatSprite.getSprite();
             if (sprite.body) {
-              // Use server-provided position and velocity
+              // CRITICALLY IMPORTANT: Use server-provided position and velocity
+              // This is the key to fixing the physics sync issues
               
-              // First set correct position
-              sprite.setPosition(player.position.x, player.position.y);
+              // Force exact position override from server - especially critical for Y coordinate
+              sprite.x = player.position.x;
+              sprite.y = player.position.y;
               
-              // Then apply server-provided velocity
-              sprite.setVelocity(player.velocity?.x || 0, player.velocity?.y || 0);
+              // Update the physics body position explicitly 
+              sprite.body.reset(player.position.x, player.position.y);
+              
+              // Then explicitly set server-provided velocity
+              sprite.body.velocity.x = player.velocity?.x || 0;
+              sprite.body.velocity.y = player.velocity?.y || 0;
               
               // Explicitly check for jumping (significant upward velocity)
               if (player.velocity?.y && player.velocity.y < -50) {

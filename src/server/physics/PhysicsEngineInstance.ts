@@ -2,7 +2,7 @@ import Matter from 'matter-js';
 import { GameStateManager } from '../game-state';
 import { DeathType, Vector2D, Player } from '../../shared/types';
 import { gameEvents } from '../game-state/GameEvents';
-import { PHYSICS, ITEMS } from '../../shared/constants';
+import { PHYSICS, ITEMS, PLAYER } from '../../shared/constants';
 import { PlayerRegistry } from '../registry';
 
 // Constants for physics simulation
@@ -86,10 +86,22 @@ export class PhysicsEngineInstance {
     this.playerRegistry = playerRegistry;
     this.parameters = { ...DEFAULT_PARAMETERS, ...parameters };
 
-    // Create physics engine for this instance
+    // Create physics engine for this instance with proper gravity
+    // The gravity value is critical for y-axis movement
+    // We need to scale gravity to match the Phaser physics system
+    // Phaser uses 300 as default, our shared constant is 0.8, so we need to scale properly
+    const MATTER_GRAVITY_SCALE = 1; // Keep this at 1 and adjust client as needed
+    const gravity = (this.parameters.gravity || PHYSICS.GRAVITY) * MATTER_GRAVITY_SCALE;
+    
     this.engine = Matter.Engine.create({
-      gravity: { x: 0, y: PHYSICS.GRAVITY }
+      gravity: { 
+        x: 0, 
+        y: gravity 
+      }
     });
+    
+    console.log(`PHYSICS: Engine created with scaled gravity ${gravity} for instance ${this.instanceId}`);
+    console.log(`PHYSICS: Using Matter.js gravity - default shared config value is ${PHYSICS.GRAVITY}`);
 
     // Create collision categories and collision handling
     Matter.Events.on(this.engine, 'collisionStart', this.handleCollisionStart.bind(this));
@@ -382,11 +394,15 @@ export class PhysicsEngineInstance {
       
       // Apply jump force if on ground and jump pressed
       if (player.lastInput.jump && this.isBodyOnGround(body)) {
-        console.log(`PHYSICS: Player ${player.id} JUMPING with force ${this.parameters.player_jump_force}`);
+        // In Phaser, the default jump velocity would be around -PLAYER.JUMP_FORCE * gravity scaling
+        // We need to ensure consistency across both physics systems
+        const jumpVelocity = -10; // Use a consistent value that works well in both systems
+        
+        console.log(`PHYSICS: Player ${player.id} JUMPING with velocity ${jumpVelocity}`);
         
         Matter.Body.setVelocity(body, {
           x: body.velocity.x,
-          y: -this.parameters.player_jump_force * 20 // Scale to match original physics
+          y: jumpVelocity
         });
       }
     }
@@ -495,24 +511,46 @@ export class PhysicsEngineInstance {
   }
   
   private isBodyOnGround(body: Matter.Body): boolean {
-    // Create a small rectangle below the player to check for collisions
-    const point = { 
-      x: body.position.x, 
-      y: body.position.y + body.bounds.max.y - body.bounds.min.y + 2 // Just below the body
+    // Using a raycast from the bottom of the player body down a short distance
+    // This is more reliable than a point query
+    
+    // Calculate the bottom center of the player body
+    const startPoint = {
+      x: body.position.x,
+      y: body.position.y + (body.bounds.max.y - body.bounds.min.y) / 2 - 1
     };
     
-    // Query for any bodies at this point
-    const bodies = Matter.Query.point(
+    // Create an end point 5px below the player
+    const endPoint = {
+      x: startPoint.x,
+      y: startPoint.y + 5
+    };
+    
+    // Do a raycast query
+    const rayCollisions = Matter.Query.ray(
       Matter.Composite.allBodies(this.engine.world),
-      point
+      startPoint,
+      endPoint
     );
     
-    // Filter out the player's own body and non-platform bodies
-    return bodies.some(b => 
-      b !== body && 
-      (b.label.startsWith('platform') || 
-       b.label.startsWith('ground'))
-    );
+    // Check if we hit any platform
+    const onGround = rayCollisions.some(collision => {
+      // Matter.js raycast returns objects with bodyA and bodyB
+      const hitBody = collision.bodyA || collision.bodyB;
+      return hitBody !== body && // Not self
+        (hitBody.label.startsWith('platform') || 
+         hitBody.label.startsWith('ground'));
+    });
+    
+    // Only log changes in ground status to avoid spam
+    if (body.plugin && body.plugin.wasOnGround !== onGround) {
+      console.log(`PHYSICS: Player ${body.label.substring(7)} ground status changed to ${onGround}`);
+      
+      if (!body.plugin) body.plugin = {};
+      body.plugin.wasOnGround = onGround;
+    }
+    
+    return onGround;
   }
   
   private handleCollisionStart(event: Matter.IEventCollision<Matter.Engine>): void {
@@ -610,12 +648,27 @@ export class PhysicsEngineInstance {
   private createPlayerBody(player: Player): Matter.Body {
     const { id, position } = player;
     
+    // Log detailed info about initial position
+    console.log(`PHYSICS: Creating body for player ${id} at position (${position.x}, ${position.y})`);
+    
+    // Ensure position is within valid bounds
+    const safePosition = {
+      x: position.x,
+      y: Math.max(0, Math.min(position.y, WORLD_HEIGHT - 50)) // Prevent out-of-bounds
+    };
+    
+    if (safePosition.y !== position.y) {
+      console.warn(`PHYSICS: Adjusted Y position from ${position.y} to ${safePosition.y} to keep in bounds`);
+      // Update player position in registry if needed
+      this.playerRegistry.updatePlayerPosition(id, safePosition);
+    }
+    
     // Create player body with standard dimensions
     const body = Matter.Bodies.rectangle(
-      position.x,
-      position.y,
-      30, // width - standard player hitbox width
-      40, // height - standard player hitbox height
+      safePosition.x,
+      safePosition.y,
+      PLAYER.WIDTH, // Use constant from shared config
+      PLAYER.HEIGHT, // Use constant from shared config
       {
         label: `player_${id}`,
         inertia: Infinity, // Prevent rotation
@@ -633,7 +686,7 @@ export class PhysicsEngineInstance {
     Matter.Composite.add(this.engine.world, body);
     this.bodies.set(id, body);
     
-    console.log(`[PhysicsEngine:${this.instanceId}] Created physics body for player ${id} at position:`, position);
+    console.log(`PHYSICS: Created physics body for player ${id} at (${safePosition.x}, ${safePosition.y}) with size ${PLAYER.WIDTH}x${PLAYER.HEIGHT}`);
     
     return body;
   }

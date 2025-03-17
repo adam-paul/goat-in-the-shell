@@ -69,7 +69,7 @@ const GameRenderer: React.FC<GameRendererProps> = ({ containerClassName = 'game-
       physics: {
         default: 'arcade',
         arcade: {
-          gravity: { y: 300, x: 0 }, // Basic gravity for rendering
+          gravity: { y: 0.8 * 300, x: 0 }, // Match server gravity with scale factor
           debug: false
         }
       }

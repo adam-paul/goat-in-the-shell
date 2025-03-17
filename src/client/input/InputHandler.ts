@@ -112,7 +112,7 @@ export const useInputHandler = () => {
       
       // Log jump input specifically for debugging
       if (isJumping) {
-        console.log('JUMP INPUT detected and published');
+        console.log('JUMP INPUT detected and published - IMPORTANT for Y-axis synchronization');
       }
       
       // Publish to game event bus for both Phaser rendering AND server communication
