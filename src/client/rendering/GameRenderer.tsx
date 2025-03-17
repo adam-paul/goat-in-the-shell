@@ -2,7 +2,7 @@
 import React, { useEffect, useRef } from 'react';
 import Phaser from 'phaser';
 import { GameMode, PlayerRole } from '../../shared/types';
-import { MESSAGE_TYPES, GAME_DIMENSIONS } from '../../shared/constants';
+import { GAME_EVENTS, GAME_DIMENSIONS } from '../../shared/constants';
 import { useGameStore } from '../store/gameStore';
 import { useSocket } from '../network';
 import { gameEvents } from '../utils/GameEventBus';
@@ -145,15 +145,11 @@ const GameRenderer: React.FC<GameRendererProps> = ({ containerClassName = 'game-
     return () => unsubReset();
   }, [playerRole]);
   
-  // We've removed redundant player input handler that sent to server
-  // BasicGameScene already handles local visual updates via the PLAYER_INPUT events
-  // InputHandler already sends these inputs to the server directly
-  
   // Set up server state handling
   useEffect(() => {
     // Request initial state from server
     if (socket.connected) {
-      socket.sendMessage(MESSAGE_TYPES.REQUEST_INITIAL_STATE, {});
+      socket.sendMessage(GAME_EVENTS.REQUEST_INITIAL_STATE, {});
     }
     
     // Function to handle server state updates
@@ -171,7 +167,7 @@ const GameRenderer: React.FC<GameRendererProps> = ({ containerClassName = 'game-
     };
     
     // Subscribe to STATE_UPDATE events from socket
-    const unsubStateUpdate = gameEvents.subscribe(MESSAGE_TYPES.STATE_UPDATE, handleStateUpdate);
+    const unsubStateUpdate = gameEvents.subscribe(GAME_EVENTS.STATE_UPDATE, handleStateUpdate);
     
     // Clean up
     return () => {

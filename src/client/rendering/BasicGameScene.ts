@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { gameEvents } from '../utils/GameEventBus';
 import { ItemType, GameStatus, UniversalGameState } from '../../shared/types';
 import { getParameterValue } from '../game/parameters';
-import { PHYSICS, GAME_DIMENSIONS } from '../../shared/constants';
+import { PHYSICS, GAME_DIMENSIONS, GAME_EVENTS } from '../../shared/constants';
 import GoatSprite from './GoatSprite';
 import CountdownManager from './CountdownManager';
 
@@ -318,18 +318,18 @@ export default class BasicGameScene extends Phaser.Scene {
   
   private setupEventListeners(): void {
     // Listen for game state updates from server
-    gameEvents.subscribe('SERVER_STATE_UPDATE', (data: any) => {
+    gameEvents.subscribe(GAME_EVENTS.STATE_UPDATE, (data: any) => {
       console.log('BasicGameScene received SERVER_STATE_UPDATE event');
       this.updateGameState(data);
     });
     
     // Listen for item placement mode
-    gameEvents.subscribe('PLACEMENT_MODE_START', (data: {itemType: string}) => {
+    gameEvents.subscribe(GAME_EVENTS.PLACEMENT_MODE_START, (data: {itemType: string}) => {
       this.enterPlacementMode(data.itemType);
     });
     
     // Listen for placement mode exit
-    gameEvents.subscribe('PLACEMENT_MODE_EXIT', () => {
+    gameEvents.subscribe(GAME_EVENTS.PLACEMENT_MODE_EXIT, () => {
       this.exitPlacementMode();
     });
     
@@ -342,7 +342,7 @@ export default class BasicGameScene extends Phaser.Scene {
         
         // Publish item placement event to GameEventBus
         // This will be picked up by both client-side components and SocketProvider
-        gameEvents.publish('ITEM_PLACEMENT', {
+        gameEvents.publish(GAME_EVENTS.PLACE_ITEM, {
           type: this.itemToPlace,
           x: worldPoint.x,
           y: worldPoint.y
@@ -402,7 +402,7 @@ export default class BasicGameScene extends Phaser.Scene {
     });
     
     // Listen for item placement from server - render immediately!
-    gameEvents.subscribe('RENDER_PLACED_ITEM', (itemData: any) => {
+    gameEvents.subscribe(GAME_EVENTS.RENDER_PLACED_ITEM, (itemData: any) => {
       console.log('SCENE: Received item to render immediately:', itemData);
       if (itemData && itemData.position && itemData.type) {
         this.placeItem(
@@ -416,7 +416,7 @@ export default class BasicGameScene extends Phaser.Scene {
     });
     
     // Listen for item placement completion
-    gameEvents.subscribe('ITEM_PLACED', () => {
+    gameEvents.subscribe(GAME_EVENTS.ITEM_PLACED, () => {
       // Exit placement mode first
       this.exitPlacementMode();
       
@@ -427,7 +427,7 @@ export default class BasicGameScene extends Phaser.Scene {
       }
       
       // Start countdown after item is placed
-      gameEvents.publish('START_COUNTDOWN', { duration: 3000 });
+      gameEvents.publish(GAME_EVENTS.START_COUNTDOWN, { duration: 3000 });
     });
   }
   

@@ -2,7 +2,7 @@ import Matter from 'matter-js';
 import { GameSessionManager } from '../game-state';
 import { DeathType, Vector2D, Player } from '../../shared/types';
 import { gameEvents } from '../game-state/GameEvents';
-import { PHYSICS, ITEMS, PLAYER, GAME_DIMENSIONS } from '../../shared/constants';
+import { PHYSICS, ITEMS, PLAYER, GAME_DIMENSIONS, GAME_EVENTS } from '../../shared/constants';
 
 // Constants for physics simulation
 const PHYSICS_UPDATE_RATE = 60; // Updates per second
@@ -567,7 +567,7 @@ export class PhysicsEngineInstance {
       console.log(`[PhysicsEngine:${this.sessionId}] Player ${playerId} died from ${cause}`);
       
       // Publish death event to game logic
-      gameEvents.publish('PLAYER_DEATH', {
+      gameEvents.publish(GAME_EVENTS.PLAYER_DEATH, {
         playerId,
         cause,
         position: { ...player.position },
@@ -585,7 +585,7 @@ export class PhysicsEngineInstance {
       console.log(`[PhysicsEngine:${this.sessionId}] Player ${playerId} won!`);
       
       // Publish win event to game logic
-      gameEvents.publish('PLAYER_WIN', {
+      gameEvents.publish(GAME_EVENTS.PLAYER_WIN, {
         playerId,
         position: { ...player.position },
         instanceId: this.sessionId,

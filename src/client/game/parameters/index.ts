@@ -1,6 +1,7 @@
 // src/client/game/parameters/index.ts
 import { GameParameter, ParameterChangeListener } from '../../../shared/types';
 import { gameEvents } from '../../utils/GameEventBus';
+import { GAME_EVENTS } from '../../../shared/constants';
 
 // Define comprehensive game parameters
 export const GAME_PARAMETERS: Record<string, GameParameter> = {
@@ -257,7 +258,8 @@ export class ParameterManager {
       this.notifyListeners('*', param.currentValue, normalizedValue, param);
       
       // Publish to event bus for components to react
-      gameEvents.publish('PARAMETER_UPDATED', {
+      gameEvents.publish(GAME_EVENTS.EVENT, {
+        eventType: 'PARAMETER_UPDATED',
         key,
         value: param.currentValue,
         normalizedValue: param.normalizedValue,
@@ -294,7 +296,10 @@ export class ParameterManager {
     });
     
     // Publish batch update event
-    gameEvents.publish('PARAMETERS_BATCH_UPDATED', { updates });
+    gameEvents.publish(GAME_EVENTS.EVENT, {
+      eventType: 'PARAMETERS_BATCH_UPDATED',
+      updates
+    });
   }
   
   /**
@@ -324,7 +329,9 @@ export class ParameterManager {
     });
     
     // Publish reset event
-    gameEvents.publish('PARAMETERS_RESET', {});
+    gameEvents.publish(GAME_EVENTS.EVENT, {
+      eventType: 'PARAMETERS_RESET'
+    });
   }
   
   /**

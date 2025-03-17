@@ -1,6 +1,6 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { randomUUID } from 'crypto';
-import { MESSAGE_TYPES } from '../../shared/constants';
+import { GAME_EVENTS } from '../../shared/constants';
 import type { NetworkMessage, GameStatus } from '../../shared/types';
 import { GameLogicProcessor } from '../logic';
 import { gameEvents } from '../game-state/GameEvents';
@@ -66,7 +66,7 @@ export class SocketServer {
       
       // Send welcome message with client ID
       this.sendMessage(clientId, {
-        type: MESSAGE_TYPES.WELCOME,
+        type: GAME_EVENTS.WELCOME,
         payload: {
           clientId,
           message: 'Welcome to the game server',
@@ -109,35 +109,35 @@ export class SocketServer {
       
       // Handle message based on type
       switch (message.type) {
-        case MESSAGE_TYPES.PING:
+        case GAME_EVENTS.PING:
           this.handlePing(clientId);
           break;
           
-        case MESSAGE_TYPES.JOIN_LOBBY:
+        case GAME_EVENTS.JOIN_LOBBY:
           this.handleJoinLobby(clientId, message.payload);
           break;
           
-        case MESSAGE_TYPES.PLAYER_INPUT:
+        case GAME_EVENTS.PLAYER_INPUT:
           this.handlePlayerInput(clientId, message.payload);
           break;
           
-        case MESSAGE_TYPES.PLACE_ITEM:
+        case GAME_EVENTS.PLACE_ITEM:
           this.handlePlaceItem(clientId, message.payload);
           break;
           
-        case MESSAGE_TYPES.START_GAME:
+        case GAME_EVENTS.START_GAME:
           this.handleStartGame(clientId);
           break;
           
-        case MESSAGE_TYPES.CHAT_MESSAGE:
+        case GAME_EVENTS.CHAT_MESSAGE:
           this.handleChatMessage(clientId, message.payload);
           break;
           
-        case MESSAGE_TYPES.STATE_TRANSITION:
+        case GAME_EVENTS.REQUEST_STATE_TRANSITION:
           this.handleStateTransition(clientId, message.payload);
           break;
           
-        case MESSAGE_TYPES.REQUEST_INITIAL_STATE:
+        case GAME_EVENTS.REQUEST_INITIAL_STATE:
           this.handleRequestInitialState(clientId);
           break;
           
@@ -154,7 +154,7 @@ export class SocketServer {
    */
   private handlePing(clientId: string) {
     this.sendMessage(clientId, {
-      type: MESSAGE_TYPES.PONG,
+      type: GAME_EVENTS.PONG,
       payload: {
         timestamp: Date.now()
       }
@@ -189,7 +189,7 @@ export class SocketServer {
       
       // Notify other players in the session
       this.broadcastToSession(client.sessionId, {
-        type: MESSAGE_TYPES.PLAYER_LEFT,
+        type: GAME_EVENTS.PLAYER_LEFT,
         payload: {
           playerId: clientId,
           timestamp: Date.now()
@@ -236,7 +236,7 @@ export class SocketServer {
     
     // Notify player of successful join
     this.sendMessage(clientId, {
-      type: MESSAGE_TYPES.JOIN_SUCCESS,
+      type: GAME_EVENTS.JOIN_SUCCESS,
       payload: {
         clientId,
         sessionId: session.id,
@@ -247,16 +247,13 @@ export class SocketServer {
     
     // Notify other players in the session
     this.broadcastToSession(session.id, {
-      type: MESSAGE_TYPES.PLAYER_JOINED,
+      type: GAME_EVENTS.PLAYER_JOINED,
       payload: {
         playerId: clientId,
         playerName,
         timestamp: Date.now()
       }
-    }, [clientId]); // Exclude the joining player
-    
-    // Send initial state to the player
-    this.sendInitialState(clientId);
+    }, [clientId]); // Exclude the joining player from this broadcast
   }
   
   /**
@@ -272,7 +269,7 @@ export class SocketServer {
     
     // Broadcast input to other players in the session
     this.broadcastToSession(client.sessionId, {
-      type: MESSAGE_TYPES.PLAYER_INPUT,
+      type: GAME_EVENTS.PLAYER_INPUT,
       payload: {
         playerId: clientId,
         input: data,
@@ -295,7 +292,7 @@ export class SocketServer {
     if (item) {
       // Broadcast item placement to all players in the session
       this.broadcastToSession(client.sessionId, {
-        type: MESSAGE_TYPES.ITEM_PLACED,
+        type: GAME_EVENTS.ITEM_PLACED,
         payload: {
           item,
           placedBy: clientId,
@@ -325,7 +322,7 @@ export class SocketServer {
       
       // Notify all players in the session
       this.broadcastToSession(session.id, {
-        type: MESSAGE_TYPES.EVENT,
+        type: GAME_EVENTS.EVENT,
         payload: {
           eventType: 'GAME_STARTED',
           startedBy: clientId,
@@ -338,7 +335,7 @@ export class SocketServer {
       
       // Send error response to client
       this.sendMessage(clientId, {
-        type: MESSAGE_TYPES.ERROR,
+        type: GAME_EVENTS.ERROR,
         payload: {
           code: 'INVALID_STATE_TRANSITION',
           message: 'Cannot transition to playing state',
@@ -358,7 +355,7 @@ export class SocketServer {
     
     // Broadcast chat message to all players in the session
     this.broadcastToSession(client.sessionId, {
-      type: MESSAGE_TYPES.CHAT_MESSAGE,
+      type: GAME_EVENTS.CHAT_MESSAGE,
       payload: {
         senderId: clientId,
         senderName: client.playerName || 'Unknown',
@@ -386,13 +383,22 @@ export class SocketServer {
     if (success) {
       console.log(`SOCKET: Game session ${session.id} transitioned to ${data.state} by player ${clientId}`);
       
-      // State change event will be broadcast by the game events system
+      // Broadcast state change to all clients in the session
+      this.broadcastToSession(session.id, {
+        type: GAME_EVENTS.GAME_STATE_CHANGED,
+        payload: {
+          previousState: session.getCurrentState(),
+          currentState: data.state,
+          instanceId: session.id,
+          timestamp: Date.now()
+        }
+      });
     } else {
       console.warn(`SOCKET: Could not transition to ${data.state} for session ${session.id}`);
       
       // Send error response to client
       this.sendMessage(clientId, {
-        type: MESSAGE_TYPES.ERROR,
+        type: GAME_EVENTS.ERROR,
         payload: {
           code: 'INVALID_STATE_TRANSITION',
           message: `Cannot transition to ${data.state} state`,
@@ -426,7 +432,7 @@ export class SocketServer {
         
         // Send initial state message
         this.sendMessage(clientId, {
-          type: MESSAGE_TYPES.INITIAL_STATE,
+          type: GAME_EVENTS.INITIAL_STATE,
           payload: {
             clientId: clientId,
             state: state
@@ -438,7 +444,7 @@ export class SocketServer {
     
     // If not in a session, send default state
     this.sendMessage(clientId, {
-      type: MESSAGE_TYPES.INITIAL_STATE,
+      type: GAME_EVENTS.INITIAL_STATE,
       payload: {
         clientId: clientId,
         state: {
@@ -584,7 +590,7 @@ export class SocketServer {
     
     // Create the network message
     const stateUpdateMessage = {
-      type: MESSAGE_TYPES.STATE_UPDATE,
+      type: GAME_EVENTS.STATE_UPDATE,
       payload: {
         state: gameState
       }

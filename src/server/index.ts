@@ -2,32 +2,7 @@ import { WebSocketServer } from 'ws';
 import http from 'http';
 import { createSocketServer } from './network';
 import { GameLogicProcessor } from './logic';
-import { gameEvents } from './game-state/GameEvents';
 import { setupGameSessionManager } from './game-state/GameSessionManager';
-import { Vector2D } from '../shared/types';
-
-// Define types for events
-interface PlayerDeathEvent {
-  playerId: string;
-  cause: string;
-  position: Vector2D;
-  timestamp: number;
-  instanceId?: string;
-}
-
-interface PlayerWinEvent {
-  playerId: string;
-  position: Vector2D;
-  timestamp: number;
-  instanceId?: string;
-}
-
-interface GameStateChangedEvent {
-  previousState: string;
-  currentState: string;
-  instanceId: string;
-  timestamp: number;
-}
 
 // Create a basic HTTP server
 const server = http.createServer((req, res) => {
@@ -57,38 +32,6 @@ setInterval(() => {
   // Update all game sessions
   sessionManager.updateSessions(deltaTime);
 }, PHYSICS_UPDATE_RATE);
-
-// Set up event handling for game events
-gameEvents.subscribe<PlayerDeathEvent>('PLAYER_DEATH', (data) => {
-  console.log(`SERVER: Player ${data.playerId} died from ${data.cause}`);
-  
-  // Find which session the player belongs to
-  const session = sessionManager.getPlayerSession(data.playerId);
-  if (session) {
-    // Update event data with session ID
-    data.instanceId = session.id;
-    
-    console.log(`SERVER: Death event in session ${session.id}`);
-  }
-});
-
-gameEvents.subscribe<PlayerWinEvent>('PLAYER_WIN', (data) => {
-  console.log(`SERVER: Player ${data.playerId} won!`);
-  
-  // Find which session the player belongs to
-  const session = sessionManager.getPlayerSession(data.playerId);
-  if (session) {
-    // Update event data with session ID
-    data.instanceId = session.id;
-    
-    console.log(`SERVER: Win event in session ${session.id}`);
-  }
-});
-
-// Listen for game state changes
-gameEvents.subscribe<GameStateChangedEvent>('GAME_STATE_CHANGED', (data) => {
-  console.log(`SERVER: Game state changed: ${data.previousState} -> ${data.currentState} for session ${data.instanceId}`);
-});
 
 // Initialize socket server
 const socketServer = createSocketServer(wss, sessionManager, gameLogic);

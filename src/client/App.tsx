@@ -5,7 +5,7 @@ import './App.css';
 // Import components from new structure
 import GameRenderer from './rendering/GameRenderer';
 import { useGameStore } from './store/gameStore';
-import { useSocket } from './network'; // Updated import
+import { useSocket } from './network'; 
 import useInputHandler from './input/InputHandler';
 import useItemPlacementHandler from './input/ItemPlacementHandler';
 import { gameEvents } from './utils/GameEventBus';

@@ -1,4 +1,4 @@
-import { MESSAGE_TYPES } from '../../shared/constants';
+import { GAME_EVENTS } from '../../shared/constants';
 import type { NetworkMessage, StateUpdateMessage, InitialStateMessage, UniversalGameState } from '../../shared/types';
 import { gameEvents } from '../utils/GameEventBus';
 
@@ -45,7 +45,7 @@ class SocketEvents {
       console.log('SOCKET: Sending PLACE_ITEM to server', data);
       if (this.socket?.readyState === WebSocket.OPEN) {
         this.socket.send(JSON.stringify({
-          type: MESSAGE_TYPES.PLACE_ITEM,
+          type: GAME_EVENTS.PLACE_ITEM,
           payload: data
         }));
       } else {

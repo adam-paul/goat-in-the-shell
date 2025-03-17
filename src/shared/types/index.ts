@@ -528,10 +528,45 @@ declare global {
 }
 
 // Import and re-export from shared constants
-import { MESSAGE_TYPES, EVENT_TYPES, ERROR_CODES } from '../constants';
+import { GAME_EVENTS, ERROR_CODES } from '../constants';
 
 // Re-export everything from constants
-export { MESSAGE_TYPES, EVENT_TYPES, ERROR_CODES };
+export { GAME_EVENTS, ERROR_CODES };
+
+// ==================
+// Game Event Types
+// ==================
+
+/**
+ * Player death event
+ */
+export interface PlayerDeathEvent {
+  playerId: string;
+  cause: DeathType;
+  position: Vector2D;
+  timestamp: number;
+  instanceId?: string;
+}
+
+/**
+ * Player win event
+ */
+export interface PlayerWinEvent {
+  playerId: string;
+  position: Vector2D;
+  timestamp: number;
+  instanceId?: string;
+}
+
+/**
+ * Game state changed event
+ */
+export interface GameStateChangedEvent {
+  previousState: GameStatus;
+  currentState: GameStatus;
+  instanceId: string;
+  timestamp: number;
+}
 
 // Export default empty object to make this a module
 export default {};

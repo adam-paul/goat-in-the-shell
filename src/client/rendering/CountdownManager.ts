@@ -3,6 +3,7 @@
  */
 import Phaser from 'phaser';
 import { gameEvents } from '../utils/GameEventBus';
+import { GAME_EVENTS } from '../../shared/constants';
 
 export default class CountdownManager {
   private scene: Phaser.Scene;
@@ -21,7 +22,7 @@ export default class CountdownManager {
    */
   private setupEventListeners(): void {
     // Listen for countdown start events
-    gameEvents.subscribe('START_COUNTDOWN', (data: { duration?: number }) => {
+    gameEvents.subscribe(GAME_EVENTS.START_COUNTDOWN, (data: { duration?: number }) => {
       this.startCountdown(data.duration || 3000);
     });
   }

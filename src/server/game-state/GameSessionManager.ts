@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { GameStatus, DeathType, GameWorld, Vector2D, Player, UniversalGameState } from '../../shared/types';
 import { gameEvents } from './GameEvents';
-import { PLAYER, GAME_DIMENSIONS, GAME_STATUS_TRANSITIONS } from '../../shared/constants';
+import { PLAYER, GAME_DIMENSIONS, GAME_STATUS_TRANSITIONS, GAME_EVENTS } from '../../shared/constants';
 import { PhysicsEngineInstance } from '../physics/PhysicsEngineInstance';
 
 // Define types for our game entities
@@ -117,7 +117,7 @@ class GameSession {
    */
   private setupEventListeners(): void {
     // Player death events
-    gameEvents.subscribe('PLAYER_DEATH', (data: { 
+    gameEvents.subscribe(GAME_EVENTS.PLAYER_DEATH, (data: { 
       playerId: string, 
       cause: DeathType, 
       position: Vector2D, 
@@ -130,7 +130,7 @@ class GameSession {
     });
     
     // Player win events
-    gameEvents.subscribe('PLAYER_WIN', (data: { 
+    gameEvents.subscribe(GAME_EVENTS.PLAYER_WIN, (data: { 
       playerId: string, 
       position: Vector2D, 
       timestamp: number 
@@ -218,14 +218,6 @@ class GameSession {
     // Handle side effects
     this.handleStateEnter(status);
     
-    // Publish event
-    gameEvents.publish('GAME_STATE_CHANGED', {
-      previousState,
-      currentState: status,
-      instanceId: this.id,
-      timestamp: Date.now()
-    });
-    
     return true;
   }
   
@@ -262,7 +254,7 @@ class GameSession {
     this.startTime = Date.now();
     
     // Publish physics activation event
-    gameEvents.publish('PHYSICS_ACTIVATE', {
+    gameEvents.publish(GAME_EVENTS.PHYSICS_ACTIVATE, {
       instanceId: this.id,
       timestamp: Date.now()
     });

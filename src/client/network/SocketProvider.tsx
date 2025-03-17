@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useRef, useState, useEffect } from 'react';
-import { MESSAGE_TYPES, ITEMS } from '../../shared/constants';
+import { GAME_EVENTS, ITEMS } from '../../shared/constants';
 import type { NetworkMessage } from '../../shared/types';
 import socketEvents from './SocketEvents';
 import { gameEvents } from '../utils/GameEventBus';
@@ -73,7 +73,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
       pingInterval = setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) {
           console.log('SOCKET: Sending ping');
-          ws.send(JSON.stringify({ type: MESSAGE_TYPES.PING, timestamp: Date.now() }));
+          ws.send(JSON.stringify({ type: GAME_EVENTS.PING, timestamp: Date.now() }));
         }
       }, 30000); // Send ping every 30 seconds
     };
@@ -128,7 +128,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
     
     try {
       socketRef.current.send(JSON.stringify({
-        type: MESSAGE_TYPES.JOIN_LOBBY,
+        type: GAME_EVENTS.JOIN_LOBBY,
         payload: { playerName, lobbyId }
       }));
       return true;
@@ -171,7 +171,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
   // Specialized message senders
   const sendPlayerInput = (input: unknown) => {
     console.log('SOCKET: Sending player input:', input);
-    return sendMessage(MESSAGE_TYPES.PLAYER_INPUT, input);
+    return sendMessage(GAME_EVENTS.PLAYER_INPUT, input);
   };
   
   const sendPlaceItem = (itemType: string, x: number, y: number) => {
@@ -217,31 +217,31 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
     }
     
     console.log('SOCKET: Sending PLACE_ITEM with data:', JSON.stringify(placementData));
-    return sendMessage(MESSAGE_TYPES.PLACE_ITEM, placementData);
+    return sendMessage(GAME_EVENTS.PLACE_ITEM, placementData);
   };
   
   const sendStartGame = () => {
-    return sendMessage(MESSAGE_TYPES.START_GAME);
+    return sendMessage(GAME_EVENTS.START_GAME);
   };
   
   const sendChatMessage = (message: string, lobbyId: string) => {
-    return sendMessage(MESSAGE_TYPES.CHAT_MESSAGE, { message, lobbyId });
+    return sendMessage(GAME_EVENTS.CHAT_MESSAGE, { message, lobbyId });
   };
   
   const sendAICommand = (command: string) => {
-    return sendMessage(MESSAGE_TYPES.AI_COMMAND, { command });
+    return sendMessage(GAME_EVENTS.AI_COMMAND, { command });
   };
   
   // Request initial game state from server
   const requestInitialState = () => {
     console.log('SOCKET: Requesting initial game state');
-    return sendMessage(MESSAGE_TYPES.REQUEST_INITIAL_STATE);
+    return sendMessage(GAME_EVENTS.REQUEST_INITIAL_STATE);
   };
   
   // Request a game state transition
   const requestStateTransition = (targetState: string) => {
     console.log(`SOCKET: Requesting state transition to ${targetState}`);
-    return sendMessage(MESSAGE_TYPES.REQUEST_STATE_TRANSITION, {
+    return sendMessage(GAME_EVENTS.REQUEST_STATE_TRANSITION, {
       targetState,
       timestamp: Date.now()
     });
