@@ -258,8 +258,7 @@ export class ParameterManager {
       this.notifyListeners('*', param.currentValue, normalizedValue, param);
       
       // Publish to event bus for components to react
-      gameEvents.publish(GAME_EVENTS.EVENT, {
-        eventType: 'PARAMETER_UPDATED',
+      gameEvents.publish(GAME_EVENTS.PARAMETER_UPDATED, {
         key,
         value: param.currentValue,
         normalizedValue: param.normalizedValue,
@@ -296,8 +295,7 @@ export class ParameterManager {
     });
     
     // Publish batch update event
-    gameEvents.publish(GAME_EVENTS.EVENT, {
-      eventType: 'PARAMETERS_BATCH_UPDATED',
+    gameEvents.publish(GAME_EVENTS.PARAMETERS_BATCH_UPDATED, {
       updates
     });
   }

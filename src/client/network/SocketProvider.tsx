@@ -294,9 +294,9 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
     };
     
     // Subscribe to events
-    const unsubInput = gameEvents.subscribe('PLAYER_INPUT', handlePlayerInput);
-    const unsubPlacement = gameEvents.subscribe('ITEM_PLACEMENT', handleItemPlacement);
-    const unsubTransition = gameEvents.subscribe('REQUEST_STATE_TRANSITION', handleStateTransition);
+    const unsubInput = gameEvents.subscribe(GAME_EVENTS.PLAYER_INPUT, handlePlayerInput);
+    const unsubPlacement = gameEvents.subscribe(GAME_EVENTS.PLACE_ITEM, handleItemPlacement);
+    const unsubTransition = gameEvents.subscribe(GAME_EVENTS.REQUEST_STATE_TRANSITION, handleStateTransition);
     
     // Clean up subscriptions when component unmounts
     return () => {

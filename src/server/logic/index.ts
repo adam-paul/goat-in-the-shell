@@ -1,20 +1,80 @@
 import { Vector2D } from '../../shared/types';
+import { GameSessionManager, setupGameSessionManager } from '../game-state';
 
 /**
  * Handles game logic processing
  */
 export class GameLogicProcessor {
+  private sessionManager: GameSessionManager;
+  private updateIntervalId: NodeJS.Timeout | null = null;
+  private lastUpdateTime: number = Date.now();
+  private readonly PHYSICS_UPDATE_RATE = 16; // ~60fps
+  
   constructor(options: any) {
-    // Initialize with options if needed
+    // Store reference to the session manager
+    this.sessionManager = options.sessionManager;
+  }
+  
+  /**
+   * Start the game update loop
+   */
+  startUpdateLoop(): void {
+    if (this.updateIntervalId !== null) {
+      // Clear existing interval if it exists
+      clearInterval(this.updateIntervalId);
+    }
+    
+    this.lastUpdateTime = Date.now();
+    
+    // Set up session update loop
+    this.updateIntervalId = setInterval(() => {
+      const now = Date.now();
+      const deltaTime = now - this.lastUpdateTime;
+      this.lastUpdateTime = now;
+      
+      // Update all game sessions
+      this.sessionManager.updateSessions(deltaTime);
+    }, this.PHYSICS_UPDATE_RATE);
+    
+    console.log(`LOGIC: Started game update loop at ${this.PHYSICS_UPDATE_RATE}ms intervals`);
+  }
+  
+  /**
+   * Stop the game update loop
+   */
+  stopUpdateLoop(): void {
+    if (this.updateIntervalId !== null) {
+      clearInterval(this.updateIntervalId);
+      this.updateIntervalId = null;
+      console.log('LOGIC: Stopped game update loop');
+    }
   }
   
   /**
    * Handle player input
    */
   handlePlayerInput(playerId: string, input: any): void {
-    // Process player input
-    // This would update player state based on input
-    console.log(`LOGIC: Processing input from player ${playerId}`);
+    if (!this.sessionManager) {
+      console.error('LOGIC: SessionManager not available');
+      return;
+    }
+    
+    // Get the player from the session manager
+    const player = this.sessionManager.getPlayer(playerId);
+    
+    if (player) {
+      // Update the player's lastInput property
+      player.lastInput = {
+        left: input.left || false,
+        right: input.right || false,
+        jump: input.jump || false,
+        timestamp: input.timestamp || Date.now()
+      };
+      
+      console.log(`LOGIC: Updated input state for player ${playerId}: ${JSON.stringify(player.lastInput)}`);
+    } else {
+      console.error(`LOGIC: Player ${playerId} not found for input update`);
+    }
   }
   
   /**
@@ -35,4 +95,32 @@ export class GameLogicProcessor {
       properties: data.properties || {}
     };
   }
+  
+  /**
+   * Get the session manager instance
+   */
+  getSessionManager(): GameSessionManager {
+    return this.sessionManager;
+  }
+}
+
+/**
+ * Create and initialize the game logic system
+ */
+export function setupGameLogic(): { 
+  gameLogic: GameLogicProcessor, 
+  sessionManager: GameSessionManager 
+} {
+  // Create the game session manager
+  const sessionManager = setupGameSessionManager();
+  console.log(`LOGIC: Created GameSessionManager`);
+  
+  // Initialize game logic processor
+  const gameLogic = new GameLogicProcessor({ sessionManager });
+  console.log(`LOGIC: Created GameLogicProcessor`);
+  
+  // Start the game update loop
+  gameLogic.startUpdateLoop();
+  
+  return { gameLogic, sessionManager };
 }

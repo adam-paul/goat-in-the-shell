@@ -120,11 +120,11 @@ const GameRenderer: React.FC<GameRendererProps> = ({ containerClassName = 'game-
       };
       
       // Update the rendering without waiting for server response
-      gameEvents.publish('SERVER_STATE_UPDATE', itemData);
+      gameEvents.publish(GAME_EVENTS.SERVER_STATE_UPDATE, itemData);
     };
     
     const unsubPlacement = gameEvents.subscribe<{ type: string, x: number, y: number }>(
-      'ITEM_PLACEMENT', 
+      GAME_EVENTS.PLACE_ITEM, 
       placementHandler
     );
     
@@ -156,7 +156,7 @@ const GameRenderer: React.FC<GameRendererProps> = ({ containerClassName = 'game-
     const handleServerState = (state: any) => {
       // Process and update game state
       updateGameState(state);
-      gameEvents.publish('SERVER_STATE_UPDATE', state);
+      gameEvents.publish(GAME_EVENTS.SERVER_STATE_UPDATE, state);
     };
     
     // Set up socket event listener for state updates

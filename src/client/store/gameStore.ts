@@ -247,7 +247,9 @@ export const useGameStore = create<GameState>((set, get): GameState => {
     // Send the item placement request to the server via event bus
     // This will be picked up by SocketEvents and sent to server
     console.log('STORE: Publishing PLACE_ITEM event', placementData);
-    gameEvents.publish('PLACE_ITEM', placementData);
+    gameEvents.publish(GAME_EVENTS.PLACE_ITEM, placementData);
+    
+    // We don't need a separate event - PLACE_ITEM will handle both server and local rendering
     
     // Don't clear selected item or request state transition yet
     // We'll do that when we receive placement confirmation

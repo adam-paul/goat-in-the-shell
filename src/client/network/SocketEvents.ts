@@ -19,9 +19,10 @@ class SocketEvents {
       try {
         const message = JSON.parse(event.data) as NetworkMessage;
         console.log('SOCKET EVENTS: Received message:', message.type);
+        console.log('SOCKET EVENTS: Message payload:', JSON.stringify(message.payload).substring(0, 200) + '...');
         
         // Process game state updates
-        if (message.type === 'STATE_UPDATE') {
+        if (message.type === GAME_EVENTS.STATE_UPDATE) {
           // Get the state from the payload
           const stateUpdate = message as StateUpdateMessage;
           const gameState = stateUpdate.payload?.state;
@@ -61,7 +62,7 @@ class SocketEvents {
     const { type, payload } = message;
     
     // Handle placement success
-    if (type === 'EVENT' && payload?.eventType === 'PLACEMENT_SUCCESS') {
+    if (type === GAME_EVENTS.EVENT && payload?.eventType === 'PLACEMENT_SUCCESS') {
       // Get store instance
       const store = (window as any).__game_store_instance__;
       if (store && store.handlePlacementSuccess) {
@@ -72,7 +73,7 @@ class SocketEvents {
       gameEvents.publish(type, payload);
     }
     // Handle special case for item placement to trigger countdown
-    else if (type === 'EVENT' && payload?.eventType === 'ITEM_PLACED') {
+    else if (type === GAME_EVENTS.EVENT && payload?.eventType === 'ITEM_PLACED') {
       console.log('SOCKET EVENT: Received ITEM_PLACED event with data:', JSON.stringify(payload));
       
       // First trigger the item placement event for rendering
@@ -89,8 +90,8 @@ class SocketEvents {
       gameEvents.publish(type, payload);
     } 
     // Handle game state transition for countdown
-    else if (type === 'GAME_STARTED' || 
-        (type === 'EVENT' && payload?.eventType === 'GAME_STARTED')) {
+    else if (type === GAME_EVENTS.GAME_STARTED || 
+        (type === GAME_EVENTS.EVENT && payload?.eventType === 'GAME_STARTED')) {
       // First publish to the game event bus for state update
       gameEvents.publish(type, payload);
       
@@ -100,7 +101,7 @@ class SocketEvents {
       gameEvents.publish('START_COUNTDOWN', { duration: 3000 });
     }
     // Handle state transition result messages
-    else if (type === 'STATE_TRANSITION_RESULT') {
+    else if (type === GAME_EVENTS.STATE_TRANSITION_RESULT) {
       console.log('Received state transition result:', payload);
       
       // If the transition was successful, update local game state
@@ -123,7 +124,7 @@ class SocketEvents {
       gameEvents.publish(type, payload);
     }
     // Handle game state changed notifications
-    else if (type === 'GAME_STATE_CHANGED') {
+    else if (type === GAME_EVENTS.GAME_STATE_CHANGED) {
       console.log('Game state changed:', payload);
       
       // Special handling for win state
@@ -160,7 +161,7 @@ class SocketEvents {
     }
     // Handle lobby joined events
     // Handle explicit player win events from server
-    else if (type === 'EVENT' && payload?.eventType === 'PLAYER_WIN') {
+    else if (type === GAME_EVENTS.EVENT && payload?.eventType === 'PLAYER_WIN') {
       console.log('🏆 PLAYER_WIN event received:', payload);
       
       // Update the game state in the store
@@ -177,7 +178,7 @@ class SocketEvents {
       // Publish the original event
       gameEvents.publish(type, payload);
     }
-    else if (type === 'EVENT' && payload?.eventType === 'LOBBY_JOINED') {
+    else if (type === GAME_EVENTS.EVENT && payload?.eventType === 'LOBBY_JOINED') {
       console.log('Joined lobby:', payload);
       
       // Store the instanceId in the game store
@@ -196,7 +197,7 @@ class SocketEvents {
       gameEvents.publish(type, payload);
     }
     // Handle countdown messages from server
-    else if (type === 'START_COUNTDOWN') {
+    else if (type === GAME_EVENTS.START_COUNTDOWN) {
       // Forward to the countdown manager
       gameEvents.publish('START_COUNTDOWN', payload);
       
@@ -204,7 +205,7 @@ class SocketEvents {
       gameEvents.publish(type, payload);
     }
     // Handle initial state message
-    else if (type === 'INITIAL_STATE') {
+    else if (type === GAME_EVENTS.INITIAL_STATE) {
       // Parse as initial state message
       const initialStateMsg = message as InitialStateMessage;
       const state = initialStateMsg.payload?.state;
@@ -229,9 +230,11 @@ class SocketEvents {
       }
       
       // Forward the state to rendering components via SERVER_STATE_UPDATE for immediate rendering
-      if (state && state.gameWorld) {
+      if (state) {
         console.log('Publishing game world from INITIAL_STATE for immediate rendering');
-        gameEvents.publish('SERVER_STATE_UPDATE', state);
+        console.log('Game world data present:', state.gameWorld ? 'YES' : 'NO');
+        console.log('Game world structure:', state.gameWorld ? JSON.stringify(state.gameWorld).substring(0, 200) : 'MISSING');
+        gameEvents.publish(GAME_EVENTS.SERVER_STATE_UPDATE, state);
       }
       
       // Publish the original message to the game event bus

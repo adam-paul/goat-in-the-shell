@@ -318,8 +318,9 @@ export default class BasicGameScene extends Phaser.Scene {
   
   private setupEventListeners(): void {
     // Listen for game state updates from server
-    gameEvents.subscribe(GAME_EVENTS.STATE_UPDATE, (data: any) => {
+    gameEvents.subscribe(GAME_EVENTS.SERVER_STATE_UPDATE, (data: any) => {
       console.log('BasicGameScene received SERVER_STATE_UPDATE event');
+      console.log('State data:', JSON.stringify(data).substring(0, 200) + '...');
       this.updateGameState(data);
     });
     
@@ -340,13 +341,15 @@ export default class BasicGameScene extends Phaser.Scene {
         
         console.log('SCENE: Processing item placement at', worldPoint);
         
-        // Publish item placement event to GameEventBus
-        // This will be picked up by both client-side components and SocketProvider
+        // Publish item placement events to GameEventBus
+        // PLACE_ITEM will be sent to the server via socket
         gameEvents.publish(GAME_EVENTS.PLACE_ITEM, {
           type: this.itemToPlace,
           x: worldPoint.x,
           y: worldPoint.y
         });
+        
+        // No need for a second event - PLACE_ITEM is enough
         
         // Exit placement mode in the scene
         this.exitPlacementMode();
@@ -354,7 +357,7 @@ export default class BasicGameScene extends Phaser.Scene {
     });
     
     // Listen for parameter updates to refresh preview
-    gameEvents.subscribe('PARAMETER_UPDATED', (data: any) => {
+    gameEvents.subscribe(GAME_EVENTS.PARAMETER_UPDATED, (data: any) => {
       // If we're in placement mode with a preview, recreate the preview
       // to reflect the updated parameter
       if (this.itemPlacementMode && this.itemPreview && this.itemToPlace) {
@@ -375,7 +378,7 @@ export default class BasicGameScene extends Phaser.Scene {
     });
     
     // Listen for batch parameter updates
-    gameEvents.subscribe('PARAMETERS_BATCH_UPDATED', () => {
+    gameEvents.subscribe(GAME_EVENTS.PARAMETERS_BATCH_UPDATED, () => {
       if (this.itemPlacementMode && this.itemToPlace) {
         // Same as above - refresh preview
         const currentPos = this.itemPreview ? {
@@ -392,12 +395,12 @@ export default class BasicGameScene extends Phaser.Scene {
     });
     
     // Listen for countdown completion
-    gameEvents.subscribe('COUNTDOWN_COMPLETE', () => {
+    gameEvents.subscribe(GAME_EVENTS.COUNTDOWN_COMPLETE, () => {
       this.startGame();
     });
     
     // Listen for player input
-    gameEvents.subscribe('PLAYER_INPUT', (data: any) => {
+    gameEvents.subscribe(GAME_EVENTS.PLAYER_INPUT, (data: any) => {
       this.handlePlayerInput(data);
     });
     

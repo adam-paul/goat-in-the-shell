@@ -1,8 +1,7 @@
 import { WebSocketServer } from 'ws';
 import http from 'http';
 import { createSocketServer } from './network';
-import { GameLogicProcessor } from './logic';
-import { setupGameSessionManager } from './game-state/GameSessionManager';
+import { setupGameLogic } from './logic';
 
 // Create a basic HTTP server
 const server = http.createServer((req, res) => {
@@ -13,25 +12,8 @@ const server = http.createServer((req, res) => {
 // Create WebSocket server
 const wss = new WebSocketServer({ server });
 
-// Create the game session manager
-const sessionManager = setupGameSessionManager();
-console.log(`SERVER: Created GameSessionManager`);
-
-// Initialize game logic processor
-const gameLogic = new GameLogicProcessor({});
-console.log(`SERVER: Created GameLogicProcessor`);
-
-// Set up session update loop
-let lastUpdateTime = Date.now();
-const PHYSICS_UPDATE_RATE = 16; // ~60fps
-setInterval(() => {
-  const now = Date.now();
-  const deltaTime = now - lastUpdateTime;
-  lastUpdateTime = now;
-  
-  // Update all game sessions
-  sessionManager.updateSessions(deltaTime);
-}, PHYSICS_UPDATE_RATE);
+// Initialize game logic system
+const { gameLogic, sessionManager } = setupGameLogic();
 
 // Initialize socket server
 const socketServer = createSocketServer(wss, sessionManager, gameLogic);
@@ -45,6 +27,7 @@ server.listen(PORT, () => {
 // Graceful shutdown
 const shutdown = () => {
   console.log('SERVER: Shutting down...');
+  gameLogic.stopUpdateLoop();
   socketServer.shutdown();
   server.close();
   process.exit(0);
