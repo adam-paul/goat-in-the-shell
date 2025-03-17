@@ -1,15 +1,7 @@
 // src/client/input/InputHandler.ts
 import { useEffect, useState, useRef } from 'react';
 import { gameEvents } from '../utils/GameEventBus';
-
-// Input state definition
-interface InputState {
-  left: boolean;
-  right: boolean;
-  up: boolean;
-  down: boolean;
-  jump: boolean;
-}
+import { InputState } from '../../shared/types';
 
 // Default input state
 const initialInputState: InputState = {

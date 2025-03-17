@@ -1,7 +1,6 @@
 // src/client/input/ItemPlacementHandler.ts
 import { useEffect } from 'react';
 import { useGameStore } from '../store/gameStore';
-import { ItemType } from '../../shared/types';
 import { gameEvents } from '../utils/GameEventBus';
 
 /**

@@ -159,6 +159,17 @@ export interface GameInstanceInfo {
 // ==================
 
 /**
+ * Input state definition for keyboard/control input
+ */
+export interface InputState {
+  left: boolean;
+  right: boolean;
+  up: boolean;
+  down: boolean;
+  jump: boolean;
+}
+
+/**
  * Base message interface for client-server communication
  */
 export interface NetworkMessage {
