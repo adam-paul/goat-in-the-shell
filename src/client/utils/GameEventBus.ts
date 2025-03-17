@@ -38,7 +38,7 @@ export class GameEventBus {
    * @param data Event data
    * @param log Whether to log this event (defaults to true)
    */
-  publish<T>(event: string, data: T, log: boolean = true): void {
+  publish<T>(event: string, data: T, log: boolean = false): void {
     // Skip logging for high-frequency events or when explicitly disabled
     if (log && !event.includes('PLAYER_POSITION_UPDATE')) {
       console.log(`GameEventBus: Publishing event '${event}'`, data);

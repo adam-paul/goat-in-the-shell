@@ -70,8 +70,6 @@ export class GameLogicProcessor {
         jump: input.jump || false,
         timestamp: input.timestamp || Date.now()
       };
-      
-      console.log(`LOGIC: Updated input state for player ${playerId}: ${JSON.stringify(player.lastInput)}`);
     } else {
       console.error(`LOGIC: Player ${playerId} not found for input update`);
     }
