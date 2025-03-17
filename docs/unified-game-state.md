@@ -1,152 +1,119 @@
-# Unified Game State Architecture
+# Unified Game State Documentation
 
 ## Overview
 
-The Unified Game State architecture implements a consistent, predictable state management system for Goat in the Shell. This document explains the key components, data flow, and benefits of the architecture.
+The UniversalGameState is a central data structure that provides a consistent representation of game state across the client and server. It serves as a single source of truth for synchronization and ensures that all components work with a standardized state format.
 
-## Core Problem Solved
+## Structure
 
-Prior to this architecture, the game suffered from inconsistent state management where:
-
-1. Multiple competing state formats existed (global state, instance state, client state)
-2. State requests could return data from inconsistent sources
-3. Players would experience position "snapping" issues due to global state overriding instance-specific state
-4. State was organized differently depending on which component requested it
-
-## Unified State Structure
-
-The core of the architecture is the `UnifiedGameState` interface:
+The `UniversalGameState` interface includes:
 
 ```typescript
-export interface UnifiedGameState {
-  // Metadata
-  timestamp: number;
-  version: number;
+interface UniversalGameState {
+  // Version and metadata
+  version?: number;          // Incremental counter for state changes
+  timestamp: number;         // When this state was created
+  instanceId?: string;       // Game instance identifier
+  lobbyId?: string;          // Lobby identifier
+  clientId?: string;         // Client identifier (for backward compatibility)
   
-  // World configuration (static)
-  world: GameWorld;
+  // Game status
+  gameStatus: GameStatus;    // Current game state (playing, gameOver, etc.)
+  deathType?: DeathType;     // If applicable, how the player died
   
-  // Instance-specific data (null for global state)
-  instance: {
-    id: string;
-    status: GameStatus;
-    items: GameItem[];
-    players: Player[];
-    parameters: GameParameters;
-  } | null;
+  // Entities
+  players: Player[];         // All players in the game instance
+  gameWorld: GameWorld;      // World configuration (platforms, bounds, etc.)
+  items: GameItem[];         // Placed items (spikes, oscillators, etc.)
   
-  // Client-specific data (populated by server before sending)
-  client: {
-    id: string;
-    playerData: Player | null; // This client's player data for convenience
+  // Configuration
+  gameConfig?: {             // Game physics parameters
+    gravity: number;
+    moveSpeed: number;
+    jumpForce: number;
+    [key: string]: any;
   };
+  parameters?: any;          // Additional game parameters
+  
+  // Game progress
+  round?: {                  // Current round information
+    number: number;
+    startTime: number;
+    timeRemaining: number;
+    isCompleted: boolean;
+  };
+  
+  // Multiplayer information
+  playerRoles?: Record<string, PlayerRole>;
+  gameMode?: GameMode;
 }
 ```
 
-This structure clearly separates concerns:
+## Flow of State 
 
-- **World**: Static configuration data (platforms, world bounds, start/end points)
-- **Instance**: Game-specific data (players, items, status, parameters)
-- **Client**: Data specific to the receiving client
+1. **State Creation**: The server's `GameStateManager.getState()` method creates a properly formatted `UniversalGameState` object.
 
-## Server-Side Implementation
+2. **Network Transport**: State is sent to clients via WebSockets using these message types:
+   - `STATE_UPDATE`: Regular game state updates (30-60 times per second)
+   - `INITIAL_STATE`: First state sent to new clients on connection
 
-### GameStateManager
+3. **Client Processing**: The client's `SocketEvents` handler processes incoming state:
+   ```typescript
+   // STATE_UPDATE message handling
+   if (message.type === 'STATE_UPDATE') {
+     const stateUpdate = message as StateUpdateMessage;
+     const gameState = stateUpdate.payload?.state;
+     
+     // Update the game state store
+     if (store.updateGameState && gameState) {
+       store.updateGameState(gameState);
+     }
+   }
+   ```
 
-The `GameStateManager` provides methods for building unified state:
+4. **Rendering**: The client's rendering system uses this state to update the game visuals.
 
-- `getState(instanceId?, clientId?)`: Returns the appropriate state level
-- `getGlobalState()`: Returns world configuration only
-- `getInstanceState(instanceId)`: Returns world + instance data
-- `getClientState(clientId, baseState)`: Adds client-specific data
+## Key Components
 
-### State Generation Flow
+### Server-Side
 
-1. Start with global state (world configuration)
-2. If an instanceId is provided, add instance-specific data
-3. If a clientId is provided, add client-specific data
+- **GameStateManager**: Creates the initial state structure
+- **PlayerRegistry**: Provides the authoritative player data
+- **GameInstanceManager**: Associates players with instances
+- **PhysicsEngineInstance**: Updates positions based on physics
 
-### Critical Fix
+### Client-Side
 
-The critical fix was ensuring `client.instanceId` is stored when a player joins a lobby:
+- **SocketEvents**: Receives state updates from the server
+- **GameStore**: Stores the latest state for components to use
+- **BasicGameScene**: Renders the game world based on state
+- **UniversalGameState**: Provides type safety through TypeScript
 
-```javascript
-// Store the instanceId in the client object to ensure future request_initial_state calls
-// return instance-specific state instead of global state
-client.instanceId = instanceId;
+## Best Practices
+
+1. **Always use the formal interface**: When adding new state properties, add them to `UniversalGameState` first.
+2. **Avoid state duplication**: Don't store the same data in multiple parts of the state.
+3. **Respect data ownership**: The server is the source of truth for positions and physics.
+4. **Version tracking**: Use the `version` field to determine if state has changed.
+5. **Type safety**: Use TypeScript's type checking to ensure proper state structure.
+
+## Example Usage
+
+```typescript
+// Server-side: Creating state
+const gameState: UniversalGameState = {
+  timestamp: Date.now(),
+  gameStatus: 'playing',
+  players: getAllPlayers(),
+  gameWorld: getGameWorld(),
+  items: Array.from(this.items.values())
+};
+
+// Client-side: Consuming state
+const { gameStatus, players, gameWorld } = gameState;
+
+// Rendering based on state
+players.forEach(player => {
+  renderPlayer(player.position.x, player.position.y);
+});
 ```
-
-This ensures that when a client requests state later, the server can associate it with the correct instance.
-
-## Client-Side Implementation
-
-### Socket Events Handler
-
-The Socket Events handler processes unified state from both initial connection and state updates:
-
-```javascript
-if (message.type === 'STATE_UPDATE' || message.type === 'INITIAL_STATE') {
-  // Handle unified state format
-  const store = (window as any).__game_store_instance__;
-  if (store && store.updateGameState && message.payload) {
-    // Store the entire unified state object
-    store.updateGameState(message.payload);
-  }
-}
-```
-
-### Game Store
-
-The game store extracts relevant information from the unified state:
-
-```javascript
-updateGameState: (unifiedState: any) => {
-  // Update the store with unified state
-  set(() => ({ gameState: unifiedState }));
-  
-  // Update client ID if provided
-  if (unifiedState.client && unifiedState.client.id) {
-    set(state => ({...}));
-  }
-  
-  // Update instance ID if provided
-  if (unifiedState.instance && unifiedState.instance.id) {
-    set(state => ({...}));
-  }
-  
-  // Update game status if provided in instance data
-  if (unifiedState.instance && unifiedState.instance.status) {
-    set(state => ({...}));
-  }
-}
-```
-
-### Scene Rendering
-
-The `BasicGameScene` processes unified state in a structured way:
-
-1. Update world configuration from `unifiedState.world`
-2. If no instance data, stop processing (this is global state only)
-3. Process instance data (players, items, status)
-4. Update the player's goat sprite based on server position
-
-## Benefits
-
-1. **Predictable Data Structure**: Everyone knows exactly what shape the state will have
-2. **Single Source of Truth**: Server maintains authoritative state
-3. **Clear Separation of Concerns**: World vs. instance vs. client data
-4. **Fixed Position Issues**: No more position snapping due to global state overrides
-5. **Extensible Structure**: Easy to add new state elements in appropriate sections
-6. **Efficient Updates**: Only send the state relevant to each client
-
-## Example Data Flow
-
-1. Player connects → Receives global state (world configuration)
-2. Player selects game mode → Client stored in game instance
-3. Client requests state → Server returns instance-specific state
-4. Physics updates player position → State is synchronized to client
-5. Client receives personalized state updates relevant to their instance
-
----
-
-This architecture ensures that all game state flows consistently through the system, preventing the position sync issues and providing a solid foundation for future development.
