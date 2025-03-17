@@ -22,7 +22,11 @@ class SocketEvents {
         
         // Process game state updates
         if (message.type === 'STATE_UPDATE') {
-          // State update received, will be processed by event handlers
+          // Update the game state in the store immediately
+          const store = (window as any).__game_store_instance__;
+          if (store && store.updateGameState && message.payload?.state) {
+            store.updateGameState(message.payload.state);
+          }
         }
         
         // Process and forward the message
@@ -172,10 +176,19 @@ class SocketEvents {
     else if (type === 'EVENT' && payload?.eventType === 'LOBBY_JOINED') {
       console.log('Joined lobby:', payload);
       
+      // Store the instanceId in the game store
+      if (payload.instanceId) {
+        console.log('Setting instanceId:', payload.instanceId);
+        const store = (window as any).__game_store_instance__;
+        if (store && store.setInstanceId) {
+          store.setInstanceId(payload.instanceId);
+        }
+      }
+      
       // We let the client handle state transitions after lobby is joined
       // The client will request transitions based on game mode selected
       
-      // Just publish the message to the game event bus
+      // Publish the message to the game event bus
       gameEvents.publish(type, payload);
     }
     // Handle countdown messages from server
@@ -189,8 +202,19 @@ class SocketEvents {
     // Handle initial state message
     else if (type === 'INITIAL_STATE') {
       // We don't update game status from initial state anymore - tutorial and mode select are client-side
-      // Just store the clientId and other config data
-      console.log('Received initial state from server');
+      // Store the clientId and other config data
+      console.log('Received initial state from server with clientId:', payload.clientId);
+      
+      // Set client ID in the store immediately
+      const store = (window as any).__game_store_instance__;
+      if (store && store.setClientId && payload.clientId) {
+        store.setClientId(payload.clientId);
+      }
+      
+      // Also store game config if available
+      if (store && store.setGameConfig && payload.gameConfig) {
+        store.setGameConfig(payload.gameConfig);
+      }
       
       // Publish the original message to the game event bus
       gameEvents.publish(type, payload);
