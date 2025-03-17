@@ -89,16 +89,18 @@ const GameRenderer: React.FC<GameRendererProps> = ({ containerClassName = 'game-
 
   // Initialize the game on component mount
   useEffect(() => {
+    console.log('GameRenderer mounted, initializing game with mode:', currentGameMode);
     initGame(currentGameMode, playerRole);
     
     // Clean up on unmount
     return () => {
+      console.log('GameRenderer unmounting, destroying game instance');
       if (gameInstanceRef.current) {
         gameInstanceRef.current.destroy(true);
         gameInstanceRef.current = null;
       }
     };
-  }, []);
+  }, [currentGameMode, playerRole]); // Re-init game if mode or role changes
   
   // Set up event bus for item placement events for immediate visual feedback
   useEffect(() => {

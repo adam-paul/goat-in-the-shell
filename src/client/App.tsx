@@ -97,6 +97,9 @@ function App() {
           // Server state machine already starts in 'select' state for single player
           console.log('Connected to single player game, advancing to item select');
           useGameStore.getState().setGameStatus('select');
+          
+          // Publish a game reset event to ensure proper initialization
+          gameEvents.publish('GAME_RESET', { mode: 'single_player' });
         }
       } catch (error) {
         console.error('Error connecting to single player instance:', error);
@@ -116,6 +119,9 @@ function App() {
             // Directly set to lobby status for multiplayer
             console.log('Connected to multiplayer lobby as goat');
             useGameStore.getState().setGameStatus('lobby');
+            
+            // Publish a game reset event to ensure proper initialization
+            gameEvents.publish('GAME_RESET', { mode: 'multiplayer' });
           }
         } catch (error) {
           console.error('Error connecting to lobby:', error);
@@ -133,6 +139,9 @@ function App() {
             // Directly set to lobby status for multiplayer
             console.log('Connected to multiplayer lobby as prompter');
             useGameStore.getState().setGameStatus('lobby');
+            
+            // Publish a game reset event to ensure proper initialization
+            gameEvents.publish('GAME_RESET', { mode: 'multiplayer' });
           }
         } catch (error) {
           console.error('Error creating lobby:', error);
