@@ -1,42 +1,22 @@
 import Matter from 'matter-js';
-import { GameStateManager } from '../game-state';
+import { GameSessionManager } from '../game-state';
 import { DeathType, Vector2D, Player } from '../../shared/types';
 import { gameEvents } from '../game-state/GameEvents';
 import { PHYSICS, ITEMS, PLAYER, GAME_DIMENSIONS } from '../../shared/constants';
-import { PlayerRegistry } from '../registry';
 
 // Constants for physics simulation
 const PHYSICS_UPDATE_RATE = 60; // Updates per second
 const TIME_STEP = 1000 / PHYSICS_UPDATE_RATE;
-const MAX_STEP = 5 * TIME_STEP; // Max step size to prevent spiral of death
+const MAX_STEPS = 5; // Maximum number of steps to avoid spiral of death
 
-// Game physics constants - all from shared constants
-const GRAVITY = PHYSICS.GRAVITY;
-const PLAYER_MOVE_FORCE = PHYSICS.PLAYER_MOVE_FORCE;
-const PLAYER_JUMP_FORCE = PHYSICS.PLAYER_JUMP_FORCE;
-
-// Use shared constants for world dimensions
-const WORLD_WIDTH = GAME_DIMENSIONS.WIDTH;
-const WORLD_HEIGHT = GAME_DIMENSIONS.HEIGHT;
-
-// Game parameters (default values) - all derived from shared constants
+// Default physics parameters
 const DEFAULT_PARAMETERS = {
-  gravity: GRAVITY,
-  player_move_speed: PLAYER_MOVE_FORCE,
-  player_jump_force: PLAYER_JUMP_FORCE,
-  dart_speed: PHYSICS.DART_SPEED,
-  dart_frequency: ITEMS.DART_WALL.DART_INTERVAL, // milliseconds between dart shots
-  platform_width: ITEMS.PLATFORM.DEFAULT_WIDTH,
-  platform_height: ITEMS.PLATFORM.DEFAULT_HEIGHT,
-  spike_width: ITEMS.PLATFORM.DEFAULT_WIDTH,
-  spike_height: ITEMS.PLATFORM.DEFAULT_HEIGHT,
-  oscillator_width: ITEMS.OSCILLATOR.DEFAULT_WIDTH, 
-  oscillator_height: ITEMS.OSCILLATOR.DEFAULT_HEIGHT,
-  oscillator_distance: ITEMS.OSCILLATOR.DEFAULT_AMPLITUDE_Y,
-  shield_width: ITEMS.SHIELD.WIDTH,
-  shield_height: ITEMS.SHIELD.HEIGHT,
-  dart_wall_height: ITEMS.DART_WALL.HEIGHT,
-  tilt: 0 // degrees
+  gravity: PHYSICS.GRAVITY,
+  player_move_force: PHYSICS.PLAYER_MOVE_FORCE,
+  player_jump_force: PHYSICS.PLAYER_JUMP_FORCE,
+  ground_friction: PHYSICS.GROUND_FRICTION,
+  air_friction: PHYSICS.AIR_FRICTION,
+  restitution: PHYSICS.RESTITUTION
 };
 
 // Custom collision categories (bit flags)
@@ -58,6 +38,7 @@ const COLLISION_MASKS = {
   DEATH_ZONE: CATEGORIES.PLAYER
 };
 
+// Define event interfaces
 interface PlayerMoveEvent {
   playerId: string;
   force: Vector2D;
@@ -75,57 +56,45 @@ export class PhysicsEngineInstance {
   private accumulator: number = 0;
   private worldBounds: Matter.Body[] = [];
   private parameters: Record<string, number>;
-
+  
   constructor(
-    private instanceId: string,
-    private gameState: GameStateManager,
-    private playerRegistry: PlayerRegistry,
+    private sessionId: string,
+    private session: any,
     parameters = DEFAULT_PARAMETERS
   ) {
-    this.gameState = gameState;
-    this.playerRegistry = playerRegistry;
-    this.parameters = { ...DEFAULT_PARAMETERS, ...parameters };
-
-    // Create physics engine for this instance with proper gravity
-    // The gravity value is critical for y-axis movement
-    // We need to scale gravity to match the Phaser physics system
-    // Phaser uses 300 as default, our shared constant is 0.8, so we need to scale properly
-    const MATTER_GRAVITY_SCALE = 1; // Keep this at 1 and adjust client as needed
-    const gravity = (this.parameters.gravity || PHYSICS.GRAVITY) * MATTER_GRAVITY_SCALE;
-    
+    // Initialize Matter.js engine
     this.engine = Matter.Engine.create({
-      gravity: { 
-        x: 0, 
-        y: gravity 
+      gravity: {
+        x: 0,
+        y: parameters.gravity || DEFAULT_PARAMETERS.gravity
       }
     });
     
-    console.log(`PHYSICS: Engine created with scaled gravity ${gravity} for instance ${this.instanceId}`);
-    console.log(`PHYSICS: Using Matter.js gravity - default shared config value is ${PHYSICS.GRAVITY}`);
-
-    // Create collision categories and collision handling
-    Matter.Events.on(this.engine, 'collisionStart', this.handleCollisionStart.bind(this));
-    
-    // Subscribe to game events for this instance
-    this.setupEventHandlers();
+    // Store parameters
+    this.parameters = { ...DEFAULT_PARAMETERS, ...parameters };
     
     // Create world boundaries
     this.createWorldBounds();
     
-    // Create platforms and dart walls from game world
-    const gameWorldData = this.gameState.getGameWorld();
-    if (gameWorldData) {
-      console.log(`[PhysicsEngine:${this.instanceId}] Setting up world with ${gameWorldData.platforms.length} platforms`);
-      this.createPlatformsFromGameWorld(gameWorldData);
+    // Create death zone at the bottom of the world
+    this.createDeathZone();
+    
+    // Set up collision event handlers
+    this.setupEventHandlers();
+    
+    // Create platforms from game world
+    const gameWorld = session.gameWorld;
+    if (gameWorld) {
+      this.createPlatformsFromGameWorld(gameWorld);
     }
     
-    // Create death zone at bottom of world
-    this.createDeathZone();
-
-    // Initial sync
-    this.syncGameState();
+    // Create player bodies
+    const players = session.getAllPlayers();
+    for (const player of players) {
+      this.createPlayerBody(player);
+    }
     
-    console.log(`[PhysicsEngine:${this.instanceId}] Physics engine instance created successfully`);
+    console.log(`PHYSICS: Initialized physics engine for session ${sessionId}`);
   }
 
   /**
@@ -135,16 +104,16 @@ export class PhysicsEngineInstance {
     // Subscribe to game events with instance filtering
     gameEvents.subscribe('PLAYER_MOVE', (data: PlayerMoveEvent) => {
       // Check if this event is for a player in this instance
-      const playerInstanceId = this.playerRegistry.getPlayerInstance(data.playerId);
-      if (playerInstanceId === this.instanceId) {
+      const playerInstanceId = this.session.getPlayerInstance(data.playerId);
+      if (playerInstanceId === this.sessionId) {
         this.applyForce(data.playerId, data.force);
       }
     });
 
     gameEvents.subscribe('PLAYER_JUMP', (data: PlayerJumpEvent) => {
       // Check if this event is for a player in this instance
-      const playerInstanceId = this.playerRegistry.getPlayerInstance(data.playerId);
-      if (playerInstanceId === this.instanceId) {
+      const playerInstanceId = this.session.getPlayerInstance(data.playerId);
+      if (playerInstanceId === this.sessionId) {
         const body = this.bodies.get(data.playerId);
         if (!body) return;
 
@@ -156,8 +125,6 @@ export class PhysicsEngineInstance {
     });
   }
   
-  // Dart timer methods removed
-  
   /**
    * Clean up resources when this physics instance is destroyed
    */
@@ -168,7 +135,7 @@ export class PhysicsEngineInstance {
     // Clear maps
     this.bodies.clear();
     
-    console.log(`[PhysicsEngine:${this.instanceId}] Physics engine instance destroyed`);
+    console.log(`[PhysicsEngine:${this.sessionId}] Physics engine instance destroyed`);
   }
   
   /**
@@ -177,17 +144,17 @@ export class PhysicsEngineInstance {
   private createWorldBounds(): void {
     // Create invisible walls at the edges of the world (left, right, and top)
     const leftWall = Matter.Bodies.rectangle(
-      0, WORLD_HEIGHT/2, 10, WORLD_HEIGHT, 
+      0, GAME_DIMENSIONS.HEIGHT/2, 10, GAME_DIMENSIONS.HEIGHT, 
       { isStatic: true, label: 'leftWall' }
     );
     
     const rightWall = Matter.Bodies.rectangle(
-      WORLD_WIDTH, WORLD_HEIGHT/2, 10, WORLD_HEIGHT, 
+      GAME_DIMENSIONS.WIDTH, GAME_DIMENSIONS.HEIGHT/2, 10, GAME_DIMENSIONS.HEIGHT, 
       { isStatic: true, label: 'rightWall' }
     );
     
     const topWall = Matter.Bodies.rectangle(
-      WORLD_WIDTH/2, 0, WORLD_WIDTH, 10, 
+      GAME_DIMENSIONS.WIDTH/2, 0, GAME_DIMENSIONS.WIDTH, 10, 
       { isStatic: true, label: 'topWall' }
     );
     
@@ -228,7 +195,7 @@ export class PhysicsEngineInstance {
     // Create start and finish areas
     if (gameWorld.startPoint) {
       // Start point is just for visuals, no physics needed
-      console.log(`[PhysicsEngine:${this.instanceId}] Start point set at (${gameWorld.startPoint.x}, ${gameWorld.startPoint.y})`);
+      console.log(`[PhysicsEngine:${this.sessionId}] Start point set at (${gameWorld.startPoint.x}, ${gameWorld.startPoint.y})`);
     }
     
     if (gameWorld.endPoint) {
@@ -258,9 +225,9 @@ export class PhysicsEngineInstance {
    */
   private createDeathZone(): void {
     const deathZone = Matter.Bodies.rectangle(
-      WORLD_WIDTH / 2, 
-      WORLD_HEIGHT + 50, // Below the visible world
-      WORLD_WIDTH, 
+      GAME_DIMENSIONS.WIDTH / 2, 
+      GAME_DIMENSIONS.HEIGHT + 50, // Below the visible world
+      GAME_DIMENSIONS.WIDTH, 
       100,
       {
         isStatic: true,
@@ -280,58 +247,42 @@ export class PhysicsEngineInstance {
    * Update the physics simulation
    */
   update(deltaTime: number): void {
-    // Skip physics updates if the state machine isn't in playing state
-    if (deltaTime <= 0) return;
-    
-    // Periodically log physics status for debugging
+    // Calculate time since last update
     const currentTime = Date.now();
-    const shouldLogDetails = (currentTime - this.lastDebugTime) > 5000; // Log every 5 seconds
+    const frameTime = currentTime - this.lastUpdateTime;
+    this.lastUpdateTime = currentTime;
     
-    if (shouldLogDetails) {
-      // Get all players directly from registry for debugging
-      const players = this.playerRegistry.getAllPlayersForInstance(this.instanceId);
-      const activeBodies = Array.from(this.bodies.keys());
-      
-      console.log(`PHYSICS ENGINE [${this.instanceId}]: Status update`);
-      console.log(`- Players in registry: ${players.length}`);
-      console.log(`- Bodies tracked: ${activeBodies.length}`);
-      console.log(`- Physics accumulator: ${this.accumulator.toFixed(2)}ms`);
-      
-      // Update timestamp for next debug print
-      this.lastDebugTime = currentTime;
+    // Add frame time to accumulator
+    this.accumulator += frameTime;
+    
+    // Prevent spiral of death by capping accumulator
+    if (this.accumulator > MAX_STEPS * TIME_STEP) {
+      this.accumulator = MAX_STEPS * TIME_STEP;
     }
     
-    // Add deltaTime to accumulator
-    this.accumulator += deltaTime;
-    
-    // Cap accumulator to prevent spiral of death
-    if (this.accumulator > MAX_STEP) {
-      console.warn(`PHYSICS: Accumulator capped from ${this.accumulator}ms to ${MAX_STEP}ms`);
-      this.accumulator = MAX_STEP;
-    }
-    
-    // Update physics in fixed time steps
-    let steps = 0;
+    // Run physics simulation in fixed time steps
     while (this.accumulator >= TIME_STEP) {
-      // Apply forces based on player inputs
+      // Apply forces to players
       this.applyPlayerForces();
       
-      // Update special item physics (oscillators)
-      this.updateSpecialItemPhysics();
-      
-      // Step the physics simulation forward
+      // Update physics simulation
       Matter.Engine.update(this.engine, TIME_STEP);
       
+      // Reduce accumulator by time step
       this.accumulator -= TIME_STEP;
-      steps++;
     }
     
-    if (steps > 0 && shouldLogDetails) {
-      console.log(`PHYSICS: Performed ${steps} physics steps`);
-    }
-    
-    // Sync game state with physics state
+    // Sync game state after physics update
     this.syncGameState();
+    
+    // Update special items (oscillators, etc.)
+    this.updateSpecialItemPhysics();
+    
+    // Debug logging (rate-limited)
+    if (currentTime - this.lastDebugTime > 5000) {
+      this.debugPhysicsState();
+      this.lastDebugTime = currentTime;
+    }
   }
   
   /**
@@ -339,10 +290,10 @@ export class PhysicsEngineInstance {
    */
   private applyPlayerForces(): void {
     // Get players DIRECTLY from PlayerRegistry (source of truth)
-    const activePlayers = this.playerRegistry.getAllPlayersForInstance(this.instanceId);
+    const activePlayers = this.session.getAllPlayersForInstance(this.sessionId);
     
     // Log detailed player information for debugging
-    console.log(`PHYSICS: Found ${activePlayers.length} players for instance ${this.instanceId}`);
+    console.log(`PHYSICS: Found ${activePlayers.length} players for instance ${this.sessionId}`);
     for (const p of activePlayers) {
       console.log(`PHYSICS: Player ${p.id} at (${p.position.x}, ${p.position.y}) with input:`, 
         p.lastInput ? JSON.stringify(p.lastInput) : "No input");
@@ -412,7 +363,7 @@ export class PhysicsEngineInstance {
    * Update physics for special items like oscillating platforms
    */
   private updateSpecialItemPhysics(): void {
-    const gameState = this.gameState.getState();
+    const gameState = this.session.getState();
     
     for (const item of gameState.items) {
       const body = this.bodies.get(item.id);
@@ -452,17 +403,15 @@ export class PhysicsEngineInstance {
     }
   }
   
-  // Dart update methods removed
-  
   /**
    * Sync physics state with game state
    */
   private syncGameState(): void {
     // Get players DIRECTLY from PlayerRegistry (source of truth)
-    const activePlayers = this.playerRegistry.getAllPlayersForInstance(this.instanceId);
+    const activePlayers = this.session.getAllPlayersForInstance(this.sessionId);
     
     // Log player counts and details for debugging
-    console.log(`PHYSICS: Syncing ${activePlayers.length} players for instance ${this.instanceId}`);
+    console.log(`PHYSICS: Syncing ${activePlayers.length} players for instance ${this.sessionId}`);
     
     if (!activePlayers.length) return;
     
@@ -484,17 +433,17 @@ export class PhysicsEngineInstance {
         const newPosition = { x: body.position.x, y: body.position.y };
         
         // Update player position in registry
-        this.playerRegistry.updatePlayerPosition(player.id, newPosition);
+        this.session.updatePlayerPosition(player.id, newPosition);
         
         // Update velocity in registry
-        this.playerRegistry.updatePlayerVelocity(player.id, {
+        this.session.updatePlayerVelocity(player.id, {
           x: body.velocity.x,
           y: body.velocity.y
         });
         
         // Update onGround status
         const onGround = this.isBodyOnGround(body);
-        this.playerRegistry.updatePlayerGroundStatus(player.id, onGround);
+        this.session.updatePlayerGroundStatus(player.id, onGround);
         
         // Log meaningful position changes only (avoid spam)
         if (Math.abs(newPosition.x - oldPosition.x) > 0.01 || 
@@ -610,19 +559,19 @@ export class PhysicsEngineInstance {
   
   private handlePlayerDeath(playerId: string, cause: DeathType): void {
     // Get player from registry
-    const player = this.playerRegistry.getPlayer(playerId);
+    const player = this.session.getPlayer(playerId);
     
     if (player && player.isAlive) {
       // Update player alive state via registry
-      this.playerRegistry.setPlayerAliveStatus(playerId, false);
-      console.log(`[PhysicsEngine:${this.instanceId}] Player ${playerId} died from ${cause}`);
+      this.session.setPlayerAliveStatus(playerId, false);
+      console.log(`[PhysicsEngine:${this.sessionId}] Player ${playerId} died from ${cause}`);
       
       // Publish death event to game logic
       gameEvents.publish('PLAYER_DEATH', {
         playerId,
         cause,
         position: { ...player.position },
-        instanceId: this.instanceId,
+        instanceId: this.sessionId,
         timestamp: Date.now()
       });
     }
@@ -630,16 +579,16 @@ export class PhysicsEngineInstance {
 
   private handlePlayerWin(playerId: string): void {
     // Get player from registry
-    const player = this.playerRegistry.getPlayer(playerId);
+    const player = this.session.getPlayer(playerId);
     
     if (player && player.isAlive) {
-      console.log(`[PhysicsEngine:${this.instanceId}] Player ${playerId} won!`);
+      console.log(`[PhysicsEngine:${this.sessionId}] Player ${playerId} won!`);
       
       // Publish win event to game logic
       gameEvents.publish('PLAYER_WIN', {
         playerId,
         position: { ...player.position },
-        instanceId: this.instanceId,
+        instanceId: this.sessionId,
         timestamp: Date.now()
       });
     }
@@ -654,13 +603,13 @@ export class PhysicsEngineInstance {
     // Ensure position is within valid bounds
     const safePosition = {
       x: position.x,
-      y: Math.max(0, Math.min(position.y, WORLD_HEIGHT - 50)) // Prevent out-of-bounds
+      y: Math.max(0, Math.min(position.y, GAME_DIMENSIONS.HEIGHT - 50)) // Prevent out-of-bounds
     };
     
     if (safePosition.y !== position.y) {
       console.warn(`PHYSICS: Adjusted Y position from ${position.y} to ${safePosition.y} to keep in bounds`);
       // Update player position in registry if needed
-      this.playerRegistry.updatePlayerPosition(id, safePosition);
+      this.session.updatePlayerPosition(id, safePosition);
     }
     
     // Create player body with standard dimensions
@@ -691,22 +640,20 @@ export class PhysicsEngineInstance {
     return body;
   }
   
-  // Dart firing methods removed
-  
   /**
    * Apply force to a player's physics body
    */
   public applyForce(playerId: string, force: Vector2D): void {
     const body = this.bodies.get(playerId);
     if (!body) {
-      console.log(`[PhysicsEngine:${this.instanceId}] No physics body found for player ${playerId}`);
+      console.log(`[PhysicsEngine:${this.sessionId}] No physics body found for player ${playerId}`);
       return;
     }
 
     // Get player from registry to check if they're alive
-    const player = this.playerRegistry.getPlayer(playerId);
+    const player = this.session.getPlayer(playerId);
     if (!player || !player.isAlive) {
-      console.log(`[PhysicsEngine:${this.instanceId}] Player ${playerId} is not alive or not found`);
+      console.log(`[PhysicsEngine:${this.sessionId}] Player ${playerId} is not alive or not found`);
       return;
     }
 
@@ -718,13 +665,13 @@ export class PhysicsEngineInstance {
    * Create physics body for a game item
    */
   createGameItem(item: any): Matter.Body {
-    console.log(`[PhysicsEngine:${this.instanceId}] Creating physics body for item: ${item.type}`);
+    console.log(`[PhysicsEngine:${this.sessionId}] Creating physics body for item: ${item.type}`);
     
     let body: Matter.Body;
     
     switch (item.type) {
       case 'shield': {
-        console.log(`[PhysicsEngine:${this.instanceId}] Creating physics body for shield ${item.id}`);
+        console.log(`[PhysicsEngine:${this.sessionId}] Creating physics body for shield ${item.id}`);
         const width = item.properties.width || this.parameters.shield_width;
         const height = item.properties.height || this.parameters.shield_height;
         
@@ -807,5 +754,19 @@ export class PhysicsEngineInstance {
    */
   registerItemWithPhysics(item: any): Matter.Body {
     return this.createGameItem(item);
+  }
+
+  /**
+   * Debug method to log physics state information
+   */
+  private debugPhysicsState(): void {
+    // Get all players directly from session for debugging
+    const players = this.session.getAllPlayersForInstance(this.sessionId);
+    const activeBodies = Array.from(this.bodies.keys());
+    
+    console.log(`PHYSICS ENGINE [${this.sessionId}]: Status update`);
+    console.log(`- Players in session: ${players.length}`);
+    console.log(`- Bodies tracked: ${activeBodies.length}`);
+    console.log(`- Physics accumulator: ${this.accumulator.toFixed(2)}ms`);
   }
 }

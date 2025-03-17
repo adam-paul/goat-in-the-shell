@@ -1,16 +1,14 @@
-import { GameStateManager } from '../game-state';
-import { PlayerRegistry } from '../registry';
+import { GameSessionManager } from '../game-state';
 import { PhysicsEngineInstance } from './PhysicsEngineInstance';
 
 /**
- * Create a new physics engine for a specific game instance
+ * Create a new physics engine for a specific game session
  */
 export function createPhysicsEngine(
-  instanceId: string,
-  gameState: GameStateManager,
-  playerRegistry: PlayerRegistry
+  sessionId: string,
+  session: any
 ): PhysicsEngineInstance {
-  return new PhysicsEngineInstance(instanceId, gameState, playerRegistry);
+  return new PhysicsEngineInstance(sessionId, session);
 }
 
 export { PhysicsEngineInstance };
