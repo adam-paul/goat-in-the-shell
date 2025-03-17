@@ -3,7 +3,6 @@ import { randomUUID } from 'crypto';
 import { GAME_EVENTS } from '../../shared/constants';
 import type { NetworkMessage, GameStatus } from '../../shared/types';
 import { GameLogicProcessor } from '../logic';
-import { gameEvents } from '../game-state/GameEvents';
 import { GameSessionManager } from '../game-state/GameSessionManager';
 
 // Client connection tracking
