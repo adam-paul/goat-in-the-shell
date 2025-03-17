@@ -83,20 +83,29 @@ class SocketServer {
         
       socket.on('error', (err) => this.handleError(clientId, err));
       
-      // Send initial welcome message with game world data
+      // Send initial welcome message with game world data using unified format
+      const gameWorld = this.gameState.getGameWorld();
+      
+      // Create a unified state object that includes the initial game world
+      const initialState: UniversalGameState = {
+        timestamp: Date.now(),
+        clientId: clientId, // Include in state for backward compatibility
+        gameStatus: 'tutorial', // Default client-side state
+        gameWorld: gameWorld,
+        players: [],
+        items: [],
+        gameConfig: {
+          gravity: 1.0,
+          moveSpeed: 5.0,
+          jumpForce: 10.0,
+        }
+      };
+      
       this.sendMessage(clientId, {
         type: MESSAGE_TYPES.INITIAL_STATE,
         payload: {
           clientId,
-          timestamp: Date.now(),
-          gameConfig: {
-            gravity: 1.0,
-            moveSpeed: 5.0,
-            jumpForce: 10.0,
-          },
-          gameWorld: this.gameState.getGameWorld(), // Include game world data
-          // We don't set gameStatus here because the tutorial and mode select are client-side only
-          // The server will set proper state machine status when player joins a lobby
+          state: initialState
         }
       });
     });

@@ -315,6 +315,7 @@ export default class BasicGameScene extends Phaser.Scene {
   private setupEventListeners(): void {
     // Listen for game state updates from server
     gameEvents.subscribe('SERVER_STATE_UPDATE', (data: any) => {
+      console.log('BasicGameScene received SERVER_STATE_UPDATE event');
       this.updateGameState(data);
     });
     
@@ -524,6 +525,8 @@ export default class BasicGameScene extends Phaser.Scene {
       state = gameStateData;
     }
     
+    console.log('Processing unified game state with gameWorld:', state.gameWorld ? 'present' : 'missing');
+    
     // Store previous game status to detect changes
     const previousStatus = this.gameStatus;
     
@@ -658,6 +661,8 @@ export default class BasicGameScene extends Phaser.Scene {
    * Update the game world based on server data
    */
   private updateWorldFromServer(gameWorld: any): void {
+    console.log('Updating world from server data:', gameWorld);
+    
     // Clear existing platforms and walls
     this.platforms.clear(true, true);
     

@@ -228,6 +228,12 @@ class SocketEvents {
         store.updateGameState(state);
       }
       
+      // Forward the state to rendering components via SERVER_STATE_UPDATE for immediate rendering
+      if (state && state.gameWorld) {
+        console.log('Publishing game world from INITIAL_STATE for immediate rendering');
+        gameEvents.publish('SERVER_STATE_UPDATE', state);
+      }
+      
       // Publish the original message to the game event bus
       gameEvents.publish(type, payload);
     }
