@@ -361,47 +361,58 @@ class SocketServer {
   }
   
   /**
-   * Handle player input
+   * Handle player input from client
    */
   private handlePlayerInput(clientId: string, data: any) {
-    // Get instance from player registry
+    console.log(`SERVER INPUT: Received from ${clientId}:`, JSON.stringify(data));
+    
+    // Get instance from player registry (source of truth)
     const instanceId = this.playerRegistry.getPlayerInstance(clientId);
     if (!instanceId) {
-      console.warn(`CLIENT: ${clientId} not associated with any instance`);
+      console.warn(`SERVER INPUT: ${clientId} not associated with any instance`);
       return;
     }
     
+    // Get the game instance
     const instance = this.instanceManager.getInstance(instanceId);
     if (!instance) {
-      console.warn(`SERVER: Instance ${instanceId} not found`);
+      console.warn(`SERVER INPUT: Instance ${instanceId} not found`);
       return;
     }
     
-    // Validate input format
+    // Validate input format with game logic
     if (!this.gameLogic.validatePlayerInput(data, clientId)) {
-      console.warn(`SERVER: Invalid input format from client ${clientId}`);
+      console.warn(`SERVER INPUT: Invalid input format from client ${clientId}`);
       return;
     }
     
-    // Check if game is active
+    // Check if gameplay is active via state machine
+    const currentState = instance.stateMachine.getCurrentState();
     if (!instance.stateMachine.isGameplayActive()) {
-      console.log(`Game not active in instance ${instanceId}, state: ${instance.stateMachine.getCurrentState()}`);
+      console.log(`SERVER INPUT: Game not active in instance ${instanceId}, state: ${currentState}`);
       return;
     }
     
-    // Get player - no need for re-registration
+    // Get player directly from registry (source of truth)
     const player = this.playerRegistry.getPlayer(clientId);
-    if (!player || !player.isAlive) {
-      console.warn(`SERVER: Player ${clientId} not found or not alive`);
+    if (!player) {
+      console.error(`SERVER INPUT: Player ${clientId} not found in registry`);
       return;
     }
     
-    // Apply input using the instance's state manager - just update the input state
-    // The main physics loop will handle the actual physics updates
-    // This creates a clear separation between input handling and physics/state updates
+    if (!player.isAlive) {
+      console.warn(`SERVER INPUT: Player ${clientId} is not alive, ignoring input`);
+      return;
+    }
+    
+    // Log player state before applying input
+    console.log(`SERVER INPUT: Player ${clientId} at position (${player.position.x}, ${player.position.y}) processing input:`, JSON.stringify(data));
+    
+    // Apply input using the instance's state manager
+    // This properly stores the input in the player object for physics to use
     instance.state.applyPlayerInput(data, clientId);
     
-    // No need to create intervals here - the fixed broadcast interval will handle state updates
+    // No need for intervals - physics update and broadcast are handled by the game loop
     // This prevents the explosion of intervals we were seeing before
   }
   

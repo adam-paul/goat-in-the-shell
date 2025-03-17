@@ -71,6 +71,7 @@ export class PhysicsEngineInstance {
   private engine: Matter.Engine;
   private bodies: Map<string, Matter.Body> = new Map();
   private lastUpdateTime: number = Date.now();
+  private lastDebugTime: number = Date.now(); // Track last debug time for rate-limited logging
   private accumulator: number = 0;
   private worldBounds: Matter.Body[] = [];
   private parameters: Record<string, number>;
@@ -270,15 +271,35 @@ export class PhysicsEngineInstance {
     // Skip physics updates if the state machine isn't in playing state
     if (deltaTime <= 0) return;
     
+    // Periodically log physics status for debugging
+    const currentTime = Date.now();
+    const shouldLogDetails = (currentTime - this.lastDebugTime) > 5000; // Log every 5 seconds
+    
+    if (shouldLogDetails) {
+      // Get all players directly from registry for debugging
+      const players = this.playerRegistry.getAllPlayersForInstance(this.instanceId);
+      const activeBodies = Array.from(this.bodies.keys());
+      
+      console.log(`PHYSICS ENGINE [${this.instanceId}]: Status update`);
+      console.log(`- Players in registry: ${players.length}`);
+      console.log(`- Bodies tracked: ${activeBodies.length}`);
+      console.log(`- Physics accumulator: ${this.accumulator.toFixed(2)}ms`);
+      
+      // Update timestamp for next debug print
+      this.lastDebugTime = currentTime;
+    }
+    
     // Add deltaTime to accumulator
     this.accumulator += deltaTime;
     
     // Cap accumulator to prevent spiral of death
     if (this.accumulator > MAX_STEP) {
+      console.warn(`PHYSICS: Accumulator capped from ${this.accumulator}ms to ${MAX_STEP}ms`);
       this.accumulator = MAX_STEP;
     }
     
     // Update physics in fixed time steps
+    let steps = 0;
     while (this.accumulator >= TIME_STEP) {
       // Apply forces based on player inputs
       this.applyPlayerForces();
@@ -290,6 +311,11 @@ export class PhysicsEngineInstance {
       Matter.Engine.update(this.engine, TIME_STEP);
       
       this.accumulator -= TIME_STEP;
+      steps++;
+    }
+    
+    if (steps > 0 && shouldLogDetails) {
+      console.log(`PHYSICS: Performed ${steps} physics steps`);
     }
     
     // Sync game state with physics state
@@ -300,8 +326,16 @@ export class PhysicsEngineInstance {
    * Apply forces to players based on their inputs
    */
   private applyPlayerForces(): void {
-    // Get players for this instance from PlayerRegistry
+    // Get players DIRECTLY from PlayerRegistry (source of truth)
     const activePlayers = this.playerRegistry.getAllPlayersForInstance(this.instanceId);
+    
+    // Log detailed player information for debugging
+    console.log(`PHYSICS: Found ${activePlayers.length} players for instance ${this.instanceId}`);
+    for (const p of activePlayers) {
+      console.log(`PHYSICS: Player ${p.id} at (${p.position.x}, ${p.position.y}) with input:`, 
+        p.lastInput ? JSON.stringify(p.lastInput) : "No input");
+    }
+    
     if (!activePlayers.length) return;
     
     // Apply forces to each player
@@ -310,26 +344,34 @@ export class PhysicsEngineInstance {
       if (!player.isAlive) continue;
       
       const body = this.bodies.get(player.id);
-      if (!body) continue;
+      if (!body) {
+        console.error(`PHYSICS: No body found for player ${player.id}`);
+        continue;
+      }
       
-      // Get player input state from game state 
-      const gameState = this.gameState.getState();
-      const playerState = gameState.players.find((p: { id: string }) => p.id === player.id);
-      if (!playerState?.lastInput) continue;
+      // DIRECTLY access lastInput from the player object in registry
+      // This avoids the need to find the player in gameState.players which may be empty
+      if (!player.lastInput) {
+        // Still keep track of physics even without input
+        console.log(`PHYSICS: No input for player ${player.id}`);
+        continue;
+      }
       
       // Apply horizontal movement force - match original implementation behavior
-      if (playerState.lastInput.left) {
+      if (player.lastInput.left) {
         // Set a fixed leftward velocity instead of applying force
         Matter.Body.setVelocity(body, {
           x: -6, // Fixed velocity
           y: body.velocity.y // Maintain vertical velocity
         });
-      } else if (playerState.lastInput.right) {
+        console.log(`PHYSICS: Moving player ${player.id} LEFT`);
+      } else if (player.lastInput.right) {
         // Set a fixed rightward velocity instead of applying force
         Matter.Body.setVelocity(body, {
           x: 6, // Fixed velocity
           y: body.velocity.y // Maintain vertical velocity
         });
+        console.log(`PHYSICS: Moving player ${player.id} RIGHT`);
       } else {
         // In original implementation, player comes to a full stop when not pressing keys
         Matter.Body.setVelocity(body, {
@@ -339,7 +381,9 @@ export class PhysicsEngineInstance {
       }
       
       // Apply jump force if on ground and jump pressed
-      if (playerState.lastInput.jump && this.isBodyOnGround(body)) {
+      if (player.lastInput.jump && this.isBodyOnGround(body)) {
+        console.log(`PHYSICS: Player ${player.id} JUMPING with force ${this.parameters.player_jump_force}`);
+        
         Matter.Body.setVelocity(body, {
           x: body.velocity.x,
           y: -this.parameters.player_jump_force * 20 // Scale to match original physics
@@ -398,8 +442,12 @@ export class PhysicsEngineInstance {
    * Sync physics state with game state
    */
   private syncGameState(): void {
-    // Get players for this instance from PlayerRegistry
+    // Get players DIRECTLY from PlayerRegistry (source of truth)
     const activePlayers = this.playerRegistry.getAllPlayersForInstance(this.instanceId);
+    
+    // Log player counts and details for debugging
+    console.log(`PHYSICS: Syncing ${activePlayers.length} players for instance ${this.instanceId}`);
+    
     if (!activePlayers.length) return;
     
     // Sync player positions
@@ -408,24 +456,40 @@ export class PhysicsEngineInstance {
       
       // Create body if it doesn't exist and player is alive
       if (!body && player.isAlive) {
+        console.log(`PHYSICS: Creating new body for player ${player.id} at position (${player.position.x}, ${player.position.y})`);
         this.createPlayerBody(player);
         continue;
       }
       
       // Update player state from physics
       if (body) {
-        this.playerRegistry.updatePlayerPosition(player.id, {
-          x: body.position.x,
-          y: body.position.y
-        });
+        // Log position changes for debugging
+        const oldPosition = { x: player.position.x, y: player.position.y };
+        const newPosition = { x: body.position.x, y: body.position.y };
+        
+        // Update player position in registry
+        this.playerRegistry.updatePlayerPosition(player.id, newPosition);
+        
+        // Update velocity in registry
         this.playerRegistry.updatePlayerVelocity(player.id, {
           x: body.velocity.x,
           y: body.velocity.y
         });
         
-        // Update onGround status using PlayerRegistry
+        // Update onGround status
         const onGround = this.isBodyOnGround(body);
         this.playerRegistry.updatePlayerGroundStatus(player.id, onGround);
+        
+        // Log meaningful position changes only (avoid spam)
+        if (Math.abs(newPosition.x - oldPosition.x) > 0.01 || 
+            Math.abs(newPosition.y - oldPosition.y) > 0.01) {
+          console.log(
+            `PHYSICS: Updated player ${player.id} position from (${oldPosition.x.toFixed(2)}, ${oldPosition.y.toFixed(2)}) ` +
+            `to (${newPosition.x.toFixed(2)}, ${newPosition.y.toFixed(2)}) with velocity (${body.velocity.x.toFixed(2)}, ${body.velocity.y.toFixed(2)})`
+          );
+        }
+      } else if (player.isAlive) {
+        console.error(`PHYSICS: Missing body for alive player ${player.id}`);
       }
     }
   }

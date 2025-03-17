@@ -481,10 +481,14 @@ class GameStateManager {
    * Apply player input to update their state
    */
   applyPlayerInput(inputData: any, clientId: string): void {
+    // Get player directly from registry (source of truth)
     const player = this.playerRegistry.getPlayer(clientId);
-    if (!player) return;
+    if (!player) {
+      console.error(`GAME STATE: Cannot apply input - Player ${clientId} not found in registry`);
+      return;
+    }
     
-    // Store the input state
+    // Process and normalize the input data
     const processedInput = {
       left: !!inputData.left,
       right: !!inputData.right,
@@ -492,14 +496,24 @@ class GameStateManager {
       timestamp: inputData.timestamp || Date.now()
     };
     
-    // Update player state based on input
+    // CRITICAL: Store input on the player object directly
+    // This ensures the physics engine sees the input
+    player.lastInput = processedInput;
+    
+    // Update player facing direction based on input
     if (processedInput.left && !processedInput.right) {
-      // Update player direction if needed
+      this.playerRegistry.updatePlayerFacingDirection(clientId, true); // facing left
     } else if (processedInput.right && !processedInput.left) {
-      // Update player direction if needed
+      this.playerRegistry.updatePlayerFacingDirection(clientId, false); // facing right
     }
     
-    // Actual movement will be handled by physics engine
+    // Log confirmation of input application
+    console.log(`GAME STATE: Applied input to player ${clientId}:`, 
+      JSON.stringify(processedInput), 
+      `Position: (${player.position.x}, ${player.position.y})`
+    );
+    
+    // Physics engine will apply actual movement in PhysicsEngineInstance.update()
   }
   
   /**

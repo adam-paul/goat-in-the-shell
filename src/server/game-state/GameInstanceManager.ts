@@ -93,8 +93,13 @@ export class GameInstanceManager {
         this.playerRegistry.addPlayer(playerId, playerName);
       }
       
-      // Associate with this instance
+      // Associate with this instance in PlayerRegistry (source of truth)
       this.playerRegistry.associatePlayerWithInstance(playerId, instanceId);
+      
+      // IMPORTANT: Also add to GameStateManager's lobby.players array (dual registration)
+      // This ensures both systems have the player properly registered
+      console.log(`Adding player ${playerId} to GameStateManager lobby for instance ${instanceId}`);
+      instance.state.addPlayerToLobby(playerId, instance.lobbyId, playerName);
     });
     
     return instance;
@@ -221,8 +226,12 @@ export class GameInstanceManager {
       this.playerRegistry.addPlayer(playerId, name);
     }
     
-    // Associate player with this instance
+    // Associate player with this instance in PlayerRegistry (source of truth)
     this.playerRegistry.associatePlayerWithInstance(playerId, instanceId);
+
+    // IMPORTANT: Also add to GameStateManager's lobby system for dual registration
+    console.log(`Adding player ${playerId} to GameStateManager lobby for instance ${instanceId}`);
+    instance.state.addPlayerToLobby(playerId, instance.lobbyId, name);
     
     return true;
   }
