@@ -18,6 +18,7 @@ import TutorialModal from './components/TutorialModal';
 import PrompterControls from './components/PrompterControls';
 import GameModeSelection from './components/GameModeSelection';
 import LobbyWaitingScreen from './components/LobbyWaitingScreen';
+import PositionDebug from './components/PositionDebug';
 
 function App() {
   // Use our game store for state management
@@ -299,6 +300,7 @@ function App() {
             WebSocket: {socket.connected ? 'Connected' : 'Disconnected'}
           </span>
         </div>
+        <PositionDebug />
       </div>
       
       {/* Restart button and prompter toggle always visible below the game */}

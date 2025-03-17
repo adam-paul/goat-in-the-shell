@@ -122,9 +122,7 @@ class GameStateManager {
     
     // Update game logic here, but most updates will come from the physics engine
   }
-  
-  // Projectile system removed
-  
+    
   /**
    * Initialize game world with default platforms
    */
@@ -556,9 +554,7 @@ class GameStateManager {
         break;
     }
   }
-  
-  // Projectile methods removed
-  
+    
   /**
    * Handle player death event
    */

@@ -257,6 +257,7 @@ body {
   font-size: 14px;
   font-family: 'Courier New', Courier, monospace;
   z-index: 1000;
+  min-width: 220px;
 }
 
 .status-connected {
@@ -302,6 +303,64 @@ body {
 
 .lobby-code {
   color: #e94560;
+}
+
+/* Position Debug Styles */
+.position-debug {
+  margin-top: 10px;
+  font-size: 12px;
+  width: 100%;
+}
+
+.debug-container {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 5px;
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.debug-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.debug-label {
+  font-weight: bold;
+  color: #10b981;
+  margin-right: 8px;
+}
+
+.debug-value {
+  font-family: 'Courier New', monospace;
+}
+
+.debug-value.client {
+  color: #4CAF50;
+}
+
+.debug-value.server {
+  color: #2196F3;
+}
+
+.debug-value.diff-low {
+  color: #4CAF50;
+}
+
+.debug-value.diff-high {
+  color: #e94560;
+}
+
+.debug-value.id {
+  color: #9c27b0;
+  font-size: 10px;
+  word-break: break-all;
+  max-width: 150px;
+}
+
+.id-row {
+  font-size: 10px;
 }
 
 /* Animations */

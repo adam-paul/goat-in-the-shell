@@ -61,7 +61,7 @@ export default class BasicGameScene extends Phaser.Scene {
     this.createPlatformTexture();
   }
   
-  // Dart texture and handling code removed - this type will be implemented in a future update
+  // Setup game scene
   
   create(): void {
     console.log('BasicGameScene created');
@@ -658,7 +658,7 @@ export default class BasicGameScene extends Phaser.Scene {
       this.walls.clear(true, true);
     }
     
-    // Create dart textures if not already done
+    // Create wall texture if not already done
     if (!this.textures.exists('wall')) {
       this.createWallTexture();
     }
@@ -817,8 +817,6 @@ export default class BasicGameScene extends Phaser.Scene {
    * Process game state from the server
    */
   private processGameState(state: any): void {
-    // Projectile system removed
-    
     // Update game status if provided
     if (state.gameStatus) {
       console.log(`Game status: ${state.gameStatus}`);
@@ -996,7 +994,7 @@ export default class BasicGameScene extends Phaser.Scene {
           0.5       // Semi-transparent
         );
         
-        console.log(`Created dart wall preview with height=${height}`);
+        console.log(`Created wall preview with height=${height}`);
         break;
       }
       default: {
@@ -1268,11 +1266,7 @@ export default class BasicGameScene extends Phaser.Scene {
           break;
         }
         case 'dart_wall': {
-          // Dart walls have been removed from the game
-          // This case is kept for backward compatibility
-          console.log('Dart walls have been removed from the game');
-          
-          // Create a visual placeholder - a gray rectangle without physics
+          // Create a wall visual
           const height = getParameterValue('dart_wall_height');
           const wall = this.add.rectangle(x, y, 20, height, 0x808080, 0.5);
           gameObject = wall;
@@ -1380,12 +1374,10 @@ export default class BasicGameScene extends Phaser.Scene {
       }
     }
     
-    // Smoothly update dart positions between server updates
-    // This matches the original implementation where darts moved continuously
-    const timeStep = delta / 1000; // Convert to seconds for frame-rate independent movement
+    // Convert to seconds for frame-rate independent movement
+    const timeStep = delta / 1000; 
     
-    // Dart tracking code removed
-    // Any items that need to be cleaned up would still be handled here
+    // Clean up any items marked for removal
     this.placedItems.forEach(item => {
       // Check for any items that need to be removed
       if ((item as any).toRemove) {
@@ -1393,7 +1385,7 @@ export default class BasicGameScene extends Phaser.Scene {
       }
     });
     
-    // No dart cleanup needed anymore as we've removed darts
+    // Remove any cleaned up items from tracking array
     this.placedItems = this.placedItems.filter(item => !(item as any).toRemove);
   }
   
@@ -1436,5 +1428,4 @@ export default class BasicGameScene extends Phaser.Scene {
     }
   }
   
-  // Dart functionality removed - will be reimplemented in the future
 }
