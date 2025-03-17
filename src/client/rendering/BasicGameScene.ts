@@ -14,6 +14,10 @@ export default class BasicGameScene extends Phaser.Scene {
   private endPoint!: Phaser.GameObjects.Rectangle;
   private placedItems: Array<{id?: string, type: string, x: number, y: number, gameObject: Phaser.GameObjects.GameObject}> = [];
   
+  // Tracking world labels to avoid duplicates
+  private startLabel?: Phaser.GameObjects.Text;
+  private finishLabel?: Phaser.GameObjects.Text;
+  
   // Custom physics groups for placed items
   private customStaticGroups?: {
     spikes: Phaser.Physics.Arcade.StaticGroup;
@@ -92,9 +96,9 @@ export default class BasicGameScene extends Phaser.Scene {
     // Initialize countdown manager
     this.countdownManager = new CountdownManager(this);
     
-    // Set up camera to follow the goat sprite
+    // Set up camera but don't follow the goat yet - position it at start
     this.cameras.main.setBounds(0, 0, GAME_DIMENSIONS.WIDTH, GAME_DIMENSIONS.HEIGHT);
-    this.cameras.main.startFollow(this.goatSprite.getSprite(), true, 0.1, 0.1);
+    this.cameras.main.centerOn(this.PLAYER_START_X, this.PLAYER_START_Y + 100); // Position directly at start zone
     this.cameras.main.setZoom(1);
     
     // Set up physics for collisions
@@ -413,6 +417,15 @@ export default class BasicGameScene extends Phaser.Scene {
     
     // Listen for item placement completion
     gameEvents.subscribe('ITEM_PLACED', () => {
+      // Exit placement mode first
+      this.exitPlacementMode();
+      
+      // Update UI status - triggers modal removal
+      const store = (window as any).__game_store_instance__;
+      if (store && store.setGameStatus) {
+        store.setGameStatus('countdown');
+      }
+      
       // Start countdown after item is placed
       gameEvents.publish('START_COUNTDOWN', { duration: 3000 });
     });
@@ -432,12 +445,17 @@ export default class BasicGameScene extends Phaser.Scene {
     this.gameStarted = true;
     this.gameStatus = 'playing';
     
+    // Start camera following the goat sprite
+    if (this.goatSprite) {
+      this.cameras.main.startFollow(this.goatSprite.getSprite(), true, 0.1, 0.1);
+    }
+    
     // Resume physics
     this.physics.resume();
     
-    // Send a single event to notify game start
-    // We only need to send GAME_STARTED, not both events
+    // Send a single event to notify game start and update the UI
     gameEvents.publish('GAME_STARTED', { timestamp: Date.now() });
+    gameEvents.publish('GAME_STATUS_CHANGE', { status: 'playing' });
   }
   
   /**
@@ -695,8 +713,13 @@ export default class BasicGameScene extends Phaser.Scene {
     if (gameWorld.startPoint) {
       this.startPoint.setPosition(gameWorld.startPoint.x, gameWorld.startPoint.y);
       
-      // Add START text above the start position
-      this.add.text(gameWorld.startPoint.x, gameWorld.startPoint.y - 40, 'START', {
+      // Remove previous start label if it exists
+      if (this.startLabel) {
+        this.startLabel.destroy();
+      }
+      
+      // Add START text above the start position and track it
+      this.startLabel = this.add.text(gameWorld.startPoint.x, gameWorld.startPoint.y - 40, 'START', {
         fontSize: '18px',
         color: '#ffffff',
         fontFamily: 'Arial',
@@ -749,8 +772,13 @@ export default class BasicGameScene extends Phaser.Scene {
         this.physics.add.existing(this.endPoint, true);
       }
       
-      // Add FINISH text above the end position
-      this.add.text(gameWorld.endPoint.x, gameWorld.endPoint.y - 40, 'FINISH', {
+      // Remove previous finish label if it exists
+      if (this.finishLabel) {
+        this.finishLabel.destroy();
+      }
+      
+      // Add FINISH text above the end position and track it
+      this.finishLabel = this.add.text(gameWorld.endPoint.x, gameWorld.endPoint.y - 40, 'FINISH', {
         fontSize: '22px',
         color: '#ffffff',
         fontFamily: 'Arial',

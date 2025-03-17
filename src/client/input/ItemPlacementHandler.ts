@@ -38,7 +38,8 @@ export const useItemPlacementHandler = () => {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       // Notify Phaser that we're exiting placement mode
-      gameEvents.publish('PLACEMENT_MODE_END', {});
+      // Changed to PLACEMENT_MODE_EXIT to match what the scene is listening for
+      gameEvents.publish('PLACEMENT_MODE_EXIT', {});
     };
   }, [gameStatus, selectedItem, handleCancelPlacement]);
   
