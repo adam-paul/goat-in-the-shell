@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { GameStatus, DeathType, GameWorld, Vector2D, Player, UniversalGameState } from '../../shared/types';
 import { gameEvents } from './GameEvents';
 import { PlayerRegistry } from '../registry';
-import { PLAYER } from '../../shared/constants';
+import { PLAYER, GAME_DIMENSIONS } from '../../shared/constants';
 
 // Define types for our game entities
 interface GameItem {
@@ -66,9 +66,9 @@ class GameStateManager {
     // Initialize game world with default platforms
     this.gameWorld = {
       platforms: [],
-      startPoint: { ...PLAYER.DEFAULT_POSITION }, // Use shared constant
+      startPoint: { ...PLAYER.DEFAULT_POSITION },
       endPoint: { x: 2320, y: 120 },
-      worldBounds: { width: 2400, height: 800 }
+      worldBounds: { width: GAME_DIMENSIONS.WIDTH, height: GAME_DIMENSIONS.HEIGHT }
     };
     
     // Create initial world platform layout
@@ -347,9 +347,9 @@ class GameStateManager {
     // Check that item position is within valid bounds
     if (
       itemData.position.x < 0 ||
-      itemData.position.x > 2400 || 
+      itemData.position.x > GAME_DIMENSIONS.WIDTH ||
       itemData.position.y < 0 ||
-      itemData.position.y > 800
+      itemData.position.y > GAME_DIMENSIONS.HEIGHT
     ) {
       console.error(`GAME STATE: Position out of bounds: (${itemData.position.x}, ${itemData.position.y})`);
       return false;

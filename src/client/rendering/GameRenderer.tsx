@@ -2,7 +2,7 @@
 import React, { useEffect, useRef } from 'react';
 import Phaser from 'phaser';
 import { GameMode, PlayerRole } from '../../shared/types';
-import { MESSAGE_TYPES } from '../../shared/constants';
+import { MESSAGE_TYPES, GAME_DIMENSIONS } from '../../shared/constants';
 import { useGameStore } from '../store/gameStore';
 import { useSocket } from '../network';
 import { gameEvents } from '../utils/GameEventBus';
@@ -48,8 +48,8 @@ const GameRenderer: React.FC<GameRendererProps> = ({ containerClassName = 'game-
     // Create a new Phaser game configuration
     const config: Phaser.Types.Core.GameConfig = {
       type: Phaser.CANVAS,
-      width: 1200,
-      height: 800,
+      width: GAME_DIMENSIONS.WIDTH / 2, // Half the world width for viewport
+      height: GAME_DIMENSIONS.HEIGHT,
       scale: {
         mode: Phaser.Scale.FIT,
         autoCenter: Phaser.Scale.CENTER_BOTH

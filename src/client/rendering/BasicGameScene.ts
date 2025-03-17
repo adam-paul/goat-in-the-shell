@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { gameEvents } from '../utils/GameEventBus';
 import { ItemType, GameStatus, UniversalGameState } from '../../shared/types';
 import { getParameterValue } from '../game/parameters';
-import { PHYSICS } from '../../shared/constants';
+import { PHYSICS, GAME_DIMENSIONS } from '../../shared/constants';
 import GoatSprite from './GoatSprite';
 import CountdownManager from './CountdownManager';
 
@@ -26,8 +26,8 @@ export default class BasicGameScene extends Phaser.Scene {
   private itemPlacementMode: boolean = false;
   private itemToPlace: string = '';
   
-  // World dimensions
-  private worldWidth: number = 2400;
+  // World dimensions from shared constants
+  private worldWidth: number = GAME_DIMENSIONS.WIDTH;
   
   // Player goat sprite
   private goatSprite?: GoatSprite;
@@ -67,10 +67,10 @@ export default class BasicGameScene extends Phaser.Scene {
     console.log('BasicGameScene created');
     
     // Set physics world bounds
-    this.physics.world.setBounds(0, 0, this.worldWidth, 800, true, true, true, false);
+    this.physics.world.setBounds(0, 0, GAME_DIMENSIONS.WIDTH, GAME_DIMENSIONS.HEIGHT, true, true, true, false);
     
     // Create a blue sky background
-    this.add.rectangle(this.worldWidth / 2, 400, this.worldWidth, 800, 0x87CEEB);
+    this.add.rectangle(GAME_DIMENSIONS.WIDTH / 2, 400, GAME_DIMENSIONS.WIDTH, GAME_DIMENSIONS.HEIGHT, 0x87CEEB);
     
     // Initialize platforms group (will be populated from server data)
     this.platforms = this.physics.add.staticGroup();
@@ -93,7 +93,7 @@ export default class BasicGameScene extends Phaser.Scene {
     this.countdownManager = new CountdownManager(this);
     
     // Set up camera to follow the goat sprite
-    this.cameras.main.setBounds(0, 0, this.worldWidth, 800);
+    this.cameras.main.setBounds(0, 0, GAME_DIMENSIONS.WIDTH, GAME_DIMENSIONS.HEIGHT);
     this.cameras.main.startFollow(this.goatSprite.getSprite(), true, 0.1, 0.1);
     this.cameras.main.setZoom(1);
     

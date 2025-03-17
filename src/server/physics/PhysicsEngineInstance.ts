@@ -2,7 +2,7 @@ import Matter from 'matter-js';
 import { GameStateManager } from '../game-state';
 import { DeathType, Vector2D, Player } from '../../shared/types';
 import { gameEvents } from '../game-state/GameEvents';
-import { PHYSICS, ITEMS, PLAYER } from '../../shared/constants';
+import { PHYSICS, ITEMS, PLAYER, GAME_DIMENSIONS } from '../../shared/constants';
 import { PlayerRegistry } from '../registry';
 
 // Constants for physics simulation
@@ -15,9 +15,9 @@ const GRAVITY = PHYSICS.GRAVITY;
 const PLAYER_MOVE_FORCE = PHYSICS.PLAYER_MOVE_FORCE;
 const PLAYER_JUMP_FORCE = PHYSICS.PLAYER_JUMP_FORCE;
 
-// These could be moved to shared constants as well in the future
-const WORLD_WIDTH = 2400;
-const WORLD_HEIGHT = 800;
+// Use shared constants for world dimensions
+const WORLD_WIDTH = GAME_DIMENSIONS.WIDTH;
+const WORLD_HEIGHT = GAME_DIMENSIONS.HEIGHT;
 
 // Game parameters (default values) - all derived from shared constants
 const DEFAULT_PARAMETERS = {

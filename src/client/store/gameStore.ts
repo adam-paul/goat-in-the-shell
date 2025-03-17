@@ -9,7 +9,7 @@ import {
   UniversalGameState
 } from '../../shared/types';
 import { gameEvents } from '../utils/GameEventBus';
-import { ITEMS } from '../../shared/constants';
+import { ITEMS, GAME_DIMENSIONS } from '../../shared/constants';
 
 // Define the state interface (without actions)
 interface GameStateData {
@@ -116,7 +116,7 @@ export const useGameStore = create<GameState>((set, get): GameState => {
       platforms: [],
       startPoint: { x: 100, y: 100 },
       endPoint: { x: 2320, y: 120 },
-      worldBounds: { width: 2400, height: 800 }
+      worldBounds: { width: GAME_DIMENSIONS.WIDTH, height: GAME_DIMENSIONS.HEIGHT }
     },
     items: []
   } as UniversalGameState,
@@ -311,7 +311,7 @@ export const useGameStore = create<GameState>((set, get): GameState => {
           platforms: [],
           startPoint: { x: 100, y: 100 },
           endPoint: { x: 2320, y: 120 },
-          worldBounds: { width: 2400, height: 800 }
+          worldBounds: { width: GAME_DIMENSIONS.WIDTH, height: GAME_DIMENSIONS.HEIGHT }
         },
         items: []
       }

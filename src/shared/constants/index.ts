@@ -13,8 +13,8 @@ export const PHYSICS = {
 
 // Game dimensions
 export const GAME_DIMENSIONS = {
-  WIDTH: 800,
-  HEIGHT: 600
+  WIDTH: 2400,
+  HEIGHT: 800
 };
 
 // Network configurations

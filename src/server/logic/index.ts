@@ -1,7 +1,7 @@
 import { GameStateManager } from '../game-state';
 import { gameEvents } from '../game-state/GameEvents';
 import { DeathType, Vector2D } from '../../shared/types';
-import { PLAYER } from '../../shared/constants';
+import { PLAYER, GAME_DIMENSIONS } from '../../shared/constants';
 
 class GameLogicProcessor {
   private gameState: GameStateManager;
@@ -153,9 +153,9 @@ class GameLogicProcessor {
     
     if (
       itemData.position.x < 0 ||
-      itemData.position.x > 2400 || // Updated to match actual world bounds width
+      itemData.position.x > GAME_DIMENSIONS.WIDTH ||
       itemData.position.y < 0 ||
-      itemData.position.y > 800    // Updated to match actual world bounds height
+      itemData.position.y > GAME_DIMENSIONS.HEIGHT
     ) {
       console.error(`VALIDATION: Position out of bounds: (${itemData.position.x}, ${itemData.position.y})`);
       return false;
