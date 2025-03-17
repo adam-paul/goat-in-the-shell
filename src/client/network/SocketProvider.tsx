@@ -283,14 +283,26 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
       }
     };
     
+    // This handler listens for REQUEST_STATE_TRANSITION events and forwards them to the server
+    const handleStateTransition = (data: any) => {
+      if (socketRef.current?.readyState === WebSocket.OPEN) {
+        console.log('SOCKET: Requesting state transition to', data.targetState);
+        requestStateTransition(data.targetState);
+      } else {
+        console.warn('Socket not available for state transition request');
+      }
+    };
+    
     // Subscribe to events
     const unsubInput = gameEvents.subscribe('PLAYER_INPUT', handlePlayerInput);
     const unsubPlacement = gameEvents.subscribe('ITEM_PLACEMENT', handleItemPlacement);
+    const unsubTransition = gameEvents.subscribe('REQUEST_STATE_TRANSITION', handleStateTransition);
     
     // Clean up subscriptions when component unmounts
     return () => {
       unsubInput();
       unsubPlacement();
+      unsubTransition();
     };
   }, []);
   
