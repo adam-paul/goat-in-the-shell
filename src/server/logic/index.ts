@@ -63,6 +63,11 @@ export class GameLogicProcessor {
     const player = this.sessionManager.getPlayer(playerId);
     
     if (player) {
+      // Log explicit jump inputs for debugging
+      if (input.jump) {
+        console.log(`LOGIC: Player ${playerId} sent JUMP INPUT. Processing...`);
+      }
+      
       // Update the player's lastInput property
       player.lastInput = {
         left: input.left || false,
@@ -70,6 +75,8 @@ export class GameLogicProcessor {
         jump: input.jump || false,
         timestamp: input.timestamp || Date.now()
       };
+      
+      // The physics engine will handle this input in the next physics update
     } else {
       console.error(`LOGIC: Player ${playerId} not found for input update`);
     }
@@ -79,15 +86,14 @@ export class GameLogicProcessor {
    * Handle item placement
    */
   handlePlaceItem(playerId: string, data: any): any {
-    // Process item placement
-    // This would validate and create the item
-    console.log(`LOGIC: Processing item placement from player ${playerId}`);
+    // This is the final handler for item placement
+    console.log(`LOGIC: Player ${playerId} placed item: ${data.type}`);
     
-    // Return the created item
+    // Create the item with a consistent ID
     return {
       id: `item_${Date.now()}`,
       type: data.type || 'platform',
-      position: data.position || { x: 0, y: 0 },
+      position: { x: data.position?.x || 100, y: data.position?.y || 100 },
       rotation: data.rotation || 0,
       placedBy: playerId,
       properties: data.properties || {}

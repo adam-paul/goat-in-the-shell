@@ -341,18 +341,16 @@ export default class BasicGameScene extends Phaser.Scene {
         
         console.log('SCENE: Processing item placement at', worldPoint);
         
-        // Publish item placement events to GameEventBus
-        // PLACE_ITEM will be sent to the server via socket
-        gameEvents.publish(GAME_EVENTS.PLACE_ITEM, {
-          type: this.itemToPlace,
-          x: worldPoint.x,
-          y: worldPoint.y
-        });
-        
-        // No need for a second event - PLACE_ITEM is enough
-        
-        // Exit placement mode in the scene
+        // Exit placement mode immediately
         this.exitPlacementMode();
+        
+        // Publish item placement event for gameStore to handle
+        // This centralizes the item placement logic in gameStore
+        gameEvents.publish(GAME_EVENTS.ITEM_PLACEMENT, { 
+          type: this.itemToPlace, 
+          x: worldPoint.x, 
+          y: worldPoint.y 
+        });
       }
     });
     
@@ -404,33 +402,50 @@ export default class BasicGameScene extends Phaser.Scene {
       this.handlePlayerInput(data);
     });
     
-    // Listen for item placement from server - render immediately!
-    gameEvents.subscribe(GAME_EVENTS.RENDER_PLACED_ITEM, (itemData: any) => {
-      console.log('SCENE: Received item to render immediately:', itemData);
-      if (itemData && itemData.position && itemData.type) {
-        this.placeItem(
-          itemData.type,
-          itemData.position.x,
-          itemData.position.y,
-          itemData.id
-        );
-        console.log(`SCENE: Rendered ${itemData.type} at (${itemData.position.x}, ${itemData.position.y})`);
+    // Listen for server state updates, which include placed items
+    gameEvents.subscribe(GAME_EVENTS.SERVER_STATE_UPDATE, (state: UniversalGameState) => {
+      // Handle items from state updates
+      if (state.items && Array.isArray(state.items)) {
+        console.log(`SCENE: Processing ${state.items.length} items from server state`);
+        
+        // Keep track of already rendered items by ID
+        const existingItemIds = new Set(this.placedItems.map(item => item.id));
+        
+        // Process each item from the state
+        state.items.forEach((item: any) => {
+          // Skip if this item is already placed (avoid duplicates)
+          if (item.id && existingItemIds.has(item.id)) {
+            return;
+          }
+          
+          if (item.position) {
+            // Place the item with all its properties and ID
+            this.placeItem(item.type, item.position.x, item.position.y, item.id);
+            console.log(`SCENE: Rendered item ${item.id} (${item.type}) from server state at position (${item.position.x}, ${item.position.y})`);
+          } else if (item.x !== undefined && item.y !== undefined) {
+            // Alternative format with x/y directly on the object
+            this.placeItem(item.type, item.x, item.y, item.id);
+            console.log(`SCENE: Rendered item ${item.id} (${item.type}) from server state at position (${item.x}, ${item.y})`);
+          }
+        });
       }
     });
     
-    // Listen for item placement completion
-    gameEvents.subscribe(GAME_EVENTS.ITEM_PLACED, () => {
-      // Exit placement mode first
-      this.exitPlacementMode();
-      
-      // Update UI status - triggers modal removal
-      const store = (window as any).__game_store_instance__;
-      if (store && store.setGameStatus) {
-        store.setGameStatus('countdown');
+    // Also specifically listen for ITEM_PLACED events for immediate visual feedback
+    gameEvents.subscribe(GAME_EVENTS.ITEM_PLACED, (data: any) => {
+      if (data && data.item) {
+        const item = data.item;
+        const existingItemIds = new Set(this.placedItems.map(placedItem => placedItem.id));
+        
+        // Only render if we don't already have this item rendered
+        if (item.id && !existingItemIds.has(item.id)) {
+          console.log(`SCENE: Rendering newly placed item from ITEM_PLACED event:`, item);
+          
+          if (item.position) {
+            this.placeItem(item.type, item.position.x, item.position.y, item.id);
+          }
+        }
       }
-      
-      // Start countdown after item is placed
-      gameEvents.publish(GAME_EVENTS.START_COUNTDOWN, { duration: 3000 });
     });
   }
   
@@ -456,7 +471,9 @@ export default class BasicGameScene extends Phaser.Scene {
     // Resume physics
     this.physics.resume();
     
-    // Send a single event to notify game start and update the UI
+    // Send START_GAME to server to trigger physics - not needed anymore, we use REQUEST_STATE_TRANSITION
+    
+    // Send local events to notify game start and update the UI
     gameEvents.publish('GAME_STARTED', { timestamp: Date.now() });
     gameEvents.publish('GAME_STATUS_CHANGE', { status: 'playing' });
   }

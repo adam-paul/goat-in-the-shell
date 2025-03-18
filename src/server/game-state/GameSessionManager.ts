@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { GameStatus, DeathType, GameWorld, Vector2D, Player, UniversalGameState } from '../../shared/types';
 import { gameEvents } from './GameEvents';
-import { PLAYER, GAME_DIMENSIONS, GAME_STATUS_TRANSITIONS, GAME_EVENTS } from '../../shared/constants';
+import { PLAYER, GAME_DIMENSIONS, GAME_STATUS_TRANSITIONS, GAME_EVENTS, PHYSICS } from '../../shared/constants';
 import { PhysicsEngineInstance } from '../physics/PhysicsEngineInstance';
 
 // Define types for our game entities
@@ -176,6 +176,15 @@ class GameSession {
   }
   
   /**
+   * Get player's instance ID (for physics engine)
+   * Required by PhysicsEngineInstance
+   */
+  getPlayerInstance(playerId: string): string | undefined {
+    // If player exists in this session, return this session ID
+    return this.players.has(playerId) ? this.id : undefined;
+  }
+  
+  /**
    * Get all players in this session
    */
   getAllPlayers(): Player[] {
@@ -183,16 +192,41 @@ class GameSession {
   }
   
   /**
+   * Get all players for a specific instance
+   * Required by PhysicsEngineInstance
+   */
+  getAllPlayersForInstance(instanceId: string): Player[] {
+    // In current implementation, session ID is the instance ID
+    if (instanceId === this.id) {
+      return this.getAllPlayers();
+    }
+    return [];
+  }
+  
+  /**
    * Check if a state transition is valid
    */
   isValidTransition(fromState: GameStatus, toState: GameStatus): boolean {
+    console.log(`SESSION: Checking transition validity from ${fromState} to ${toState}`);
+    
     // Same state is always valid
-    if (fromState === toState) return true;
+    if (fromState === toState) {
+      console.log(`SESSION: Transition to same state ${fromState} is valid`);
+      return true;
+    }
     
     // Check against defined transitions
     const validNextStates = GAME_STATUS_TRANSITIONS[fromState];
-    if (!validNextStates) return false;
-    return validNextStates.includes(toState);
+    console.log(`SESSION: Valid next states for ${fromState}:`, validNextStates);
+    
+    if (!validNextStates) {
+      console.log(`SESSION: No valid transitions defined for ${fromState}`);
+      return false;
+    }
+    
+    const isValid = validNextStates.includes(toState);
+    console.log(`SESSION: Transition from ${fromState} to ${toState} is ${isValid ? 'valid' : 'invalid'}`);
+    return isValid;
   }
   
   /**
@@ -201,10 +235,15 @@ class GameSession {
   transitionTo(status: GameStatus, force: boolean = false): boolean {
     // Validate transition
     const isValid = force || this.isValidTransition(this.status, status);
-    if (!isValid) return false;
+    if (!isValid) {
+      console.log(`SESSION: Invalid transition from ${this.status} to ${status}`);
+      return false;
+    }
     
     // Store previous state for event
     const previousState = this.status;
+    
+    console.log(`SESSION: ✨ Transitioning from ${previousState} to ${status}`);
     
     // Update state
     this.status = status;
@@ -226,15 +265,33 @@ class GameSession {
    */
   private handleStateEnter(state: GameStatus): void {
     switch (state) {
+      case 'countdown':
+        // Clear any existing countdown timer
+        if (this.timers.has('countdown')) {
+          clearTimeout(this.timers.get('countdown')!);
+          this.timers.delete('countdown');
+        }
+        
+        // Set a timer to automatically transition to playing after 3 seconds
+        console.log(`SESSION: Starting countdown timer for 3 seconds`);
+        this.timers.set('countdown', setTimeout(() => {
+          console.log(`SESSION: Countdown timer complete, transitioning to playing state`);
+          this.transitionTo('playing');
+        }, 3000));
+        break;
+        
       case 'playing':
         this.startPhysics();
         break;
+        
       case 'game_over' as GameStatus:
         // Handle game over logic
         break;
+        
       case 'victory' as GameStatus:
         // Handle victory logic
         break;
+        
       default:
         // Handle other states
         break;
@@ -246,8 +303,23 @@ class GameSession {
    */
   private startPhysics(): void {
     if (!this.physics) {
-      // Create physics engine for this session - we'll need to adapt this later
-      this.physics = new PhysicsEngineInstance(this.id, {} as any, {} as any);
+      // Create physics engine for this session with proper references
+      const defaultPhysicsParams = {
+        gravity: this.parameters.gravity || PHYSICS.GRAVITY,
+        player_move_force: this.parameters.player_move_speed || PHYSICS.PLAYER_MOVE_FORCE,
+        player_jump_force: this.parameters.player_jump_force || PHYSICS.PLAYER_JUMP_FORCE,
+        ground_friction: PHYSICS.GROUND_FRICTION,
+        air_friction: PHYSICS.AIR_FRICTION,
+        restitution: PHYSICS.RESTITUTION
+      };
+      
+      // Ensure game world is initialized
+      if (this.gameWorld.platforms.length === 0) {
+        this.initializeGameWorld();
+      }
+      
+      // Create physics engine with just sessionId and session reference
+      this.physics = new PhysicsEngineInstance(this.id, this);
     }
     
     this.isActive = true;
@@ -258,6 +330,8 @@ class GameSession {
       instanceId: this.id,
       timestamp: Date.now()
     });
+    
+    console.log(`SESSION: Physics activation event published`);
   }
   
   /**
@@ -386,6 +460,14 @@ class GameSession {
    * Get the complete game state
    */
   getState(): GameState {
+    // Ensure items array always exists even if undefined
+    if (!this.items) {
+      this.items = [];
+    }
+    
+    // Log items count for debugging
+    console.log(`SESSION: getState() returning ${this.items.length} items`);
+    
     return {
       // Version and metadata
       version: this.stateVersion,
@@ -428,6 +510,46 @@ class GameSession {
     const player = this.players.get(playerId);
     if (player) {
       player.score += 1;
+    }
+  }
+
+  /**
+   * Update player position (required by PhysicsEngineInstance)
+   */
+  updatePlayerPosition(playerId: string, position: Vector2D): void {
+    const player = this.players.get(playerId);
+    if (player) {
+      player.position = position;
+    }
+  }
+
+  /**
+   * Update player velocity (required by PhysicsEngineInstance)
+   */
+  updatePlayerVelocity(playerId: string, velocity: Vector2D): void {
+    const player = this.players.get(playerId);
+    if (player) {
+      player.velocity = velocity;
+    }
+  }
+
+  /**
+   * Update player ground status (required by PhysicsEngineInstance)
+   */
+  updatePlayerGroundStatus(playerId: string, onGround: boolean): void {
+    const player = this.players.get(playerId);
+    if (player) {
+      player.onGround = onGround;
+    }
+  }
+
+  /**
+   * Set player alive status (required by PhysicsEngineInstance)
+   */
+  setPlayerAliveStatus(playerId: string, isAlive: boolean): void {
+    const player = this.players.get(playerId);
+    if (player) {
+      player.isAlive = isAlive;
     }
   }
 }

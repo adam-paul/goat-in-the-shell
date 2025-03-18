@@ -27,6 +27,20 @@ class SocketEvents {
           const stateUpdate = message as StateUpdateMessage;
           const gameState = stateUpdate.payload?.state;
           
+          // Debug player positions in state updates (every 30 updates to avoid spam)
+          if (gameState && gameState.players && Math.random() < 0.03) {
+            const players = Array.isArray(gameState.players) ? gameState.players : Object.values(gameState.players);
+            if (players.length > 0) {
+              console.log("SOCKET CLIENT: Received player positions:", 
+                players.map((p: any) => ({
+                  id: p.id,
+                  position: p.position,
+                  hasInput: p.lastInput ? true : false
+                }))
+              );
+            }
+          }
+          
           // Update the game state in the store immediately
           const store = (window as any).__game_store_instance__;
           if (store && store.updateGameState && gameState) {
@@ -41,18 +55,8 @@ class SocketEvents {
       }
     };
 
-    // Set up PLACE_ITEM event handler
-    gameEvents.subscribe('PLACE_ITEM', (data: any) => {
-      console.log('SOCKET: Sending PLACE_ITEM to server', data);
-      if (this.socket?.readyState === WebSocket.OPEN) {
-        this.socket.send(JSON.stringify({
-          type: GAME_EVENTS.PLACE_ITEM,
-          payload: data
-        }));
-      } else {
-        console.error('SOCKET: Cannot send PLACE_ITEM - socket not connected');
-      }
-    });
+    // We've removed this handler to prevent duplicate messages
+    // Item placement now goes directly to socketInterface rather than through this event bus
   }
   
   /**
@@ -61,32 +65,14 @@ class SocketEvents {
   private forwardToGameEventBus(message: NetworkMessage): void {
     const { type, payload } = message;
     
-    // Handle placement success
+    // Handle placement success - simplified to just forward the event
     if (type === GAME_EVENTS.EVENT && payload?.eventType === 'PLACEMENT_SUCCESS') {
-      // Get store instance
-      const store = (window as any).__game_store_instance__;
-      if (store && store.handlePlacementSuccess) {
-        store.handlePlacementSuccess();
-      }
-      
-      // Also forward the event
+      // Just forward the event - state is now managed directly by ITEM_PLACED handlers
       gameEvents.publish(type, payload);
     }
-    // Handle special case for item placement to trigger countdown
-    else if (type === GAME_EVENTS.EVENT && payload?.eventType === 'ITEM_PLACED') {
-      console.log('SOCKET EVENT: Received ITEM_PLACED event with data:', JSON.stringify(payload));
-      
-      // First trigger the item placement event for rendering
-      // Pass the actual item data needed for rendering
-      if (payload.itemData) {
-        console.log('SOCKET EVENT: Publishing item data for immediate rendering:', payload.itemData);
-        gameEvents.publish('RENDER_PLACED_ITEM', payload.itemData);
-      }
-      
-      // Also publish the original event
-      gameEvents.publish('ITEM_PLACED', payload);
-      
-      // Then publish the message to the game event bus
+    // Generic event handling - forward to event bus
+    else if (type === GAME_EVENTS.EVENT) {
+      // Just forward the event to the event bus
       gameEvents.publish(type, payload);
     } 
     // Handle game state transition for countdown
@@ -189,9 +175,6 @@ class SocketEvents {
           store.setInstanceId(payload.instanceId);
         }
       }
-      
-      // We let the client handle state transitions after lobby is joined
-      // The client will request transitions based on game mode selected
       
       // Publish the message to the game event bus
       gameEvents.publish(type, payload);

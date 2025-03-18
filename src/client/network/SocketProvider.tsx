@@ -275,13 +275,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
       }
     };
     
-    // This handler listens for ITEM_PLACEMENT events and sends them to server
-    const handleItemPlacement = (data: any) => {
-      if (socketRef.current?.readyState === WebSocket.OPEN) {
-        console.log('SOCKET: Sending item placement to server:', data);
-        sendPlaceItem(data.type, data.x, data.y);
-      }
-    };
+    // REMOVED: This handler used to duplicate ITEM_PLACED events
     
     // This handler listens for REQUEST_STATE_TRANSITION events and forwards them to the server
     const handleStateTransition = (data: any) => {
@@ -293,16 +287,26 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
       }
     };
     
-    // Subscribe to events
+    // This handler listens for START_GAME events and forwards them to the server
+    const handleStartGame = (data: any) => {
+      if (socketRef.current?.readyState === WebSocket.OPEN) {
+        console.log('SOCKET: Sending START_GAME event to server');
+        sendStartGame();
+      } else {
+        console.warn('Socket not available for START_GAME request');
+      }
+    };
+    
+    // Subscribe to events - REMOVED placement subscription
     const unsubInput = gameEvents.subscribe(GAME_EVENTS.PLAYER_INPUT, handlePlayerInput);
-    const unsubPlacement = gameEvents.subscribe(GAME_EVENTS.PLACE_ITEM, handleItemPlacement);
     const unsubTransition = gameEvents.subscribe(GAME_EVENTS.REQUEST_STATE_TRANSITION, handleStateTransition);
+    const unsubStartGame = gameEvents.subscribe(GAME_EVENTS.START_GAME, handleStartGame);
     
     // Clean up subscriptions when component unmounts
     return () => {
       unsubInput();
-      unsubPlacement();
       unsubTransition();
+      unsubStartGame();
     };
   }, []);
   

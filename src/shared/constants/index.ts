@@ -1,14 +1,15 @@
 // Physics constants
 export const PHYSICS = {
-  GRAVITY: 0.8,
-  PLAYER_MOVE_FORCE: 0.008,
-  PLAYER_JUMP_FORCE: 0.016,
+  // Updated to match client-side physics
+  GRAVITY: 300 / 30, // Phaser gravity (300) scaled for Matter.js
+  PLAYER_MOVE_FORCE: 200 / 30, // Client velocity (200) scaled for Matter.js
+  PLAYER_JUMP_FORCE: 500 / 30, // Client jump velocity (500) scaled for Matter.js
   GROUND_FRICTION: 0.01,
   AIR_FRICTION: 0.05,
-  RESTITUTION: 0.2,
+  RESTITUTION: 0.1, // Reduced to match client's bounce of 0.1
   DART_WIDTH: 30,
   DART_HEIGHT: 8,
-  DART_SPEED: 2 // Add dart speed to physics constants
+  DART_SPEED: 2 // Dart speed
 };
 
 // Game dimensions
@@ -118,6 +119,7 @@ export const GAME_EVENTS = {
   // Game events
   ROUND_COMPLETE: 'ROUND_COMPLETE',
   ITEM_PLACED: 'ITEM_PLACED',
+  ITEM_PLACEMENT: 'ITEM_PLACEMENT',
   
   // UI events
   PLACEMENT_MODE_START: 'PLACEMENT_MODE_START',

@@ -285,19 +285,61 @@ export class SocketServer {
     const client = this.clients.get(clientId);
     if (!client || !client.sessionId) return;
     
+    console.log(`SOCKET: Processing item placement from client ${clientId}:`, JSON.stringify(data));
+    
     // Forward to game logic
     const item = this.gameLogic.handlePlaceItem(clientId, data);
     
     if (item) {
-      // Broadcast item placement to all players in the session
-      this.broadcastToSession(client.sessionId, {
-        type: GAME_EVENTS.ITEM_PLACED,
-        payload: {
-          item,
-          placedBy: clientId,
-          timestamp: Date.now()
+      console.log(`SOCKET: Created item from game logic:`, JSON.stringify(item));
+      
+      // Get the session
+      const session = this.sessionManager.getSession(client.sessionId);
+      if (session) {
+        // Check if ID is properly set
+        if (!item.id) {
+          item.id = `item-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
         }
-      });
+        
+        // Ensure position is valid
+        if (!item.position) {
+          item.position = data.position || { x: 100, y: 100 };
+        }
+        
+        // IMPORTANT: Add the item to the session's items array
+        session.items = session.items || [];
+        session.items.push(item);
+        
+        // CRITICAL: Add the item to the physics engine
+        if (session.physics) {
+          try {
+            console.log(`SOCKET: Adding item ${item.id} (${item.type}) to physics engine`);
+            session.physics.registerItemWithPhysics(item);
+          } catch (error) {
+            console.error(`SOCKET: Physics error for item ${item.type}:`, error);
+          }
+        }
+        
+        // Transition from placement to countdown
+        if (session.getCurrentState() === 'placement') {
+          session.transitionTo('countdown');
+        }
+        
+        // Broadcast item placement to all players in the session
+        this.broadcastToSession(client.sessionId, {
+          type: GAME_EVENTS.ITEM_PLACED,
+          payload: {
+            item,
+            placedBy: clientId,
+            timestamp: Date.now()
+          }
+        });
+        
+        // Immediately broadcast updated game state to ensure all clients see the item
+        this.broadcastGameState(client.sessionId);
+      }
+    } else {
+      console.error(`SOCKET: Game logic failed to create item for player ${clientId}`);
     }
   }
   
@@ -376,31 +418,37 @@ export class SocketServer {
     const session = this.sessionManager.getSession(client.sessionId);
     if (!session) return;
     
+    // Get the target state from the data
+    const targetState = data.targetState;
+    
+    // Log the data for debugging
+    console.log(`SOCKET: Attempting transition to ${targetState}, received data:`, data);
+    
     // Attempt to transition to the requested state
-    const success = session.transitionTo(data.state);
+    const success = session.transitionTo(targetState);
     
     if (success) {
-      console.log(`SOCKET: Game session ${session.id} transitioned to ${data.state} by player ${clientId}`);
+      console.log(`SOCKET: Game session ${session.id} transitioned to ${targetState} by player ${clientId}`);
       
       // Broadcast state change to all clients in the session
       this.broadcastToSession(session.id, {
         type: GAME_EVENTS.GAME_STATE_CHANGED,
         payload: {
           previousState: session.getCurrentState(),
-          currentState: data.state,
+          currentState: targetState,
           instanceId: session.id,
           timestamp: Date.now()
         }
       });
     } else {
-      console.warn(`SOCKET: Could not transition to ${data.state} for session ${session.id}`);
+      console.warn(`SOCKET: Could not transition to ${targetState} for session ${session.id} from ${session.getCurrentState()}`);
       
       // Send error response to client
       this.sendMessage(clientId, {
         type: GAME_EVENTS.ERROR,
         payload: {
           code: 'INVALID_STATE_TRANSITION',
-          message: `Cannot transition to ${data.state} state`,
+          message: `Cannot transition to ${targetState} state from ${session.getCurrentState()}`,
           timestamp: Date.now()
         }
       });
@@ -586,6 +634,17 @@ export class SocketServer {
     
     // Get game state
     const gameState = session.getState();
+    
+    // Log player positions before sending (every 30 broadcasts to avoid spam)
+    if (Math.random() < 0.03) {
+      console.log(`SOCKET: Broadcasting state with players:`, 
+        gameState.players.map((p: any) => ({
+          id: p.id,
+          position: { x: p.position.x.toFixed(2), y: p.position.y.toFixed(2) },
+          input: p.lastInput ? "Has Input" : "No Input"
+        }))
+      );
+    }
     
     // Create the network message
     const stateUpdateMessage = {

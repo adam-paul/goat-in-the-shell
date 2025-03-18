@@ -2,6 +2,7 @@
 import { useEffect } from 'react';
 import { useGameStore } from '../store/gameStore';
 import { gameEvents } from '../utils/GameEventBus';
+import { GAME_EVENTS } from '../../shared/constants';
 
 /**
  * Custom hook to handle item placement interactions
@@ -11,7 +12,8 @@ export const useItemPlacementHandler = () => {
   const { 
     gameStatus,
     selectedItem,
-    handleCancelPlacement
+    setSelectedItem,
+    setGameStatus
   } = useGameStore();
   
   // Set up event listeners for placement
@@ -21,13 +23,16 @@ export const useItemPlacementHandler = () => {
       return;
     }
     
-    // Publish placement mode start event
-    gameEvents.publish('PLACEMENT_MODE_START', { itemType: selectedItem });
+    // Notify scene that we're in placement mode
+    gameEvents.publish(GAME_EVENTS.PLACEMENT_MODE_START, { itemType: selectedItem });
     
     // Handle escape key to cancel placement
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.code === 'Escape') {
-        handleCancelPlacement();
+        // Cancel placement
+        setSelectedItem(null);
+        setGameStatus('select');
+        gameEvents.publish(GAME_EVENTS.PLACEMENT_MODE_EXIT, {});
       }
     };
     
@@ -37,11 +42,9 @@ export const useItemPlacementHandler = () => {
     // Clean up listeners
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
-      // Notify Phaser that we're exiting placement mode
-      // Changed to PLACEMENT_MODE_EXIT to match what the scene is listening for
-      gameEvents.publish('PLACEMENT_MODE_EXIT', {});
+      gameEvents.publish(GAME_EVENTS.PLACEMENT_MODE_EXIT, {});
     };
-  }, [gameStatus, selectedItem, handleCancelPlacement]);
+  }, [gameStatus, selectedItem, setSelectedItem, setGameStatus]);
   
   return null;
 };

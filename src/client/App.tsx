@@ -291,10 +291,11 @@ function App() {
         
         {/* Overlay UI based on game status */}
         {(gameStatus === 'tutorial' || gameStatus === 'modeSelect' || gameStatus === 'lobby' || 
-         gameStatus === 'select' || gameStatus === 'gameover' || gameStatus === 'win') && renderGameUI()}
+         gameStatus === 'select' || gameStatus === 'gameover' || 
+         gameStatus === 'win') && renderGameUI()}
       </div>
       
-      {/* Placement modal in normal document flow */}
+      {/* Placement modal in normal document flow - only show during placement state */}
       {gameStatus === 'placement' && renderGameUI()}
       
       {/* Prompter controls - only show when playing and when appropriate */}

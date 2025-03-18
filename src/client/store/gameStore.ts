@@ -6,7 +6,8 @@ import {
   ItemType, 
   GameMode, 
   PlayerRole,
-  UniversalGameState
+  UniversalGameState,
+  GAME_EVENTS
 } from '../../shared/types';
 import { gameEvents } from '../utils/GameEventBus';
 import { ITEMS, GAME_DIMENSIONS } from '../../shared/constants';
@@ -75,7 +76,7 @@ interface GameState extends GameStateData {
   handleCancelPlacement: () => void;
   handlePlaceItem: (x: number, y: number) => void;
   handleContinueToNextRound: () => void;
-  handlePlacementSuccess: () => void;
+  handlePlacementSuccess?: () => void;
   
   // Reset game
   resetGame: () => void;
@@ -144,129 +145,89 @@ export const useGameStore = create<GameState>((set, get): GameState => {
   // Server state setters
   setGameConfig: (config: any) => set(() => ({ gameConfig: config })),
   updateGameState: (state: UniversalGameState) => set((current) => {
+    // Log what we're receiving
+    console.log(`STORE: Updating game state with server state:`, 
+      state.gameStatus ? `gameStatus=${state.gameStatus}, ` : '',
+      `items=${state.items?.length || 0}`
+    );
+    
     // Update local game status if it's provided in the universal state
     if (state.gameStatus && state.gameStatus !== current.gameStatus) {
+      console.log(`STORE: Updating game status from ${current.gameStatus} to ${state.gameStatus}`);
+      
+      // Handle transition to countdown state by ensuring countdown starts
+      if (state.gameStatus === 'countdown') {
+        // Make sure countdown is triggered (even if we already triggered it locally)
+        gameEvents.publish(GAME_EVENTS.START_COUNTDOWN, { duration: 3000 });
+      }
+      
       return { 
         gameState: state,
         gameStatus: state.gameStatus
       };
     }
+    
     return { gameState: state };
   }),
   
   
-  // Game item placement helpers
+  // Simple item selection/placement handlers
   handleSelectItem: (item: ItemType) => {
+    // Just update the UI state to placement mode with the selected item
     set(() => ({ 
       selectedItem: item,
-      placementConfirmed: false
+      gameStatus: 'placement'
     }));
-    
-    // Now we're connected to a server instance, use the state machine
-    // Request state transition to placement via server
-    gameEvents.publish('REQUEST_STATE_TRANSITION', { 
-      targetState: 'placement',
-      itemType: item
-    });
-    
-    // Also directly update the local state for immediate UI feedback
-    // This will be overwritten by server confirmation, but gives immediate response
-    set(() => ({ gameStatus: 'placement' }));
-    
-    // Notify the server about entering placement mode
-    gameEvents.publish('PLACEMENT_MODE_START', { itemType: item });
   },
   
+  // For backwards compatibility
   handleCancelPlacement: () => {
+    // Just reset the state
     set(() => ({ 
-      selectedItem: null, 
-      placementConfirmed: false
+      selectedItem: null,
+      gameStatus: 'select'
     }));
-    
-    // Request state transition back to select via server
-    gameEvents.publish('REQUEST_STATE_TRANSITION', { 
-      targetState: 'select'
-    });
-    
-    // Also directly update the local state for immediate UI feedback
-    set(() => ({ gameStatus: 'select' }));
-    
-    // Notify the server about exiting placement mode
-    gameEvents.publish('PLACEMENT_MODE_EXIT', {});
   },
   
+  // For backwards compatibility
+  handlePlacementSuccess: () => {
+    set(() => ({ 
+      selectedItem: null,
+      gameStatus: 'countdown'
+    }));
+  },
+  
+  // Centralized handler for item placement that goes directly to the socket interface 
+  // This avoids duplicate messages through the event bus
   handlePlaceItem: (x: number, y: number) => {
     const state = get();
     
-    if (!state.selectedItem || state.placementConfirmed) {
+    if (!state.selectedItem) {
       return;
     }
     
-    // Mark as pending
+    console.log(`STORE: Processing item placement at (${x}, ${y}) for item type: ${state.selectedItem}`);
+    
+    // Update state immediately
     set(() => ({ 
-      placementConfirmed: true
+      selectedItem: null,
+      gameStatus: 'countdown'
     }));
     
-    // Create the placement data with required properties
-    const placementData: any = { 
-      type: state.selectedItem, 
-      position: { x, y },
-      properties: {}
-    };
-    
-    // Add properties based on item type from shared constants
-    
-    switch (state.selectedItem) {
-      case 'shield':
-        placementData.properties = {
-          width: ITEMS.SHIELD.WIDTH,
-          height: ITEMS.SHIELD.HEIGHT
-        };
-        break;
-      case 'platform':
-        placementData.properties = {
-          width: ITEMS.PLATFORM.DEFAULT_WIDTH,
-          height: ITEMS.PLATFORM.DEFAULT_HEIGHT
-        };
-        break;
-      case 'oscillator':
-        placementData.properties = {
-          width: ITEMS.OSCILLATOR.DEFAULT_WIDTH,
-          height: ITEMS.OSCILLATOR.DEFAULT_HEIGHT,
-          amplitudeY: ITEMS.OSCILLATOR.DEFAULT_AMPLITUDE_Y
-        };
-        break;
-      case 'spike':
-        placementData.properties = {
-          width: ITEMS.SPIKE.SIZE,
-          height: ITEMS.SPIKE.SIZE
-        };
-        break;
+    // Send to socket interface first, so server receives the item placement
+    // before countdown starts
+    const socketInterface = (window as any).__socket_instance__;
+    if (socketInterface) {
+      socketInterface.sendPlaceItem(state.selectedItem, x, y);
+    } else {
+      console.error('Socket interface not available for item placement');
+      return; // Don't proceed if we can't communicate with server
     }
     
-    // Send the item placement request to the server via event bus
-    // This will be picked up by SocketEvents and sent to server
-    console.log('STORE: Publishing PLACE_ITEM event', placementData);
-    gameEvents.publish(GAME_EVENTS.PLACE_ITEM, placementData);
-    
-    // We don't need a separate event - PLACE_ITEM will handle both server and local rendering
-    
-    // Don't clear selected item or request state transition yet
-    // We'll do that when we receive placement confirmation
-  },
-  
-  // Add handler for placement success
-  handlePlacementSuccess: () => {
-    // Clear selected item and request transition to countdown
-    set(() => ({ selectedItem: null }));
-    
-    // Request transition to countdown state AFTER successful placement
-    gameEvents.publish('REQUEST_STATE_TRANSITION', { 
-      targetState: 'countdown'
-    });
-    
-    // Also directly update the local state for immediate UI feedback
-    set(() => ({ gameStatus: 'countdown' }));
+    // Start countdown locally after sending item to server
+    // The server will broadcast back a START_COUNTDOWN event that will be handled
+    // by CountdownManager
+    gameEvents.publish(GAME_EVENTS.START_COUNTDOWN, { duration: 3000 });
   },
   
   handleContinueToNextRound: () => {
@@ -339,7 +300,7 @@ export const useGameStore = create<GameState>((set, get): GameState => {
   (window as any).__game_store_instance__ = store;
   
   // Subscribe to item placement events
-  gameEvents.subscribe('ITEM_PLACEMENT', (data: any) => {
+  gameEvents.subscribe(GAME_EVENTS.ITEM_PLACEMENT, (data: any) => {
     // Call the existing handlePlaceItem method which handles both UI state
     // and publishes the PLACE_ITEM event for server communication via SocketEvents
     store.handlePlaceItem(data.x, data.y);

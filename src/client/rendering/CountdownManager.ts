@@ -33,6 +33,13 @@ export default class CountdownManager {
    */
   startCountdown(duration: number = 3000): void {
     console.log(`[CountdownManager] Starting countdown with duration: ${duration}ms`);
+    
+    // Check if there's already a countdown running to avoid duplicates
+    if (this.countdownTimer) {
+      console.log('[CountdownManager] Countdown already in progress, skipping duplicate');
+      return;
+    }
+    
     // Remove any existing countdown
     this.clearCountdown();
     
@@ -68,8 +75,15 @@ export default class CountdownManager {
             this.countdownText.setText(countdown.toString());
           }
         } else {
-          // Countdown finished, dispatch event to start the game
+          // Countdown finished, dispatch COUNTDOWN_COMPLETE event
           gameEvents.publish('COUNTDOWN_COMPLETE', {});
+          
+          // Request state transition to playing
+          // Server will validate and broadcast the change to all clients
+          gameEvents.publish(GAME_EVENTS.REQUEST_STATE_TRANSITION, {
+            targetState: 'playing',
+            timestamp: Date.now()
+          });
           
           // Clean up
           this.clearCountdown();

@@ -1,0 +1,10 @@
+# Add patterns to ignore (in addition to .gitignore)
+ignore_patterns:
+  - "**/dist/"
+  - "old-src/**"
+  - "**/node_modules/"
+  - "**/public/"
+  - "**/assets/"
+  - "**/docs/"
+  - "*.md"
+  - "yek.yaml"

@@ -52,18 +52,33 @@ const PositionDebug: React.FC = () => {
   useEffect(() => {
     // Update server position when game state changes
     if (gameState && gameState.players) {
+      console.log("DEBUG: gameState.players structure:", JSON.stringify(gameState.players));
+      
+      // Check if players is an array or object
+      const playerArray = Array.isArray(gameState.players) 
+        ? gameState.players 
+        : Object.values(gameState.players);
+        
       // Find the first player in the server state (usually just one in single player)
-      const firstPlayer = Object.values(gameState.players)[0] as any;
-      if (firstPlayer && firstPlayer.position) {
+      const firstPlayer = playerArray.length > 0 ? playerArray[0] : null;
+      
+      if (firstPlayer && typeof firstPlayer === 'object' && 'position' in firstPlayer) {
+        const position = firstPlayer.position as { x: number, y: number };
+        console.log("DEBUG: Player position from server:", position);
         serverPosRef.current = {
-          x: Math.round(firstPlayer.position.x),
-          y: Math.round(firstPlayer.position.y)
+          x: Math.round(position.x),
+          y: Math.round(position.y)
         };
         
         // Update player ID if available
-        if (firstPlayer.id && firstPlayer.id !== ids.playerId) {
-          setIds(prev => ({ ...prev, playerId: firstPlayer.id }));
+        if ('id' in firstPlayer && firstPlayer.id) {
+          const playerId = String(firstPlayer.id);
+          if (playerId !== ids.playerId) {
+            setIds(prev => ({ ...prev, playerId }));
+          }
         }
+      } else {
+        console.log("DEBUG: No player or position found in gameState!");
       }
     }
     
